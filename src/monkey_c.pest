@@ -1,0 +1,21 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+semi       = { ";" }
+comma      = { "," }
+eq         = { "=" }
+quote      = { "\"" }
+
+ident          = { (ASCII_ALPHA | ASCII_DIGIT)+ }
+string_literal = { "\"" ~ ("\\\"" | (!"\"" ~ ANY))* ~ "\"" }
+
+visibility = { "public" | "private" }
+var        = { "var" }
+bool       = { ( "true" | "false" ) }
+
+list       = { "[" ~ (( ident | string_literal ) ~ comma?)* ~ "]" }
+
+decl       = { visibility? ~ var ~ ident ~ eq ~ ( ident | string_literal | list ) ~ semi }
+
+document = { SOI ~ EOI }
+
