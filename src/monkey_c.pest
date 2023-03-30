@@ -1,21 +1,125 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
-semi       = { ";" }
-comma      = { "," }
-eq         = { "=" }
-quote      = { "\"" }
+semi       = _{ ";" }
+comma      = _{ "," }
+quote      = _{ "\"" }
 
-ident          = { (ASCII_ALPHA | ASCII_DIGIT)+ }
+ident          = @{ (ASCII_ALPHANUMERIC | "_" | ".")+ }
 string_literal = { "\"" ~ ("\\\"" | (!"\"" ~ ANY))* ~ "\"" }
+basic_literal  = { NUMBER | string_literal }
 
-visibility = { "public" | "private" }
-var        = { "var" }
-bool       = { ( "true" | "false" ) }
+using = { "using" ~ ident ~ alias? ~ semi }
+alias = { "as" ~ ident }
 
-list       = { "[" ~ (( ident | string_literal ) ~ comma?)* ~ "]" }
+visibility = { "private" | "protected" | "public" }
+class = { "class" ~ ident ~ "{" ~ assign* ~ "}" }
+assign = { "var" ~ ident ~ "=" ~ (basic_literal | ident ~ "()"?)+ ~ semi }
 
-decl       = { visibility? ~ var ~ ident ~ eq ~ ( ident | string_literal | list ) ~ semi }
+document = {
+    SOI ~
+    (
+        using |
+        class
+    )+
+    ~
+    ANY*
+    ~
+    EOI
+}
 
-document = { SOI ~ EOI }
+keyword = {
+    "and"        |
+    "as"         |
+    "break"      |
+    "catch"      |
+    "case"       |
+    "class"      |
+    "const"      |
+    "continue"   |
+    "default"    |
+    "do"         |
+    "else"       |
+    "enum"       |
+    "extends"    |
+    "false"      |
+    "finally"    |
+    "for"        |
+    "function"   |
+    "has"        |
+    "hidden"     |
+    "if"         |
+    "instanceof" |
+    "me"         |
+    "module"     |
+    "nan"        |
+    "native"     |
+    "new"        |
+    "null"       |
+    "or"         |
+    "private"    |
+    "protected"  |
+    "public"     |
+    "return"     |
+    "self"       |
+    "static"     |
+    "switch"     |
+    "throw"      |
+    "true"       |
+    "try"        |
+    "using"      |
+    "var"        |
+    "while"
+}
 
+arithmetic_operator = {
+    "+"  |
+    "-"  |
+    "*"  |
+    "/"  |
+    "%"  |
+    "++" |
+    "--"
+}
+
+relational_operator = {
+    "==" |
+    "!=" |
+    ">"  |
+    "<"  |
+    ">=" |
+    "<="
+}
+
+logical_operator = {
+    "&" |
+    "|" |
+    "!"
+}
+
+bitwise_operator = {
+    "&" |
+    "|" |
+    "^" |
+    "~"
+}
+
+assignment_operator = {
+    "="   |
+    "+="  |
+    "-="  |
+    "*="  |
+    "/="  |
+    "%="  |
+    "<<=" |
+    ">>=" |
+    "&="  |
+    "|="  |
+    "^="
+}
+
+miscellaneous_operator = {
+    "?" |
+    ":" |
+    "new"
+}

@@ -1,38 +1,183 @@
+/// Monkey C grammar to parse Monkey C source code.
+/// Reference: https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/
 #[macro_use]
 extern crate pest_derive;
+
+use pest::iterators::Pair;
+use pest::Parser;
 
 #[derive(Parser)]
 #[grammar = "monkey_c.pest"]
 pub struct MonkeyCParser;
 
-pub fn parse_and_print(pairs: pest::iterators::Pairs<Rule>) {
-    for pair in pairs {
-        // A pair is a combination of the rule which matched and a span of input
-        println!("Rule:    {:?}", pair.as_rule());
-        println!("Span:    {:?}", pair.as_span());
-        println!("Text:    '{}'", pair.as_str());
-        println!("\n");
+#[derive(Debug, Clone)]
+pub enum Ast {
+    Document(Vec<Box<Ast>>),
+    Ident(String),
+    BasicLiteral(String),
+    Using {
+        import: Box<Ast>,
+        alias: Option<Box<Ast>>,
+    },
+    Class {
+        ident: Box<Ast>,
+        statements: Vec<Box<Ast>>,
+    },
+    Assign {
+        ident: Box<Ast>,
+        value: Box<Ast>,
+    },
+    Empty,
+}
 
-        for inner_pair in pair.into_inner() {
-            let name = match inner_pair.as_rule() {
-                Rule::ident => "ident".to_string(),
-                Rule::var => "var".to_string(),
-                Rule::semi => "semi".to_string(),
-                Rule::eq => "eq".to_string(),
-                Rule::quote => "quote".to_string(),
-                Rule::visibility => "visibility".to_string(),
-                Rule::string_literal => "string_literal".to_string(),
-                //Rule::list => parse_and_print(inner_pair.into_inner()),
-                v => format!("{:?}", v),
-            };
+pub fn parse(document: &str) -> Result<Ast, &'static str> {
+    let mut pairs = MonkeyCParser::parse(Rule::document, document).unwrap();
+    let ast = parse_value(pairs.next().unwrap());
 
-            print_pair(&name, inner_pair.as_str());
+    Ok(ast)
+}
+
+fn parse_value(pair: Pair<Rule>) -> Ast {
+    match pair.as_rule() {
+        Rule::document => {
+            let mut inner = Vec::new();
+
+            for pair in pair.into_inner() {
+                inner.push(Box::new(parse_value(pair)));
+            }
+
+            Ast::Document(inner)
         }
+        Rule::using => {
+            let mut inner = pair.into_inner();
 
-        println!("\n\n");
+            Ast::Using {
+                import: Box::new(parse_value(inner.next().unwrap())),
+                alias: inner
+                    .next()
+                    .map(|i| Box::new(parse_value(i.into_inner().next().unwrap()))),
+            }
+        }
+        Rule::class => {
+            let mut pairs = pair.into_inner();
+            let ident = Box::new(parse_value(pairs.next().unwrap()));
+
+            let mut statements = Vec::new();
+            for pair in pairs {
+                statements.push(Box::new(parse_value(pair)));
+            }
+
+            Ast::Class { ident, statements }
+        }
+        Rule::assign => {
+            let mut pairs = pair.into_inner();
+            let ident = Box::new(parse_value(pairs.next().unwrap()));
+            let value = Box::new(parse_value(pairs.next().unwrap()));
+
+            Ast::Assign { ident, value }
+        }
+        Rule::alias => parse_value(pair.into_inner().next().unwrap()),
+        Rule::ident => Ast::Ident(pair.as_str().to_owned()),
+        Rule::basic_literal => Ast::BasicLiteral(pair.as_str().to_owned()),
+        Rule::EOI => Ast::Empty,
+        r => panic!("unknown rule: {:?}", r),
     }
 }
 
-fn print_pair(prefix: &str, value: &str) {
-    println!("{:<20} | {}", prefix, value);
+/*
+enum Keyword {
+    And,
+    As,
+    Break,
+    Catch,
+    Case,
+    Class,
+    Const,
+    Continue,
+    Default,
+    Do,
+    Else,
+    Enum,
+    Extends,
+    False,
+    Finally,
+    For,
+    Function,
+    Has,
+    Hidden,
+    If,
+    InstanceOf,
+    Me,
+    Module,
+    NaN,
+    Native,
+    New,
+    Null,
+    Or,
+    Private,
+    Protected,
+    Public,
+    Return,
+    Self_,
+    Static,
+    Switch,
+    Throw,
+    True,
+    Try,
+    Using,
+    Var,
+    While,
 }
+
+enum ArithmeticOperator {
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+    Modulu,
+    Increment,
+    Decrement,
+}
+
+enum RelationalOperator {
+    Equal,
+    NotEqual,
+    Greater,
+    Less,
+    GreaterOrEqual,
+    LessOrEqual,
+}
+
+enum LogicalOperator {
+    And,
+    Or,
+    Not,
+}
+
+enum BitwiseOperator {
+    And,
+    Or,
+    Xor,
+    Not,
+}
+
+enum AssignmentOperator {
+    Assign,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
+    LeftShift,
+    RightShift,
+    And,
+    Or,
+    Xor,
+}
+
+enum MiscellaneousOperator {
+    TernaryIf,
+    TernaryElse,
+    New,
+}
+*/

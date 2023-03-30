@@ -1,5 +1,6 @@
 [package]
-name = "monkey-c-fmt"
+authors = ["Simon Sawert <simon@sawert.se>"]
+name = "monkey-c-rs"
 version = "0.1.0"
 edition = "2021"
 
