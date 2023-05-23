@@ -12,6 +12,8 @@ pub struct MonkeyCParser;
 
 #[derive(Debug, Clone)]
 pub enum Ast {
+    Empty,
+    Comment(String),
     Document(Vec<Box<Ast>>),
     Ident(String),
     BasicLiteral(String),
@@ -19,15 +21,28 @@ pub enum Ast {
         import: Box<Ast>,
         alias: Option<Box<Ast>>,
     },
+    Module {
+        ident: Box<Ast>,
+        body: Vec<Box<Ast>>,
+    },
     Class {
         ident: Box<Ast>,
-        statements: Vec<Box<Ast>>,
+        extends: Option<Box<Ast>>,
+        body: Vec<Box<Ast>>,
+    },
+    Function {
+        ident: Box<Ast>,
+        args: Vec<Box<Ast>>,
+        body: Vec<Box<Ast>>,
     },
     Assign {
-        ident: Box<Ast>,
+        target: Box<Ast>,
         value: Box<Ast>,
     },
-    Empty,
+    Call {
+        function: Box<Ast>,
+        args: Vec<Box<Ast>>,
+    },
 }
 
 pub fn parse(document: &str) -> Result<Ast, &'static str> {
@@ -58,27 +73,81 @@ fn parse_value(pair: Pair<Rule>) -> Ast {
                     .map(|i| Box::new(parse_value(i.into_inner().next().unwrap()))),
             }
         }
+        Rule::function => {
+            let mut pairs = pair.into_inner();
+            let (ident, args) = match parse_value(pairs.next().unwrap()) {
+                Ast::Call { function, args } => (function, args),
+                _ => unreachable!(),
+            };
+
+            let mut body = Vec::new();
+            for pair in pairs {
+                body.push(Box::new(parse_value(pair)));
+            }
+
+            Ast::Function { ident, args, body }
+        }
+        Rule::module => {
+            let mut pairs = pair.into_inner();
+            let ident = Box::new(parse_value(pairs.next().unwrap()));
+
+            let mut body = Vec::new();
+            for pair in pairs {
+                body.push(Box::new(parse_value(pair)));
+            }
+
+            Ast::Module { ident, body }
+        }
         Rule::class => {
             let mut pairs = pair.into_inner();
             let ident = Box::new(parse_value(pairs.next().unwrap()));
 
-            let mut statements = Vec::new();
+            let next_pair = pairs.next();
+            if next_pair.is_none() {
+                return Ast::Class {
+                    ident,
+                    extends: None,
+                    body: Default::default(),
+                };
+            }
+
+            let (extends, mut statements) = match parse_value(next_pair.unwrap()) {
+                ident @ Ast::Ident(_) => (Some(Box::new(ident)), vec![]),
+                other => (None, vec![Box::new(other)]),
+            };
+
             for pair in pairs {
                 statements.push(Box::new(parse_value(pair)));
             }
 
-            Ast::Class { ident, statements }
+            Ast::Class {
+                ident,
+                extends,
+                body: statements,
+            }
         }
         Rule::assign => {
             let mut pairs = pair.into_inner();
-            let ident = Box::new(parse_value(pairs.next().unwrap()));
+            let target = Box::new(parse_value(pairs.next().unwrap()));
             let value = Box::new(parse_value(pairs.next().unwrap()));
 
-            Ast::Assign { ident, value }
+            Ast::Assign { target, value }
+        }
+        Rule::call => {
+            let mut pairs = pair.into_inner();
+            let function = Box::new(parse_value(pairs.next().unwrap()));
+
+            let mut args = Vec::new();
+            for pair in pairs {
+                args.push(Box::new(parse_value(pair)));
+            }
+
+            Ast::Call { function, args }
         }
         Rule::alias => parse_value(pair.into_inner().next().unwrap()),
         Rule::ident => Ast::Ident(pair.as_str().to_owned()),
         Rule::basic_literal => Ast::BasicLiteral(pair.as_str().to_owned()),
+        Rule::COMMENT => Ast::Comment(pair.as_str().to_owned()),
         Rule::EOI => Ast::Empty,
         r => panic!("unknown rule: {:?}", r),
     }

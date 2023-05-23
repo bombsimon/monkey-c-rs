@@ -1,75 +1,55 @@
-WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+EOL        = _{ "\r" | "\n" }
+WHITESPACE = _{ " " | "\t" | EOL }
+
+// TODO: We need to keep comments.
+COMMENT    = _{
+    "//" ~ (!EOL ~ ANY)* |
+    "/*" ~ (!"*/" ~ ANY)* ~ "*/"
+}
 
 semi       = _{ ";" }
 comma      = _{ "," }
 quote      = _{ "\"" }
 
 ident          = @{ (ASCII_ALPHANUMERIC | "_" | ".")+ }
-string_literal = { "\"" ~ ("\\\"" | (!"\"" ~ ANY))* ~ "\"" }
+string_literal = { quote ~ ("\\\"" | (!quote ~ ANY))* ~ quote }
 basic_literal  = { NUMBER | string_literal }
 
 using = { "using" ~ ident ~ alias? ~ semi }
 alias = { "as" ~ ident }
 
+call_args  = _{ (call | ident | basic_literal) }
+call       = {
+    ident ~ "()" |
+    ident ~ "(" ~ call_args ~ ("," ~ call_args)* ~ ")"
+}
+
+// expression     = { term ~ (addition | subtraction)* }
+// term           = { factor ~ (multiplication | division)* }
+// factor         = { NUMBER | ident | "(" ~ expression ~ ")" }
+// addition       = { "+" ~ term }
+// subtraction    = { "-" ~ term }
+// multiplication = { "*" ~ factor }
+// division       = { "/" ~ factor }
+
+assign     = { "var" ~ ident ~ "=" ~ (call | basic_literal | ident)+ ~ semi }
+
 visibility = { "private" | "protected" | "public" }
-class = { "class" ~ ident ~ "{" ~ assign* ~ "}" }
-assign = { "var" ~ ident ~ "=" ~ (basic_literal | ident ~ "()"?)+ ~ semi }
+module     = { "module" ~ ident ~ "{" ~ (class | function | assign)* ~ "}" }
+class      = { "class" ~ ident ~ ("extends" ~ ident)? ~ "{" ~ (class | function | assign)* ~ "}" }
+
+// Should probably not use `call` for function ident and argument.
+function   = { "function" ~ call ~ "{" ~ (class | function | assign) ~ "}" }
 
 document = {
     SOI ~
     (
         using |
-        class
+        module |
+        class |
+        function
     )+
-    ~
-    ANY*
-    ~
-    EOI
-}
-
-keyword = {
-    "and"        |
-    "as"         |
-    "break"      |
-    "catch"      |
-    "case"       |
-    "class"      |
-    "const"      |
-    "continue"   |
-    "default"    |
-    "do"         |
-    "else"       |
-    "enum"       |
-    "extends"    |
-    "false"      |
-    "finally"    |
-    "for"        |
-    "function"   |
-    "has"        |
-    "hidden"     |
-    "if"         |
-    "instanceof" |
-    "me"         |
-    "module"     |
-    "nan"        |
-    "native"     |
-    "new"        |
-    "null"       |
-    "or"         |
-    "private"    |
-    "protected"  |
-    "public"     |
-    "return"     |
-    "self"       |
-    "static"     |
-    "switch"     |
-    "throw"      |
-    "true"       |
-    "try"        |
-    "using"      |
-    "var"        |
-    "while"
+    ~ EOI
 }
 
 arithmetic_operator = {
@@ -122,4 +102,48 @@ miscellaneous_operator = {
     "?" |
     ":" |
     "new"
+}
+
+keyword = {
+    "and"        |
+    "as"         |
+    "break"      |
+    "catch"      |
+    "case"       |
+    "class"      |
+    "const"      |
+    "continue"   |
+    "default"    |
+    "do"         |
+    "else"       |
+    "enum"       |
+    "extends"    |
+    "false"      |
+    "finally"    |
+    "for"        |
+    "function"   |
+    "has"        |
+    "hidden"     |
+    "if"         |
+    "instanceof" |
+    "me"         |
+    "module"     |
+    "nan"        |
+    "native"     |
+    "new"        |
+    "null"       |
+    "or"         |
+    "private"    |
+    "protected"  |
+    "public"     |
+    "return"     |
+    "self"       |
+    "static"     |
+    "switch"     |
+    "throw"      |
+    "true"       |
+    "try"        |
+    "using"      |
+    "var"        |
+    "while"
 }
