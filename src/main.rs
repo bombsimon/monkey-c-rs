@@ -17,5 +17,7 @@ module MyMod {
     let ast = monkey_c_rs::parse(document)?;
     println!("{:#?}", ast);
 
+    println!("{}", ast.to_string());
+
     Ok(())
 }

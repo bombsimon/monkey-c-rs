@@ -55,8 +55,8 @@ pub enum Ast {
     BasicLiteral(String),
     Expr(Expr),
     Using {
-        import: Box<Ast>,
-        alias: Option<Box<Ast>>,
+        import: String,
+        alias: Option<String>,
     },
     Module {
         ident: Box<Ast>,
@@ -82,6 +82,74 @@ pub enum Ast {
     },
 }
 
+impl ToString for Ast {
+    fn to_string(&self) -> String {
+        let mut s = String::new();
+        self.ast_to_string(0, &mut s);
+
+        s
+    }
+}
+
+impl Ast {
+    fn ast_to_string(&self, indent: usize, str: &mut String) {
+        let indent_str = "    ".repeat(indent);
+        str.push_str(indent_str.as_str());
+
+        match self {
+            Ast::Empty => (),
+            Ast::Ident(ident) => str.push_str(ident.as_str()),
+            Ast::Document(nodes) => {
+                for node in nodes {
+                    node.ast_to_string(indent, str);
+                }
+            }
+            Ast::Using { import, alias } => {
+                str.push_str(format!("using {import}").as_str());
+                if let Some(alias) = alias {
+                    str.push_str(format!(" as {alias}").as_str());
+                }
+                str.push_str(";\n");
+            }
+            Ast::Module { ident, body } => {
+                str.push_str("\nmodule ");
+                ident.ast_to_string(0, str);
+                str.push_str(" {\n");
+
+                for node in body {
+                    node.ast_to_string(indent + 1, str);
+                }
+
+                str.push_str(indent_str.as_str());
+                str.push_str("}\n");
+            }
+            Ast::Class {
+                ident,
+                extends,
+                body,
+            } => {
+                str.push_str("class ");
+                ident.ast_to_string(0, str);
+
+                if let Some(extends) = extends {
+                    str.push_str("extends ");
+                    extends.ast_to_string(0, str);
+                }
+
+                str.push_str(" {\n");
+
+                for node in body {
+                    node.ast_to_string(indent + 1, str);
+                }
+
+                str.push_str(indent_str.as_str());
+                str.push_str("}\n");
+            }
+            _ => str.push_str("TODO\n"),
+        };
+    }
+}
+
 pub fn parse(document: &str) -> Result<Ast, &'static str> {
     let mut pairs = MonkeyCParser::parse(Rule::document, document).unwrap();
     let ast = parse_value(pairs.next().unwrap());
@@ -105,10 +173,10 @@ fn parse_value(pair: Pair<Rule>) -> Ast {
             let mut inner = pair.into_inner();
 
             Ast::Using {
-                import: Box::new(parse_value(inner.next().unwrap())),
+                import: inner.next().unwrap().as_str().to_owned(),
                 alias: inner
                     .next()
-                    .map(|i| Box::new(parse_value(i.into_inner().next().unwrap()))),
+                    .map(|i| i.into_inner().next().unwrap().as_str().to_owned()),
             }
         }
         Rule::function => {
