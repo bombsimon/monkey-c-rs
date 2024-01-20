@@ -15,17 +15,20 @@ ident          = @{ (ASCII_ALPHANUMERIC | "_" | ".")+ }
 string_literal = { quote ~ ("\\\"" | (!quote ~ ANY))* ~ quote }
 basic_literal  = { NUMBER+ | string_literal }
 
-using = { "using" ~ ident ~ alias? ~ semi }
-alias = { "as" ~ ident }
+alias = { "as"    ~ ident  }
+field = { (basic_literal | ident)  ~ alias? }
+using = { "using" ~ ident  ~ alias? ~ semi }
 
-call_args  = _{ (call | ident | basic_literal) }
+call_args  = _{ ( field | basic_literal) }
 call       = {
     ident ~ "()" |
     ident ~ "(" ~ call_args ~ ("," ~ call_args)* ~ ")"
 }
 
+array = { "[" ~ field ~ ("," ~ field)* ~ "]" }
+
 visibility = { "private" | "protected" | "public" }
-assign     = { visibility? ~ "var" ~ ident ~ "=" ~ (expr | call | basic_literal | ident)+ ~ semi }
+assign     = { visibility? ~ "var" ~ ident ~ "=" ~ (expr | call | array | basic_literal | ident)+ ~ semi }
 module     = { "module" ~ ident ~ "{" ~ (class | function | assign)* ~ "}" }
 class      = { "class" ~ ident ~ ("extends" ~ ident)? ~ "{" ~ (class | function | assign)* ~ "}" }
 

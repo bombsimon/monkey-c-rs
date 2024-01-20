@@ -51,12 +51,19 @@ pub enum Ast {
     Empty,
     Comment(String),
     Document(Vec<Box<Ast>>),
-    Ident(String),
     BasicLiteral(String),
     Expr(Expr),
+    Ident(String),
+    Field {
+        name: Box<Ast>,
+        type_hint: Option<Box<Ast>>,
+    },
+    Array {
+        elements: Vec<Box<Ast>>,
+    },
     Using {
-        import: String,
-        alias: Option<String>,
+        import: Box<Ast>,
+        alias: Option<Box<Ast>>,
     },
     Module {
         ident: Box<Ast>,
@@ -73,6 +80,7 @@ pub enum Ast {
         body: Vec<Box<Ast>>,
     },
     Assign {
+        visibility: Option<Box<Ast>>,
         target: Box<Ast>,
         value: Box<Ast>,
     },
@@ -99,15 +107,24 @@ impl Ast {
         match self {
             Ast::Empty => (),
             Ast::Ident(ident) => str.push_str(ident.as_str()),
+            Ast::Field { name, type_hint } => {
+                name.ast_to_string(0, str);
+                if let Some(type_hint) = type_hint {
+                    str.push_str(" as ");
+                    type_hint.ast_to_string(0, str);
+                }
+            }
             Ast::Document(nodes) => {
                 for node in nodes {
                     node.ast_to_string(indent, str);
                 }
             }
             Ast::Using { import, alias } => {
-                str.push_str(format!("using {import}").as_str());
+                str.push_str("using ");
+                import.ast_to_string(0, str);
                 if let Some(alias) = alias {
-                    str.push_str(format!(" as {alias}").as_str());
+                    str.push_str(" as ");
+                    alias.ast_to_string(0, str);
                 }
                 str.push_str(";\n");
             }
@@ -145,6 +162,24 @@ impl Ast {
                 str.push_str(indent_str.as_str());
                 str.push_str("}\n");
             }
+            Ast::Function { ident, args, body } => {
+                str.push_str("function ");
+                ident.ast_to_string(0, str);
+                str.push_str("(");
+
+                for arg in args {
+                    arg.ast_to_string(0, str);
+                }
+
+                str.push_str(") {\n");
+
+                for node in body {
+                    node.ast_to_string(indent + 1, str);
+                }
+
+                str.push_str(indent_str.as_str());
+                str.push_str("}\n");
+            }
             _ => str.push_str("TODO\n"),
         };
     }
@@ -173,10 +208,10 @@ fn parse_value(pair: Pair<Rule>) -> Ast {
             let mut inner = pair.into_inner();
 
             Ast::Using {
-                import: inner.next().unwrap().as_str().to_owned(),
+                import: Box::new(parse_value(inner.next().unwrap())),
                 alias: inner
                     .next()
-                    .map(|i| i.into_inner().next().unwrap().as_str().to_owned()),
+                    .map(|i| Box::new(parse_value(i.into_inner().next().unwrap()))),
             }
         }
         Rule::function => {
@@ -232,12 +267,26 @@ fn parse_value(pair: Pair<Rule>) -> Ast {
                 body: statements,
             }
         }
+        Rule::visibility => Ast::Ident(pair.as_str().to_owned()),
         Rule::assign => {
             let mut pairs = pair.into_inner();
-            let target = Box::new(parse_value(pairs.next().unwrap()));
+            let first_pair = pairs.next().unwrap();
+
+            let (visibility, target) = match first_pair.as_rule() {
+                Rule::visibility => (
+                    Some(Box::new(parse_value(first_pair))),
+                    Box::new(parse_value(pairs.next().unwrap())),
+                ),
+                _ => (None, Box::new(parse_value(first_pair))),
+            };
+
             let value = Box::new(parse_value(pairs.next().unwrap()));
 
-            Ast::Assign { target, value }
+            Ast::Assign {
+                visibility,
+                target,
+                value,
+            }
         }
         Rule::call => {
             let mut pairs = pair.into_inner();
@@ -249,6 +298,21 @@ fn parse_value(pair: Pair<Rule>) -> Ast {
             }
 
             Ast::Call { function, args }
+        }
+        Rule::field => {
+            let mut pairs = pair.into_inner();
+            let name = Box::new(parse_value(pairs.next().unwrap()));
+            let type_hint = pairs.next().map(|ta| Box::new(parse_value(ta)));
+
+            Ast::Field { name, type_hint }
+        }
+        Rule::array => {
+            let mut elements = Vec::new();
+            for pair in pair.into_inner() {
+                elements.push(Box::new(parse_value(pair)));
+            }
+
+            Ast::Array { elements }
         }
         Rule::alias => parse_value(pair.into_inner().next().unwrap()),
         Rule::ident => Ast::Ident(pair.as_str().to_owned()),

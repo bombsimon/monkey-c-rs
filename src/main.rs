@@ -7,9 +7,9 @@ using LocalPackage;
 
 module MyMod {
     class MyClass {
-        function myFunc() {
-            var a = 1 + 2;
-            var b = a * 3;
+        function myFunc(x as Number, y) {
+            var a = 1;
+            private var b = 2;
         }
     }
 }
