@@ -13,7 +13,7 @@ quote      = _{ "\"" }
 
 ident          = @{ (ASCII_ALPHANUMERIC | "_" | ".")+ }
 string_literal = { quote ~ ("\\\"" | (!quote ~ ANY))* ~ quote }
-basic_literal  = { NUMBER | string_literal }
+basic_literal  = { NUMBER+ | string_literal }
 
 using = { "using" ~ ident ~ alias? ~ semi }
 alias = { "as" ~ ident }
@@ -24,22 +24,29 @@ call       = {
     ident ~ "(" ~ call_args ~ ("," ~ call_args)* ~ ")"
 }
 
-// expression     = { term ~ (addition | subtraction)* }
-// term           = { factor ~ (multiplication | division)* }
-// factor         = { NUMBER | ident | "(" ~ expression ~ ")" }
-// addition       = { "+" ~ term }
-// subtraction    = { "-" ~ term }
-// multiplication = { "*" ~ factor }
-// division       = { "/" ~ factor }
-
-assign     = { "var" ~ ident ~ "=" ~ (call | basic_literal | ident)+ ~ semi }
-
 visibility = { "private" | "protected" | "public" }
+assign     = { visibility? ~ "var" ~ ident ~ "=" ~ (expr | call | basic_literal | ident)+ ~ semi }
 module     = { "module" ~ ident ~ "{" ~ (class | function | assign)* ~ "}" }
 class      = { "class" ~ ident ~ ("extends" ~ ident)? ~ "{" ~ (class | function | assign)* ~ "}" }
 
 // Should probably not use `call` for function ident and argument.
-function   = { "function" ~ call ~ "{" ~ (class | function | assign) ~ "}" }
+function   = { "function" ~ call ~ "{" ~ (class | function | assign*) ~ "}" }
+
+integer = @{ ASCII_DIGIT+ }
+number  = @{ integer ~ ("." ~ integer?)? }
+
+unary_minus = { "-" }
+primary     = _{ number | ident | "(" ~ expr ~ ")" }
+atom        = _{ unary_minus? ~ primary }
+
+bin_op   = _{ add | subtract | multiply | divide | modulo }
+add      = { "+" }
+subtract = { "-" }
+multiply = { "*" }
+divide   = { "/" }
+modulo   = { "%" }
+
+expr = { atom ~ (bin_op ~ atom)* }
 
 document = {
     SOI ~
@@ -47,7 +54,8 @@ document = {
         using |
         module |
         class |
-        function
+        function |
+        semi
     )+
     ~ EOI
 }
