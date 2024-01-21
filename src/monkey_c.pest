@@ -8,32 +8,36 @@ COMMENT    = _{
 }
 
 semi       = _{ ";" }
-comma      = _{ "," }
 quote      = _{ "\"" }
 
 ident          = @{ (ASCII_ALPHANUMERIC | "_" | ".")+ }
 string_literal = { quote ~ ("\\\"" | (!quote ~ ANY))* ~ quote }
 basic_literal  = { NUMBER+ | string_literal }
 
-alias = { "as"    ~ ident  }
-field = { (basic_literal | ident)  ~ alias? }
-using = { "using" ~ ident  ~ alias? ~ semi }
+container = { ident ~ "<" ~ ident ~ "?"? ~ ("or" ~ ident ~ "?"?)* ~ ">" }
+alias  = { "as" ~ (container | ident) ~ "?"? }
+field  = { (basic_literal | ident)  ~ alias? }
+import = { "import" ~ ident ~ semi }
+using  = { "using" ~ ident  ~ alias? ~ semi }
 
 call_args  = _{ ( field | basic_literal) }
 call       = {
-    ident ~ "()" |
-    ident ~ "(" ~ call_args ~ ("," ~ call_args)* ~ ")"
+    (
+        ident ~ "()" |
+        ident ~ "(" ~ call_args ~ ("," ~ call_args)* ~ ")"
+    )
 }
 
 array = { "[" ~ field ~ ("," ~ field)* ~ "]" }
 
 visibility = { "private" | "protected" | "public" }
-assign     = { visibility? ~ "var" ~ ident ~ "=" ~ (expr | call | array | basic_literal | ident)+ ~ semi }
-module     = { "module" ~ ident ~ "{" ~ (class | function | assign)* ~ "}" }
-class      = { "class" ~ ident ~ ("extends" ~ ident)? ~ "{" ~ (class | function | assign)* ~ "}" }
+module     = { "module" ~ ident ~ "{" ~ (class | function | assign | declare)* ~ "}" }
+class      = { "class" ~ ident ~ ("extends" ~ ident)? ~ "{" ~ (class | function | assign | declare)* ~ "}" }
+function   = { "function" ~ call ~ alias? ~ "{" ~ (class | function | call ~ semi | assign | declare)* ~ "}" }
 
-// Should probably not use `call` for function ident and argument.
-function   = { "function" ~ call ~ "{" ~ (class | function | assign*) ~ "}" }
+new     = { "new" ~ call }
+declare = { visibility? ~ "var" ~ ident ~ alias? ~ semi }
+assign  = { visibility? ~ "var"? ~ ident ~ "=" ~ (new | expr | call | array | basic_literal | ident)+ ~ alias? ~ semi }
 
 integer = @{ ASCII_DIGIT+ }
 number  = @{ integer ~ ("." ~ integer?)? }
@@ -54,11 +58,11 @@ expr = { atom ~ (bin_op ~ atom)* }
 document = {
     SOI ~
     (
+        import |
         using |
         module |
         class |
-        function |
-        semi
+        function
     )+
     ~ EOI
 }
