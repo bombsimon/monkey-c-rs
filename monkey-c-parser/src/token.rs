@@ -14,11 +14,14 @@ pub(crate) enum Type {
     EOF,
 
     Identifier(String),
+    Comment(String),
 
     // Characters
-    Comma,
-    Colon,
-    SemiColon,
+    Comma,        // ,
+    Colon,        // :
+    SemiColon,    // ;
+    Dot,          // .
+    QuestionMark, // ?
 
     // Types
     Number(i32), // Not used
@@ -33,6 +36,10 @@ pub(crate) enum Type {
     // Containers
     Array,
     Dictionary,
+
+    // Keywords not in spec?
+    Import,
+    Use,
 
     // Keywords
     And,
@@ -126,12 +133,24 @@ impl FromStr for Type {
 
     fn from_str(input: &str) -> Result<Type, Self::Err> {
         match input {
+            "," => Ok(Type::Comma),
+            ":" => Ok(Type::Colon),
+            ";" => Ok(Type::SemiColon),
+            "." => Ok(Type::Dot),
+            "?" => Ok(Type::QuestionMark),
+
             "(" => Ok(Type::LParen),
             ")" => Ok(Type::RParen),
             "[" => Ok(Type::LSqBracket),
             "]" => Ok(Type::RSqBracket),
             "{" => Ok(Type::LBracket),
             "}" => Ok(Type::RBracket),
+
+            "Array" => Ok(Type::Array),
+            "Dictionary" => Ok(Type::Dictionary),
+
+            "import" => Ok(Type::Import),
+            "use" => Ok(Type::Use),
 
             "and" => Ok(Type::And),
             "as" => Ok(Type::As),
@@ -173,9 +192,6 @@ impl FromStr for Type {
             "var" => Ok(Type::Var),
             "while" => Ok(Type::While),
 
-            "true" => Ok(Type::Boolean(true)),
-            "false" => Ok(Type::Boolean(false)),
-
             "+" => Ok(Type::Plus),
             "-" => Ok(Type::Minus),
             "*" => Ok(Type::Multiply),
@@ -212,27 +228,15 @@ impl FromStr for Type {
             "|=" => Ok(Type::AssignOr),
             "^=" => Ok(Type::AssignXor),
 
-            "?" => Ok(Type::TernaryIf),
-            ":" => Ok(Type::TernaryElse),
+            // "?" => Ok(Type::TernaryIf),
+            // ":" => Ok(Type::TernaryElse),
+            "true" => Ok(Type::Boolean(true)),
+            "false" => Ok(Type::Boolean(false)),
 
             _ => Err(()),
         }
     }
 }
 
-#[derive(Debug)]
-pub struct Token {
-    pub(crate) token_type: Type,
-    pub(crate) start_position: usize,
-    pub(crate) end_position: usize,
-}
-
-impl Token {
-    pub(crate) fn new(token_type: Type, start_position: usize, end_position: usize) -> Self {
-        Token {
-            token_type,
-            start_position,
-            end_position,
-        }
-    }
-}
+pub(crate) type Pos = usize;
+pub(crate) type Span = (Pos, Type, Pos);
