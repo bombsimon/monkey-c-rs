@@ -2,33 +2,58 @@
 use crate::token::{self, Span};
 use std::str::FromStr;
 
+#[derive(Debug)]
 pub(crate) struct Lexer<'a> {
-    input: &'a str,
+    input: std::str::Chars<'a>,
     position: usize,
+    ch2: Option<char>,
+    ch1: Option<char>,
+    ch0: Option<char>,
 }
 
 impl<'a> Lexer<'a> {
-    fn new(input: &'a str) -> Lexer<'a> {
-        Lexer { input, position: 0 }
+    pub fn new(input: &'a str) -> Lexer<'a> {
+        let mut lexer = Lexer {
+            input: input.chars(),
+            position: 0,
+            ch0: None,
+            ch1: None,
+            ch2: None,
+        };
+
+        lexer.next_char();
+        lexer.next_char();
+        lexer.next_char();
+        lexer.position = 0;
+
+        lexer
     }
 
-    fn next_token(&mut self) -> Span {
-        let start_position = self.position;
+    fn next_char(&mut self) {
+        self.ch0 = self.ch1;
+        self.ch1 = self.ch2;
+        self.ch2 = self.input.next();
 
+        self.position += 1;
+    }
+
+    pub(crate) fn next_token(&mut self) -> Span {
         self.skip_whitespace();
 
-        if self.position >= self.input.len() {
+        let start_position = self.position;
+
+        if self.ch0.is_none() {
             return (start_position, token::Type::EOF, self.position);
         }
 
-        let current_char = self.input.chars().nth(self.position).unwrap();
+        let current_ch = self.ch0.unwrap();
 
-        match current_char {
+        match current_ch {
             '\n' => {
-                self.position += 1;
+                self.next_char();
                 (start_position, token::Type::Newline, self.position)
             }
-            '/' => {
+            '/' if self.ch1.unwrap() == '/' => {
                 // TODO: Can't just parse comments like this, need context.
                 let comment = self.parse_comment();
                 (start_position, token::Type::Comment(comment), self.position)
@@ -41,61 +66,132 @@ impl<'a> Lexer<'a> {
                 let string = self.parse_string();
                 (start_position, token::Type::String(string), self.position)
             }
-            _ if current_char.is_ascii_alphabetic() || current_char == '_' => {
+            c if c.is_ascii_alphabetic() || c == '_' => {
                 let token_type = self.parse_identifier();
                 (start_position, token_type, self.position)
             }
             ',' | ':' | ';' | '.' | '?' => {
-                self.position += 1;
+                self.next_char();
                 (
                     start_position,
-                    token::Type::from_str(&current_char.to_string()).unwrap(),
+                    token::Type::from_str(&current_ch.to_string()).unwrap(),
                     self.position,
                 )
             }
             '(' | ')' | '[' | ']' | '{' | '}' => {
-                self.position += 1;
+                self.next_char();
                 (
                     start_position,
-                    token::Type::from_str(&current_char.to_string()).unwrap(),
+                    token::Type::from_str(&current_ch.to_string()).unwrap(),
                     self.position,
                 )
             }
-            // TODO: Assignment operator +=, -= etc
-            // TODO: Relational operator >=, <= etc
-            // TODO: Assignment operator <<=, >>= etc
-            '+' | '-' | '*' | '/' | '%' | '<' | '>' | '=' => {
-                self.position += 1;
-                (
-                    start_position,
-                    token::Type::from_str(&current_char.to_string()).unwrap(),
-                    self.position,
-                )
+            '+' | '-' | '*' | '/' | '%' => {
+                self.next_char();
+
+                match (current_ch, self.ch0) {
+                    (_, Some(next)) if next == '=' => {
+                        self.next_char();
+
+                        let mut c = String::new();
+                        c.push(current_ch);
+                        c.push(next);
+
+                        (
+                            start_position,
+                            token::Type::from_str(&c).unwrap(),
+                            self.position,
+                        )
+                    }
+                    ('+', Some('+')) => {
+                        self.next_char();
+                        (start_position, token::Type::Increment, self.position)
+                    }
+                    ('-', Some('-')) => {
+                        self.next_char();
+                        (start_position, token::Type::Decrement, self.position)
+                    }
+                    _ => (
+                        start_position,
+                        token::Type::from_str(&current_ch.to_string()).unwrap(),
+                        self.position,
+                    ),
+                }
             }
-            _ => panic!("Unexpected character: {}", current_char),
+            '<' | '>' | '=' => {
+                self.next_char();
+
+                match (current_ch, self.ch0, self.ch1) {
+                    (_, Some('='), _) => {
+                        self.next_char();
+
+                        let mut s = String::new();
+                        s.push(current_ch);
+                        s.push('=');
+
+                        (
+                            start_position,
+                            token::Type::from_str(&s).unwrap(),
+                            self.position,
+                        )
+                    }
+                    // <<= and >>=
+                    (a, Some(b), Some(c)) if a == b && a != c && c == '=' => {
+                        self.next_char();
+                        self.next_char();
+
+                        let mut s = String::new();
+                        s.push(a);
+                        s.push(b);
+                        s.push(c);
+
+                        (
+                            start_position,
+                            token::Type::from_str(&s).unwrap(),
+                            self.position,
+                        )
+                    }
+                    (_, _, _) => (
+                        start_position,
+                        token::Type::from_str(&current_ch.to_string()).unwrap(),
+                        self.position,
+                    ),
+                }
+            }
+            _ => panic!("Unexpected character: {}", self.ch2.unwrap()),
         }
     }
 
-    fn peek_token(&mut self) -> Span {
+    pub(crate) fn peek_token(&mut self) -> Span {
         let saved_position = self.position;
+        let saved_iter = self.input.clone();
+        let ch0 = self.ch0;
+        let ch1 = self.ch1;
+        let ch2 = self.ch2;
+
         let token = self.next_token();
+
         self.position = saved_position; // Restore the position
+        self.input = saved_iter;
+        self.ch0 = ch0;
+        self.ch1 = ch1;
+        self.ch2 = ch2;
 
         token
     }
 
     fn parse_identifier(&mut self) -> token::Type {
-        let start = self.position;
+        let mut ident = String::new();
 
-        while let Some(c) = self.input.chars().nth(self.position) {
-            if c.is_ascii_alphabetic() || c.is_ascii_digit() || c == '_' {
-                self.position += 1;
-            } else {
+        while let Some(c) = self.ch0 {
+            if !c.is_ascii_alphabetic() && !c.is_ascii_digit() && c != '_' {
                 break;
             }
+
+            ident.push(c);
+            self.next_char();
         }
 
-        let ident = self.input[start..self.position].to_string();
         if let Ok(tt) = token::Type::from_str(&ident) {
             tt
         } else {
@@ -104,16 +200,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn parse_string(&mut self) -> String {
-        let start = self.position;
-
-        // Skip first quote
-        self.position += 1;
-
+        let mut string = String::new();
         let mut is_escape = false;
-        while let Some(c) = self.input.chars().nth(self.position) {
-            self.position += 1;
 
+        // Advance to skip the `"`
+        self.next_char();
+        while let Some(c) = self.ch0 {
             if c == '"' && !is_escape {
+                // Consume the closing \"
+                self.next_char();
                 break;
             }
 
@@ -122,54 +217,56 @@ impl<'a> Lexer<'a> {
             } else {
                 is_escape = false;
             }
+
+            string.push(c);
+            self.next_char();
         }
 
-        self.input[start + 1..self.position - 1].to_string()
+        string
     }
     fn parse_comment(&mut self) -> String {
-        let start = self.position;
+        let mut comment = String::new();
 
-        // Skip first two //
-        self.position += 2;
-
-        while let Some(c) = self.input.chars().nth(self.position) {
+        while let Some(c) = self.ch0 {
             if c == '\n' {
                 break;
             }
 
-            self.position += 1;
+            comment.push(c);
+            self.next_char();
         }
 
-        self.input[start + 2..self.position].to_string()
+        comment
     }
 
     fn parse_number(&mut self) -> (f64, bool) {
-        let start = self.position;
         let mut has_fraction = false;
+        let mut number = String::new();
 
-        while let Some(c) = self.input.chars().nth(self.position) {
+        while let Some(c) = self.ch0 {
             if c == '.' {
                 has_fraction = true;
             }
 
-            if c.is_ascii_digit() || c == '.' {
-                self.position += 1;
-            } else {
+            if !c.is_ascii_digit() && c != '.' {
                 break;
             }
+
+            number.push(c);
+            self.next_char();
         }
 
-        let num_str = &self.input[start..self.position];
-        (num_str.parse().unwrap(), has_fraction)
+        (number.parse().unwrap(), has_fraction)
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.input.chars().nth(self.position) {
+        while let Some(c) = self.ch0 {
             if c.is_whitespace() && c != '\n' {
-                self.position += 1;
             } else {
                 break;
             }
+
+            self.next_char();
         }
     }
 }

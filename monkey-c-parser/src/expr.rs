@@ -1,4 +1,5 @@
-use crate::*;
+#![allow(dead_code)]
+use crate::{lexer::Lexer, *};
 
 #[derive(Debug)]
 enum Expr {
@@ -17,65 +18,48 @@ impl Expr {
     }
 }
 
-fn parse_expression(tokenizer: &mut Tokenizer) -> Result<Expr, &'static str> {
-    parse_addition(tokenizer)
+fn parse_expression(lex: &mut Lexer) -> Result<Expr, &'static str> {
+    parse_addition(lex)
 }
 
-fn parse_addition(tokenizer: &mut Tokenizer) -> Result<Expr, &'static str> {
-    let mut init = parse_multiplication(tokenizer)?;
+fn parse_addition(lex: &mut Lexer) -> Result<Expr, &'static str> {
+    let mut init = parse_multiplication(lex)?;
 
-    while let Token {
-        token_type: TokenType::Add,
-        ..
-    } = tokenizer.peek_token()
-    {
-        tokenizer.next_token(); // Consume '+'
-        let next = parse_multiplication(tokenizer)?;
+    while let (_, token::Type::Plus, _) = lex.peek_token() {
+        lex.next_token();
+
+        let next = parse_multiplication(lex)?;
         init = Expr::Add(Box::new(init), Box::new(next));
     }
 
     Ok(init)
 }
 
-fn parse_multiplication(tokenizer: &mut Tokenizer) -> Result<Expr, &'static str> {
-    let mut init = parse_atom(tokenizer)?;
+fn parse_multiplication(lex: &mut Lexer) -> Result<Expr, &'static str> {
+    let mut init = parse_atom(lex)?;
 
-    while let Token {
-        token_type: TokenType::Mul,
-        ..
-    } = tokenizer.peek_token()
-    {
-        tokenizer.next_token(); // Consume '*'
-        let next = parse_atom(tokenizer)?;
+    while let (_, token::Type::Multiply, _) = lex.peek_token() {
+        lex.next_token();
+
+        let next = parse_atom(lex)?;
         init = Expr::Mul(Box::new(init), Box::new(next));
     }
 
     Ok(init)
 }
 
-fn parse_atom(tokenizer: &mut Tokenizer) -> Result<Expr, &'static str> {
-    match tokenizer.next_token() {
-        Token {
-            token_type: TokenType::BasicLiteral,
-            literal,
-            ..
-        } => Ok(Expr::Num(literal.parse().unwrap())),
-        Token {
-            token_type: TokenType::LParen,
-            ..
-        } => {
-            let expr = parse_expression(tokenizer)?;
-            if let Token {
-                token_type: TokenType::RParen,
-                ..
-            } = tokenizer.next_token()
-            {
+fn parse_atom(lex: &mut Lexer) -> Result<Expr, &'static str> {
+    match lex.next_token() {
+        (_, token::Type::Long(n), _) => Ok(Expr::Num(n)),
+        (_, token::Type::LParen, _) => {
+            let expr = parse_expression(lex)?;
+            if let (_, token::Type::RParen, _) = lex.next_token() {
                 Ok(expr)
             } else {
                 Err("Expected closing parenthesis")
             }
         }
-        _ => Err("Unexpected token"),
+        (_, tkn, _) => panic!("Unexpected token: {tkn:?}"),
     }
 }
 
@@ -84,9 +68,9 @@ mod test {
     #[test]
     fn parse_expression() {
         let input = "3 + (2 + 2) * 3";
-        let mut tokenizer = crate::Tokenizer::new(input);
+        let mut lex = crate::lexer::Lexer::new(input);
 
-        let expr = super::parse_expression(&mut tokenizer).unwrap();
+        let expr = super::parse_expression(&mut lex).unwrap();
         assert_eq!(expr.eval(), 15);
     }
 }

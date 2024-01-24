@@ -146,9 +146,6 @@ impl FromStr for Type {
             "{" => Ok(Type::LBracket),
             "}" => Ok(Type::RBracket),
 
-            "Array" => Ok(Type::Array),
-            "Dictionary" => Ok(Type::Dictionary),
-
             "import" => Ok(Type::Import),
             "use" => Ok(Type::Use),
 
