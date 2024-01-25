@@ -6,9 +6,10 @@ use std::str::FromStr;
 pub(crate) struct Lexer<'a> {
     input: std::str::Chars<'a>,
     position: usize,
-    ch2: Option<char>,
-    ch1: Option<char>,
+    peek: Option<token::Span>,
     ch0: Option<char>,
+    ch1: Option<char>,
+    ch2: Option<char>,
 }
 
 impl<'a> Lexer<'a> {
@@ -16,6 +17,7 @@ impl<'a> Lexer<'a> {
         let mut lexer = Lexer {
             input: input.chars(),
             position: 0,
+            peek: None,
             ch0: None,
             ch1: None,
             ch2: None,
@@ -38,6 +40,14 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn next_token(&mut self) -> Span {
+        // If we peeked a token it's already processed so we return that one and reset spen sapn.
+        if let Some(peeked_span) = &self.peek {
+            let span = peeked_span.clone();
+            self.peek = None;
+
+            return span;
+        }
+
         self.skip_whitespace();
 
         let start_position = self.position;
@@ -121,63 +131,46 @@ impl<'a> Lexer<'a> {
             '<' | '>' | '=' => {
                 self.next_char();
 
+                let mut s = String::new();
+
                 match (current_ch, self.ch0, self.ch1) {
                     (_, Some('='), _) => {
                         self.next_char();
 
-                        let mut s = String::new();
                         s.push(current_ch);
                         s.push('=');
-
-                        (
-                            start_position,
-                            token::Type::from_str(&s).unwrap(),
-                            self.position,
-                        )
                     }
                     // <<= and >>=
                     (a, Some(b), Some(c)) if a == b && a != c && c == '=' => {
                         self.next_char();
                         self.next_char();
 
-                        let mut s = String::new();
                         s.push(a);
                         s.push(b);
                         s.push(c);
-
-                        (
-                            start_position,
-                            token::Type::from_str(&s).unwrap(),
-                            self.position,
-                        )
                     }
-                    (_, _, _) => (
-                        start_position,
-                        token::Type::from_str(&current_ch.to_string()).unwrap(),
-                        self.position,
-                    ),
-                }
+                    (_, _, _) => s = current_ch.to_string(),
+                };
+
+                (
+                    start_position,
+                    token::Type::from_str(&s).unwrap(),
+                    self.position,
+                )
             }
             _ => panic!("Unexpected character: {}", self.ch2.unwrap()),
         }
     }
 
     pub(crate) fn peek_token(&mut self) -> Span {
-        let saved_position = self.position;
-        let saved_iter = self.input.clone();
-        let ch0 = self.ch0;
-        let ch1 = self.ch1;
-        let ch2 = self.ch2;
+        if let Some(peeked_span) = &self.peek {
+            return peeked_span.clone();
+        }
 
-        let token = self.next_token();
+        let next = self.next_token();
+        self.peek = Some(next.clone());
 
-        self.position = saved_position; // Restore the position
-        self.input = saved_iter;
-        self.ch0 = ch0;
-        self.ch1 = ch1;
-        self.ch2 = ch2;
-
-        token
+        next
     }
 
     fn parse_identifier(&mut self) -> token::Type {

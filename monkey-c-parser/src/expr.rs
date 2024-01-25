@@ -71,6 +71,7 @@ mod test {
         let mut lex = crate::lexer::Lexer::new(input);
 
         let expr = super::parse_expression(&mut lex).unwrap();
+        println!("{expr:?}");
         assert_eq!(expr.eval(), 15);
     }
 }

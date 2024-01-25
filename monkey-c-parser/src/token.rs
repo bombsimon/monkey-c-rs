@@ -2,7 +2,7 @@
 use std::str::FromStr;
 
 /// Language specification https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Type {
     Newline,
     LParen,     // (
