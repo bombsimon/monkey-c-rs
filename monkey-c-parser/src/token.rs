@@ -139,6 +139,8 @@ impl FromStr for Type {
             "." => Ok(Type::Dot),
             "?" => Ok(Type::QuestionMark),
 
+            // "?" => Ok(Type::TernaryIf),
+            // ":" => Ok(Type::TernaryElse),
             "(" => Ok(Type::LParen),
             ")" => Ok(Type::RParen),
             "[" => Ok(Type::LSqBracket),
@@ -225,8 +227,6 @@ impl FromStr for Type {
             "|=" => Ok(Type::AssignOr),
             "^=" => Ok(Type::AssignXor),
 
-            // "?" => Ok(Type::TernaryIf),
-            // ":" => Ok(Type::TernaryElse),
             "true" => Ok(Type::Boolean(true)),
             "false" => Ok(Type::Boolean(false)),
 
