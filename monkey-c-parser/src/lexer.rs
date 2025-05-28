@@ -217,6 +217,7 @@ impl<'a> Lexer<'a> {
 
         string
     }
+
     fn parse_comment(&mut self) -> String {
         let mut comment = String::new();
 

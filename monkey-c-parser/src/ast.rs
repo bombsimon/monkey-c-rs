@@ -28,6 +28,7 @@ pub enum Ast {
         name: Ident,
         alias: Option<Ident>,
     },
+    BasicLit(String),
     Class {
         name: Ident,
         body: Vec<Ast>,
@@ -39,5 +40,9 @@ pub enum Ast {
         body: Vec<Ast>,
     },
     Variable(Variable),
+    Assign {
+        target: Box<Ast>,
+        value: Box<Ast>,
+    },
     EOF,
 }

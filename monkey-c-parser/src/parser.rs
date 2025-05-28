@@ -5,6 +5,7 @@ use crate::token;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParserError {
     TokenizerError(String),
+    ParseError(String),
 }
 
 pub struct Parser<'a> {
@@ -62,6 +63,10 @@ impl<'a> Parser<'a> {
         )))
     }
 
+    fn consume_token(&mut self) {
+        self.lexer.next_token();
+    }
+
     fn identifier_name(&mut self) -> Result<Ident, ParserError> {
         match self.next_token_type() {
             token::Type::Identifier(name) => Ok(name),
@@ -77,6 +82,10 @@ impl<'a> Parser<'a> {
             token::Type::Import => self.parse_import(),
             token::Type::Class => self.parse_class(),
             token::Type::Function => self.parse_function(),
+            token::Type::Long(v) => Ok(Ast::BasicLit(v.to_string())),
+            token::Type::Double(v) => Ok(Ast::BasicLit(v.to_string())),
+            token::Type::Char(v) => Ok(Ast::BasicLit(v.to_string())),
+            token::Type::String(v) => Ok(Ast::BasicLit(v.to_string())),
             t @ token::Type::Private
             | t @ token::Type::Protected
             | t @ token::Type::Public
@@ -244,9 +253,18 @@ impl<'a> Parser<'a> {
         let mut variable = self.parse_variable()?;
         variable.visibility = visibility;
 
-        self.assert_next_token(&[token::Type::SemiColon])?;
+        if self.next_token_of_type(&[token::Type::Assign]) {
+            self.consume_token();
 
-        Ok(Ast::Variable(variable))
+            Ok(Ast::Assign {
+                target: Box::new(Ast::Variable(variable)),
+                value: Box::new(self.parse_top_level()?),
+            })
+        } else {
+            self.assert_next_token(&[token::Type::SemiColon])?;
+
+            Ok(Ast::Variable(variable))
+        }
     }
 }
 
@@ -262,7 +280,7 @@ mod test {
                 private var _speedConverter as SpeedConverter;
 
                 function onStart(state as Dictionary?) as Void {
-                    var x;
+                    private var x = 3.14;
                 }
             }
         "#;
