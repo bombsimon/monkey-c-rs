@@ -11,7 +11,7 @@ pub(crate) enum Type {
     RSqBracket, // ]
     LBracket,   // {
     RBracket,   // }
-    EOF,
+    Eof,
 
     Identifier(String),
     Comment(String),

@@ -1,77 +1,326 @@
 #![allow(dead_code)]
-use crate::{lexer::Lexer, *};
+use crate::ast::{AssignOperator, Ast, BinaryOperator, LiteralValue, UnaryOperator};
+use crate::parser::{Parser, ParserError};
+use crate::token;
 
-#[derive(Debug)]
-enum Expr {
-    Num(i64),
-    Add(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-}
+impl Parser<'_> {
+    pub(crate) fn parse_expression(&mut self) -> Result<Ast, ParserError> {
+        self.parse_assignment()
+    }
 
-impl Expr {
-    fn eval(&self) -> i64 {
-        match self {
-            Expr::Num(n) => *n,
-            Expr::Add(a, b) => a.eval() + b.eval(),
-            Expr::Mul(a, b) => a.eval() * b.eval(),
+    fn parse_assignment(&mut self) -> Result<Ast, ParserError> {
+        let expr = self.parse_logical_or()?;
+
+        if self.next_token_of_type(&[
+            token::Type::Assign,
+            token::Type::AssignAdd,
+            token::Type::AssignSubtract,
+            token::Type::AssignMultiply,
+            token::Type::AssignDivide,
+            token::Type::AssignRemainder,
+            token::Type::AssignAnd,
+            token::Type::AssignOr,
+            token::Type::AssignXor,
+        ]) {
+            let operator = match self.next_token_type() {
+                token::Type::Assign => AssignOperator::Assign,
+                token::Type::AssignAdd => AssignOperator::AddAssign,
+                token::Type::AssignSubtract => AssignOperator::SubAssign,
+                token::Type::AssignMultiply => AssignOperator::MulAssign,
+                token::Type::AssignDivide => AssignOperator::DivAssign,
+                token::Type::AssignRemainder => AssignOperator::ModAssign,
+                token::Type::AssignAnd => AssignOperator::BitAndAssign,
+                token::Type::AssignOr => AssignOperator::BitOrAssign,
+                token::Type::AssignXor => AssignOperator::BitXorAssign,
+                _ => unreachable!(),
+            };
+
+            let value = self.parse_expression()?;
+            Ok(Ast::Assign {
+                target: Box::new(expr),
+                operator,
+                value: Box::new(value),
+            })
+        } else {
+            Ok(expr)
         }
     }
-}
 
-fn parse_expression(lex: &mut Lexer) -> Result<Expr, &'static str> {
-    parse_addition(lex)
-}
+    fn parse_logical_or(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_logical_and()?;
 
-fn parse_addition(lex: &mut Lexer) -> Result<Expr, &'static str> {
-    let mut init = parse_multiplication(lex)?;
+        while self.next_token_of_type(&[token::Type::LogicalOr]) {
+            self.consume_token();
+            let right = self.parse_logical_and()?;
+            expr = Ast::Binary {
+                left: Box::new(expr),
+                operator: BinaryOperator::Or,
+                right: Box::new(right),
+            };
+        }
 
-    while let (_, token::Type::Plus, _) = lex.peek_token() {
-        lex.next_token();
-
-        let next = parse_multiplication(lex)?;
-        init = Expr::Add(Box::new(init), Box::new(next));
+        Ok(expr)
     }
 
-    Ok(init)
-}
+    fn parse_logical_and(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_equality()?;
 
-fn parse_multiplication(lex: &mut Lexer) -> Result<Expr, &'static str> {
-    let mut init = parse_atom(lex)?;
+        while self.next_token_of_type(&[token::Type::LogicalAnd]) {
+            self.consume_token();
+            let right = self.parse_equality()?;
+            expr = Ast::Binary {
+                left: Box::new(expr),
+                operator: BinaryOperator::And,
+                right: Box::new(right),
+            };
+        }
 
-    while let (_, token::Type::Multiply, _) = lex.peek_token() {
-        lex.next_token();
-
-        let next = parse_atom(lex)?;
-        init = Expr::Mul(Box::new(init), Box::new(next));
+        Ok(expr)
     }
 
-    Ok(init)
-}
+    fn parse_equality(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_comparison()?;
 
-fn parse_atom(lex: &mut Lexer) -> Result<Expr, &'static str> {
-    match lex.next_token() {
-        (_, token::Type::Long(n), _) => Ok(Expr::Num(n)),
-        (_, token::Type::LParen, _) => {
-            let expr = parse_expression(lex)?;
-            if let (_, token::Type::RParen, _) = lex.next_token() {
-                Ok(expr)
+        while self.next_token_of_type(&[token::Type::Equal, token::Type::NotEqual]) {
+            let operator = match self.next_token_type() {
+                token::Type::Equal => BinaryOperator::Eq,
+                token::Type::NotEqual => BinaryOperator::NotEq,
+                _ => unreachable!(),
+            };
+            let right = self.parse_comparison()?;
+            expr = Ast::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_comparison(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_term()?;
+
+        while self.next_token_of_type(&[
+            token::Type::Less,
+            token::Type::LessOrEqual,
+            token::Type::Greater,
+            token::Type::GreaterOrEqual,
+        ]) {
+            let operator = match self.next_token_type() {
+                token::Type::Less => BinaryOperator::Lt,
+                token::Type::LessOrEqual => BinaryOperator::LtEq,
+                token::Type::Greater => BinaryOperator::Gt,
+                token::Type::GreaterOrEqual => BinaryOperator::GtEq,
+                _ => unreachable!(),
+            };
+            let right = self.parse_term()?;
+            expr = Ast::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_term(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_factor()?;
+
+        while self.next_token_of_type(&[token::Type::Plus, token::Type::Minus]) {
+            let operator = match self.next_token_type() {
+                token::Type::Plus => BinaryOperator::Add,
+                token::Type::Minus => BinaryOperator::Sub,
+                _ => unreachable!(),
+            };
+            let right = self.parse_factor()?;
+            expr = Ast::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_factor(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_unary()?;
+
+        while self.next_token_of_type(&[
+            token::Type::Multiply,
+            token::Type::Divide,
+            token::Type::Modulu,
+        ]) {
+            let operator = match self.next_token_type() {
+                token::Type::Multiply => BinaryOperator::Mul,
+                token::Type::Divide => BinaryOperator::Div,
+                token::Type::Modulu => BinaryOperator::Mod,
+                _ => unreachable!(),
+            };
+            let right = self.parse_unary()?;
+            expr = Ast::Binary {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_unary(&mut self) -> Result<Ast, ParserError> {
+        if self.next_token_of_type(&[
+            token::Type::Minus,
+            token::Type::LogicalNot,
+            token::Type::BitwiseNot,
+            token::Type::Increment,
+            token::Type::Decrement,
+        ]) {
+            let operator = match self.next_token_type() {
+                token::Type::Minus => UnaryOperator::Neg,
+                token::Type::LogicalNot => UnaryOperator::Not,
+                token::Type::BitwiseNot => UnaryOperator::BitNot,
+                token::Type::Increment => UnaryOperator::PreInc,
+                token::Type::Decrement => UnaryOperator::PreDec,
+                _ => unreachable!(),
+            };
+            let operand = self.parse_unary()?;
+            Ok(Ast::Unary {
+                operator,
+                operand: Box::new(operand),
+            })
+        } else {
+            self.parse_postfix()
+        }
+    }
+
+    fn parse_postfix(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_primary()?;
+
+        loop {
+            if self.next_token_of_type(&[token::Type::LParen]) {
+                self.consume_token(); // consume (
+                let mut args = Vec::new();
+                if !self.next_token_of_type(&[token::Type::RParen]) {
+                    loop {
+                        args.push(self.parse_expression()?);
+                        if !self.next_token_of_type(&[token::Type::Comma]) {
+                            break;
+                        }
+                        self.consume_token(); // consume ,
+                    }
+                }
+                self.assert_next_token(&[token::Type::RParen])?; // consume )
+                expr = Ast::Call {
+                    callee: Box::new(expr),
+                    args,
+                };
+            } else if self.next_token_of_type(&[token::Type::Dot]) {
+                self.consume_token(); // consume .
+                let (_, token, _) = self.lexer.next_token();
+                if let token::Type::Identifier(name) = token {
+                    expr = Ast::Member {
+                        object: Box::new(expr),
+                        property: name,
+                    };
+                } else {
+                    return Err(ParserError::ParseError(
+                        "Expected identifier after .".to_string(),
+                    ));
+                }
+            } else if self.next_token_of_type(&[token::Type::Increment]) {
+                self.consume_token();
+                expr = Ast::Unary {
+                    operator: UnaryOperator::PostInc,
+                    operand: Box::new(expr),
+                };
+            } else if self.next_token_of_type(&[token::Type::Decrement]) {
+                self.consume_token();
+                expr = Ast::Unary {
+                    operator: UnaryOperator::PostDec,
+                    operand: Box::new(expr),
+                };
             } else {
-                Err("Expected closing parenthesis")
+                break;
             }
         }
-        (_, tkn, _) => panic!("Unexpected token: {tkn:?}"),
+
+        Ok(expr)
     }
-}
 
-#[cfg(test)]
-mod test {
-    #[test]
-    fn parse_expression() {
-        let input = "3 + (2 + 2) * 3";
-        let mut lex = crate::lexer::Lexer::new(input);
-
-        let expr = super::parse_expression(&mut lex).unwrap();
-        println!("{expr:?}");
-        assert_eq!(expr.eval(), 15);
+    fn parse_primary(&mut self) -> Result<Ast, ParserError> {
+        let token = self.next_token_type();
+        match token {
+            token::Type::LParen => {
+                let expr = self.parse_expression()?;
+                self.assert_next_token(&[token::Type::RParen])?;
+                Ok(expr)
+            }
+            token::Type::Me => Ok(Ast::Me),
+            token::Type::Self_ => Ok(Ast::Self_),
+            token::Type::New => {
+                let class_name = self.identifier_name()?;
+                self.assert_next_token(&[token::Type::LParen])?;
+                let mut args = Vec::new();
+                if !self.next_token_of_type(&[token::Type::RParen]) {
+                    loop {
+                        args.push(self.parse_expression()?);
+                        if !self.next_token_of_type(&[token::Type::Comma]) {
+                            break;
+                        }
+                        self.consume_token(); // consume ,
+                    }
+                }
+                self.assert_next_token(&[token::Type::RParen])?;
+                Ok(Ast::New {
+                    class: class_name,
+                    args,
+                })
+            }
+            token::Type::LSqBracket => {
+                let mut elements = Vec::new();
+                if !self.next_token_of_type(&[token::Type::RSqBracket]) {
+                    loop {
+                        elements.push(self.parse_expression()?);
+                        if !self.next_token_of_type(&[token::Type::Comma]) {
+                            break;
+                        }
+                        self.consume_token(); // consume ,
+                    }
+                }
+                self.assert_next_token(&[token::Type::RSqBracket])?;
+                Ok(Ast::Array(elements))
+            }
+            token::Type::LBracket => {
+                let mut pairs = Vec::new();
+                if !self.next_token_of_type(&[token::Type::RBracket]) {
+                    loop {
+                        let key = self.parse_expression()?;
+                        self.assert_next_token(&[token::Type::Colon])?;
+                        let value = self.parse_expression()?;
+                        pairs.push((key, value));
+                        if !self.next_token_of_type(&[token::Type::Comma]) {
+                            break;
+                        }
+                        self.consume_token(); // consume ,
+                    }
+                }
+                self.assert_next_token(&[token::Type::RBracket])?;
+                Ok(Ast::Dictionary(pairs))
+            }
+            token::Type::Identifier(name) => Ok(Ast::Identifier(name)),
+            token::Type::Long(v) => Ok(Ast::BasicLit(LiteralValue::Long(v))),
+            token::Type::Double(v) => Ok(Ast::BasicLit(LiteralValue::Double(v))),
+            token::Type::String(v) => Ok(Ast::BasicLit(LiteralValue::String(v))),
+            token::Type::Boolean(v) => Ok(Ast::BasicLit(LiteralValue::Boolean(v))),
+            token::Type::Null => Ok(Ast::BasicLit(LiteralValue::Null)),
+            token::Type::NaN => Ok(Ast::BasicLit(LiteralValue::NaN)),
+            _ => Err(ParserError::ParseError(format!(
+                "Unexpected token in primary expression: {:?}",
+                token
+            ))),
+        }
     }
 }

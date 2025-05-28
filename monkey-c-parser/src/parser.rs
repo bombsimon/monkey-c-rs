@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::ast::{self, Ast, Ident, Type, Variable, Visibility};
+use crate::ast::{self, Ast, Ident, Type, Variable, AssignOperator, LiteralValue};
 use crate::token;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,7 +9,7 @@ pub enum ParserError {
 }
 
 pub struct Parser<'a> {
-    lexer: crate::lexer::Lexer<'a>,
+    pub(crate) lexer: crate::lexer::Lexer<'a>,
 }
 
 impl<'a> Parser<'a> {
@@ -19,12 +19,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse(&mut self) -> Result<Ast, ParserError> {
+    pub fn parse(&mut self) -> Result<Ast, ParserError> {
         let mut ast = Vec::new();
 
         loop {
             let statement = self.parse_top_level()?;
-            if statement == Ast::EOF {
+            if statement == Ast::Eof {
                 break;
             }
 
@@ -34,12 +34,12 @@ impl<'a> Parser<'a> {
         Ok(Ast::Document(ast))
     }
 
-    fn next_token_type(&mut self) -> token::Type {
+    pub(crate) fn next_token_type(&mut self) -> token::Type {
         let (_, t, _) = self.lexer.next_token();
         t
     }
 
-    fn next_token_of_type(&mut self, expect: &[token::Type]) -> bool {
+    pub(crate) fn next_token_of_type(&mut self, expect: &[token::Type]) -> bool {
         let (_, tkn, _) = self.lexer.peek_token();
         for expected in expect {
             if tkn == *expected {
@@ -50,7 +50,7 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn assert_next_token(&mut self, expect: &[token::Type]) -> Result<token::Type, ParserError> {
+    pub(crate) fn assert_next_token(&mut self, expect: &[token::Type]) -> Result<token::Type, ParserError> {
         let (_, tkn, _) = self.lexer.next_token();
         for expected in expect {
             if tkn == *expected {
@@ -63,17 +63,32 @@ impl<'a> Parser<'a> {
         )))
     }
 
-    fn consume_token(&mut self) {
+    pub(crate) fn consume_token(&mut self) {
         self.lexer.next_token();
     }
 
-    fn identifier_name(&mut self) -> Result<Ident, ParserError> {
-        match self.next_token_type() {
-            token::Type::Identifier(name) => Ok(name),
-            tkn => Err(ParserError::TokenizerError(format!(
+    pub(crate) fn identifier_name(&mut self) -> Result<Ident, ParserError> {
+        let mut name = match self.next_token_type() {
+            token::Type::Identifier(name) => name,
+            tkn => return Err(ParserError::TokenizerError(format!(
                 "got unexpected token: '{tkn:?}'"
             ))),
+        };
+
+        while self.next_token_of_type(&[token::Type::Dot]) {
+            self.consume_token(); // consume dot
+            match self.next_token_type() {
+                token::Type::Identifier(part) => {
+                    name.push('.');
+                    name.push_str(&part);
+                },
+                tkn => return Err(ParserError::TokenizerError(format!(
+                    "got unexpected token after dot: '{tkn:?}'"
+                ))),
+            }
         }
+
+        Ok(name)
     }
 
     fn parse_top_level(&mut self) -> Result<Ast, ParserError> {
@@ -82,17 +97,17 @@ impl<'a> Parser<'a> {
             token::Type::Import => self.parse_import(),
             token::Type::Class => self.parse_class(),
             token::Type::Function => self.parse_function(),
-            token::Type::Long(v) => Ok(Ast::BasicLit(v.to_string())),
-            token::Type::Double(v) => Ok(Ast::BasicLit(v.to_string())),
-            token::Type::Char(v) => Ok(Ast::BasicLit(v.to_string())),
-            token::Type::String(v) => Ok(Ast::BasicLit(v.to_string())),
+            token::Type::Long(v) => Ok(Ast::BasicLit(LiteralValue::Long(v))),
+            token::Type::Double(v) => Ok(Ast::BasicLit(LiteralValue::Double(v))),
+            token::Type::String(v) => Ok(Ast::BasicLit(LiteralValue::String(v))),
+            token::Type::Boolean(v) => Ok(Ast::BasicLit(LiteralValue::Boolean(v))),
             t @ token::Type::Private
             | t @ token::Type::Protected
             | t @ token::Type::Public
             | t @ token::Type::Var => self.parse_variable_binding(t),
             t => {
                 dbg!(t);
-                Ok(Ast::EOF)
+                Ok(Ast::Eof)
             }
         }
     }
@@ -129,60 +144,97 @@ impl<'a> Parser<'a> {
     fn parse_class(&mut self) -> Result<Ast, ParserError> {
         let name = self.identifier_name()?;
 
-        while !self.next_token_of_type(&[token::Type::LBracket]) {
-            self.lexer.next_token();
-        }
+        // Parse extends clause if present
+        let extends = if self.next_token_of_type(&[token::Type::Extends]) {
+            self.consume_token();
+            Some(self.identifier_name()?)
+        } else {
+            None
+        };
 
-        self.lexer.next_token(); // Consume RBracket
+        self.assert_next_token(&[token::Type::LBracket])?;
 
         let mut body = vec![];
-        loop {
-            let statement = self.parse_top_level()?;
-            if statement == Ast::EOF {
-                break;
+        while !self.next_token_of_type(&[token::Type::RBracket]) {
+            if self.next_token_of_type(&[token::Type::Eof]) {
+                return Err(ParserError::ParseError("Unexpected end of file".to_string()));
             }
 
-            body.push(statement);
+            match self.lexer.peek_token() {
+                (_, token::Type::Function, _) => body.push(self.parse_function()?),
+                (_, t @ (token::Type::Private | token::Type::Protected | token::Type::Public | token::Type::Var), _) => {
+                    self.consume_token(); // Consume the token we peeked
+                    body.push(self.parse_variable_binding(t)?);
+                }
+                (_, token::Type::Newline, _) => {
+                    self.consume_token();
+                    continue;
+                }
+                (_, t, _) => return Err(ParserError::ParseError(format!("Unexpected token in class body: {:?}", t))),
+            }
         }
 
-        Ok(Ast::Class { name, body })
+        self.assert_next_token(&[token::Type::RBracket])?;
+        Ok(Ast::Class { name, extends, body })
     }
 
     fn parse_function(&mut self) -> Result<Ast, ParserError> {
+        self.consume_token(); // consume 'function'
         let name = self.identifier_name()?;
         self.assert_next_token(&[token::Type::LParen])?;
 
         let mut args = vec![];
-
         while !self.next_token_of_type(&[token::Type::RParen]) {
+            if !args.is_empty() {
+                self.assert_next_token(&[token::Type::Comma])?;
+            }
             let variable = self.parse_variable()?;
             args.push(variable);
-
-            if self.next_token_of_type(&[token::Type::Comma]) {
-                self.lexer.next_token(); // Consume Comma
-            }
         }
-
-        self.lexer.next_token(); // Consume LParen
+        self.assert_next_token(&[token::Type::RParen])?;
 
         let returns = if self.next_token_of_type(&[token::Type::As]) {
-            self.lexer.next_token(); // Consume As
+            self.consume_token();
             Some(self.parse_type()?)
         } else {
             None
         };
 
-        self.lexer.next_token(); // Consume LBrace
+        // Parse function body
+        self.assert_next_token(&[token::Type::LBracket])?;
 
-        let mut body = vec![];
-        loop {
-            let statement = self.parse_top_level()?;
-            if statement == Ast::EOF {
+        let mut body = Vec::new();
+        while !self.next_token_of_type(&[token::Type::RBracket]) {
+            if self.next_token_of_type(&[token::Type::Eof]) {
+                return Err(ParserError::ParseError("Unexpected end of file".to_string()));
+            }
+
+            // Skip newlines
+            while self.next_token_of_type(&[token::Type::Newline]) {
+                self.consume_token();
+            }
+
+            // If we hit the closing bracket after skipping newlines, we're done
+            if self.next_token_of_type(&[token::Type::RBracket]) {
                 break;
             }
 
+            let statement = match self.lexer.peek_token() {
+                (_, token::Type::Private | token::Type::Protected | token::Type::Public, _) => {
+                    return Err(ParserError::TokenizerError(
+                        "Visibility modifiers not allowed for local variables".to_string()
+                    ));
+                },
+                (_, token::Type::Var, _) => {
+                    self.consume_token();
+                    self.parse_variable_binding(token::Type::Var)?
+                },
+                _ => self.parse_statement()?
+            };
             body.push(statement);
         }
+
+        self.assert_next_token(&[token::Type::RBracket])?;
 
         Ok(Ast::Function {
             name,
@@ -193,14 +245,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_variable(&mut self) -> Result<Variable, ParserError> {
-        let name = match self.next_token_type() {
-            token::Type::Identifier(name) => name,
-            tkn => {
-                return Err(ParserError::TokenizerError(format!(
-                    "got unexpected token: '{tkn:?}'"
-                )))
-            }
-        };
+        let name = self.identifier_name()?;
 
         let type_ = match self.lexer.peek_token() {
             (_, token::Type::As, _) => {
@@ -243,33 +288,213 @@ impl<'a> Parser<'a> {
             token::Type::Private => Some(ast::Visibility::Private),
             token::Type::Protected => Some(ast::Visibility::Protected),
             token::Type::Public => Some(ast::Visibility::Public),
-            _ => None,
+            token::Type::Var => None,
+            _ => return Err(ParserError::TokenizerError(format!(
+                "Expected visibility modifier or var, got {:?}", 
+                visibility_token
+            ))),
         };
 
+        // If we got a visibility modifier, consume 'var'
         if visibility.is_some() {
-            self.lexer.next_token(); // Consume `var`
+            if !self.next_token_of_type(&[token::Type::Var]) {
+                return Err(ParserError::TokenizerError(
+                    "Expected 'var' after visibility modifier".to_string()
+                ));
+            }
+            self.consume_token(); // Consume 'var'
         }
 
+        // Now parse the variable declaration
         let mut variable = self.parse_variable()?;
         variable.visibility = visibility;
+
+        let mut ast = Ast::Variable(variable);
 
         if self.next_token_of_type(&[token::Type::Assign]) {
             self.consume_token();
 
-            Ok(Ast::Assign {
-                target: Box::new(Ast::Variable(variable)),
-                value: Box::new(self.parse_top_level()?),
-            })
-        } else {
-            self.assert_next_token(&[token::Type::SemiColon])?;
-
-            Ok(Ast::Variable(variable))
+            ast = Ast::Assign {
+                target: Box::new(ast),
+                operator: AssignOperator::Assign,
+                value: Box::new(self.parse_expression()?),
+            };
         }
+
+        self.assert_next_token(&[token::Type::SemiColon])?;
+        Ok(ast)
+    }
+
+    fn parse_statement(&mut self) -> Result<Ast, ParserError> {
+        match self.lexer.peek_token() {
+            (_, token::Type::If, _) => self.parse_if_statement(),
+            (_, token::Type::While, _) => self.parse_while_statement(),
+            (_, token::Type::For, _) => self.parse_for_statement(),
+            (_, token::Type::Return, _) => self.parse_return_statement(),
+            (_, token::Type::Break, _) => {
+                self.consume_token();
+                self.assert_next_token(&[token::Type::SemiColon])?;
+                Ok(Ast::Break)
+            }
+            (_, token::Type::Continue, _) => {
+                self.consume_token();
+                self.assert_next_token(&[token::Type::SemiColon])?;
+                Ok(Ast::Continue)
+            }
+            _ => self.parse_expression_statement(),
+        }
+    }
+
+    fn parse_if_statement(&mut self) -> Result<Ast, ParserError> {
+        self.consume_token(); // consume if
+        self.assert_next_token(&[token::Type::LParen])?;
+        let condition = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::RParen])?;
+
+        let then_branch = self.parse_block()?;
+
+        let else_branch = if self.next_token_of_type(&[token::Type::Else]) {
+            self.consume_token();
+            Some(Box::new(if self.next_token_of_type(&[token::Type::If]) {
+                self.parse_if_statement()?
+            } else {
+                self.parse_block()?
+            }))
+        } else {
+            None
+        };
+
+        Ok(Ast::If {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            else_branch,
+        })
+    }
+
+    fn parse_while_statement(&mut self) -> Result<Ast, ParserError> {
+        self.consume_token(); // consume while
+        self.assert_next_token(&[token::Type::LParen])?;
+        let condition = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::RParen])?;
+
+        let body = self.parse_block()?;
+
+        Ok(Ast::While {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_for_statement(&mut self) -> Result<Ast, ParserError> {
+        self.consume_token(); // consume for
+        self.assert_next_token(&[token::Type::LParen])?;
+
+        // Initializer
+        let init = if !self.next_token_of_type(&[token::Type::SemiColon]) {
+            let init = self.parse_expression()?;
+            Some(Box::new(init))
+        } else {
+            None
+        };
+        self.assert_next_token(&[token::Type::SemiColon])?;
+
+        // Condition
+        let condition = if !self.next_token_of_type(&[token::Type::SemiColon]) {
+            let cond = self.parse_expression()?;
+            Some(Box::new(cond))
+        } else {
+            None
+        };
+        self.assert_next_token(&[token::Type::SemiColon])?;
+
+        // Increment
+        let update = if !self.next_token_of_type(&[token::Type::RParen]) {
+            let update = self.parse_expression()?;
+            Some(Box::new(update))
+        } else {
+            None
+        };
+        self.assert_next_token(&[token::Type::RParen])?;
+
+        let body = self.parse_block()?;
+
+        Ok(Ast::For {
+            init,
+            condition,
+            update,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_return_statement(&mut self) -> Result<Ast, ParserError> {
+        self.consume_token(); // consume return
+
+        let value = if !self.next_token_of_type(&[token::Type::SemiColon]) {
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        self.assert_next_token(&[token::Type::SemiColon])?;
+
+        Ok(Ast::Return(value))
+    }
+
+    fn parse_expression_statement(&mut self) -> Result<Ast, ParserError> {
+        let expr = match self.lexer.peek_token() {
+            (_, token::Type::Identifier(_), _) => self.parse_expression()?,
+            (_, t, _) => return Err(ParserError::TokenizerError(format!(
+                "Unexpected token in expression statement: {:?}", t
+            ))),
+        };
+        self.assert_next_token(&[token::Type::SemiColon])?;
+        Ok(expr)
+    }
+
+    fn parse_block(&mut self) -> Result<Ast, ParserError> {
+        self.assert_next_token(&[token::Type::LBracket])?;
+        let mut statements = Vec::new();
+
+        while !self.next_token_of_type(&[token::Type::RBracket]) {
+            if self.next_token_of_type(&[token::Type::Eof]) {
+                return Err(ParserError::ParseError("Unexpected end of file".to_string()));
+            }
+
+            // Skip newlines
+            while self.next_token_of_type(&[token::Type::Newline]) {
+                self.consume_token();
+            }
+
+            // If we hit the closing bracket after skipping newlines, we're done
+            if self.next_token_of_type(&[token::Type::RBracket]) {
+                break;
+            }
+
+            let statement = match self.lexer.peek_token() {
+                (_, token::Type::Private | token::Type::Protected | token::Type::Public, _) => {
+                    return Err(ParserError::TokenizerError(
+                        "Visibility modifiers not allowed for local variables".to_string()
+                    ));
+                },
+                (_, token::Type::Var, _) => {
+                    self.consume_token(); // consume var
+                    self.parse_variable_binding(token::Type::Var)?
+                },
+                _ => self.parse_statement()?
+            };
+            statements.push(statement);
+        }
+
+        self.assert_next_token(&[token::Type::RBracket])?;
+        Ok(Ast::Block(statements))
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::ast::Visibility;
+
     #[test]
     fn test_parse_to_ast() {
         let input = r#"
@@ -280,13 +505,73 @@ mod test {
                 private var _speedConverter as SpeedConverter;
 
                 function onStart(state as Dictionary?) as Void {
-                    private var x = 3.14;
+                    var x = 3.14;
                 }
             }
         "#;
-        let mut parser = super::Parser::new(input);
-        let ast = parser.parse();
+        let mut parser = Parser::new(input);
+        let ast = match parser.parse() {
+            Ok(ast) => ast,
+            Err(e) => {
+                println!("Before error:");
+                println!("Current token: {:?}", parser.next_token_type());
+                println!("Next token: {:?}", parser.lexer.peek_token());
+                panic!("Failed to parse: {e:?}");
+            }
+        };
 
-        println!("{ast:#?}");
+        // Validate the AST matches what we expect
+        if let Ast::Document(nodes) = ast {
+            assert_eq!(nodes.len(), 3); // Two imports and one class
+
+            // Check imports
+            if let Ast::Import { name, alias } = &nodes[0] {
+                assert_eq!(name, "Toybox.Graphics");
+                assert_eq!(alias, &None);
+            } else {
+                panic!("Expected first node to be an import");
+            }
+
+            if let Ast::Import { name, alias } = &nodes[1] {
+                assert_eq!(name, "Toybox.WatchUi");
+                assert_eq!(alias, &Some("Ui".to_string()));
+            } else {
+                panic!("Expected second node to be an import");
+            }
+
+            // Check class definition
+            if let Ast::Class { name, extends, body } = &nodes[2] {
+                assert_eq!(name, "PaceCalculatorApp");
+                assert_eq!(extends, &Some("Application.AppBase".to_string()));
+
+                // Validate class body
+                assert_eq!(body.len(), 2); // One field and one method
+
+                // Check the field
+                if let Ast::Variable(var) = &body[0] {
+                    assert_eq!(var.name, "_speedConverter");
+                    assert_eq!(var.visibility, Some(Visibility::Private));
+                    assert_eq!(var.type_.as_ref().map(|t| &t.ident), Some(&"SpeedConverter".to_string()));
+                } else {
+                    panic!("Expected first class member to be a field");
+                }
+
+                // Check the function
+                if let Ast::Function { name, args, returns, body: _ } = &body[1] {
+                    assert_eq!(name, "onStart");
+                    assert_eq!(args.len(), 1);
+                    assert_eq!(args[0].name, "state");
+                    assert_eq!(args[0].type_.as_ref().map(|t| &t.ident), Some(&"Dictionary".to_string()));
+                    assert!(args[0].type_.as_ref().unwrap().optional);
+                    assert_eq!(returns.as_ref().map(|t| &t.ident), Some(&"Void".to_string()));
+                } else {
+                    panic!("Expected second class member to be a function");
+                }
+            } else {
+                panic!("Expected third node to be a class");
+            }
+        } else {
+            panic!("Expected root node to be a Document");
+        }
     }
 }

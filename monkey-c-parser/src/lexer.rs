@@ -53,7 +53,7 @@ impl<'a> Lexer<'a> {
         let start_position = self.position;
 
         if self.ch0.is_none() {
-            return (start_position, token::Type::EOF, self.position);
+            return (start_position, token::Type::Eof, self.position);
         }
 
         let current_ch = self.ch0.unwrap();
@@ -310,7 +310,7 @@ function getApp() as PaceCalculatorApp {
             let (start, token_type, end) = tokenizer.next_token();
             println!("token: {start:<4} -> {end:<4}: {token_type:?}");
 
-            if token_type == crate::token::Type::EOF {
+            if token_type == crate::token::Type::Eof {
                 break;
             }
         }
