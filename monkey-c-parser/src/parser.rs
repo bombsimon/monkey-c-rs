@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use crate::ast::{self, Ast, Ident, Type, Variable, AssignOperator, LiteralValue};
+use crate::ast::{self, AssignOperator, Ast, Ident, LiteralValue, Type, Variable};
 use crate::token;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,7 +50,10 @@ impl<'a> Parser<'a> {
         false
     }
 
-    pub(crate) fn assert_next_token(&mut self, expect: &[token::Type]) -> Result<token::Type, ParserError> {
+    pub(crate) fn assert_next_token(
+        &mut self,
+        expect: &[token::Type],
+    ) -> Result<token::Type, ParserError> {
         let (_, tkn, _) = self.lexer.next_token();
         for expected in expect {
             if tkn == *expected {
@@ -59,7 +62,7 @@ impl<'a> Parser<'a> {
         }
 
         Err(ParserError::TokenizerError(format!(
-            "got unexpected token: '{tkn:?}'"
+            "got unexpected token from `assert_next_token`: '{tkn:?}', expected one of: {expect:?}",
         )))
     }
 
@@ -70,9 +73,11 @@ impl<'a> Parser<'a> {
     pub(crate) fn identifier_name(&mut self) -> Result<Ident, ParserError> {
         let mut name = match self.next_token_type() {
             token::Type::Identifier(name) => name,
-            tkn => return Err(ParserError::TokenizerError(format!(
-                "got unexpected token: '{tkn:?}'"
-            ))),
+            tkn => {
+                return Err(ParserError::TokenizerError(format!(
+                    "got unexpected token from `identifier_name`: '{tkn:?}'"
+                )))
+            }
         };
 
         while self.next_token_of_type(&[token::Type::Dot]) {
@@ -81,10 +86,12 @@ impl<'a> Parser<'a> {
                 token::Type::Identifier(part) => {
                     name.push('.');
                     name.push_str(&part);
-                },
-                tkn => return Err(ParserError::TokenizerError(format!(
-                    "got unexpected token after dot: '{tkn:?}'"
-                ))),
+                }
+                tkn => {
+                    return Err(ParserError::TokenizerError(format!(
+                        "got unexpected token after dot: '{tkn:?}'"
+                    )))
+                }
             }
         }
 
@@ -157,12 +164,21 @@ impl<'a> Parser<'a> {
         let mut body = vec![];
         while !self.next_token_of_type(&[token::Type::RBracket]) {
             if self.next_token_of_type(&[token::Type::Eof]) {
-                return Err(ParserError::ParseError("Unexpected end of file".to_string()));
+                return Err(ParserError::ParseError(
+                    "Unexpected end of file".to_string(),
+                ));
             }
 
             match self.lexer.peek_token() {
                 (_, token::Type::Function, _) => body.push(self.parse_function()?),
-                (_, t @ (token::Type::Private | token::Type::Protected | token::Type::Public | token::Type::Var), _) => {
+                (
+                    _,
+                    t @ (token::Type::Private
+                    | token::Type::Protected
+                    | token::Type::Public
+                    | token::Type::Var),
+                    _,
+                ) => {
                     self.consume_token(); // Consume the token we peeked
                     body.push(self.parse_variable_binding(t)?);
                 }
@@ -170,12 +186,21 @@ impl<'a> Parser<'a> {
                     self.consume_token();
                     continue;
                 }
-                (_, t, _) => return Err(ParserError::ParseError(format!("Unexpected token in class body: {:?}", t))),
+                (_, t, _) => {
+                    return Err(ParserError::ParseError(format!(
+                        "Unexpected token in class body: {:?}",
+                        t
+                    )))
+                }
             }
         }
 
         self.assert_next_token(&[token::Type::RBracket])?;
-        Ok(Ast::Class { name, extends, body })
+        Ok(Ast::Class {
+            name,
+            extends,
+            body,
+        })
     }
 
     fn parse_function(&mut self) -> Result<Ast, ParserError> {
@@ -206,7 +231,9 @@ impl<'a> Parser<'a> {
         let mut body = Vec::new();
         while !self.next_token_of_type(&[token::Type::RBracket]) {
             if self.next_token_of_type(&[token::Type::Eof]) {
-                return Err(ParserError::ParseError("Unexpected end of file".to_string()));
+                return Err(ParserError::ParseError(
+                    "Unexpected end of file".to_string(),
+                ));
             }
 
             // Skip newlines
@@ -222,14 +249,14 @@ impl<'a> Parser<'a> {
             let statement = match self.lexer.peek_token() {
                 (_, token::Type::Private | token::Type::Protected | token::Type::Public, _) => {
                     return Err(ParserError::TokenizerError(
-                        "Visibility modifiers not allowed for local variables".to_string()
+                        "Visibility modifiers not allowed for local variables".to_string(),
                     ));
-                },
+                }
                 (_, token::Type::Var, _) => {
                     self.consume_token();
                     self.parse_variable_binding(token::Type::Var)?
-                },
-                _ => self.parse_statement()?
+                }
+                _ => self.parse_statement()?,
             };
             body.push(statement);
         }
@@ -267,7 +294,7 @@ impl<'a> Parser<'a> {
             token::Type::Identifier(type_) => type_,
             tkn => {
                 return Err(ParserError::TokenizerError(format!(
-                    "got unexpected token: '{tkn:?}'"
+                    "got unexpected token from `parse_type`: '{tkn:?}'"
                 )))
             }
         };
@@ -289,17 +316,19 @@ impl<'a> Parser<'a> {
             token::Type::Protected => Some(ast::Visibility::Protected),
             token::Type::Public => Some(ast::Visibility::Public),
             token::Type::Var => None,
-            _ => return Err(ParserError::TokenizerError(format!(
-                "Expected visibility modifier or var, got {:?}", 
-                visibility_token
-            ))),
+            _ => {
+                return Err(ParserError::TokenizerError(format!(
+                    "Expected visibility modifier or var, got {:?}",
+                    visibility_token
+                )))
+            }
         };
 
         // If we got a visibility modifier, consume 'var'
         if visibility.is_some() {
             if !self.next_token_of_type(&[token::Type::Var]) {
                 return Err(ParserError::TokenizerError(
-                    "Expected 'var' after visibility modifier".to_string()
+                    "Expected 'var' after visibility modifier".to_string(),
                 ));
             }
             self.consume_token(); // Consume 'var'
@@ -443,9 +472,12 @@ impl<'a> Parser<'a> {
     fn parse_expression_statement(&mut self) -> Result<Ast, ParserError> {
         let expr = match self.lexer.peek_token() {
             (_, token::Type::Identifier(_), _) => self.parse_expression()?,
-            (_, t, _) => return Err(ParserError::TokenizerError(format!(
-                "Unexpected token in expression statement: {:?}", t
-            ))),
+            (_, t, _) => {
+                return Err(ParserError::TokenizerError(format!(
+                    "Unexpected token in expression statement: {:?}",
+                    t
+                )))
+            }
         };
         self.assert_next_token(&[token::Type::SemiColon])?;
         Ok(expr)
@@ -457,7 +489,9 @@ impl<'a> Parser<'a> {
 
         while !self.next_token_of_type(&[token::Type::RBracket]) {
             if self.next_token_of_type(&[token::Type::Eof]) {
-                return Err(ParserError::ParseError("Unexpected end of file".to_string()));
+                return Err(ParserError::ParseError(
+                    "Unexpected end of file".to_string(),
+                ));
             }
 
             // Skip newlines
@@ -473,14 +507,14 @@ impl<'a> Parser<'a> {
             let statement = match self.lexer.peek_token() {
                 (_, token::Type::Private | token::Type::Protected | token::Type::Public, _) => {
                     return Err(ParserError::TokenizerError(
-                        "Visibility modifiers not allowed for local variables".to_string()
+                        "Visibility modifiers not allowed for local variables".to_string(),
                     ));
-                },
+                }
                 (_, token::Type::Var, _) => {
                     self.consume_token(); // consume var
                     self.parse_variable_binding(token::Type::Var)?
-                },
-                _ => self.parse_statement()?
+                }
+                _ => self.parse_statement()?,
             };
             statements.push(statement);
         }
@@ -540,7 +574,12 @@ mod test {
             }
 
             // Check class definition
-            if let Ast::Class { name, extends, body } = &nodes[2] {
+            if let Ast::Class {
+                name,
+                extends,
+                body,
+            } = &nodes[2]
+            {
                 assert_eq!(name, "PaceCalculatorApp");
                 assert_eq!(extends, &Some("Application.AppBase".to_string()));
 
@@ -551,19 +590,34 @@ mod test {
                 if let Ast::Variable(var) = &body[0] {
                     assert_eq!(var.name, "_speedConverter");
                     assert_eq!(var.visibility, Some(Visibility::Private));
-                    assert_eq!(var.type_.as_ref().map(|t| &t.ident), Some(&"SpeedConverter".to_string()));
+                    assert_eq!(
+                        var.type_.as_ref().map(|t| &t.ident),
+                        Some(&"SpeedConverter".to_string())
+                    );
                 } else {
                     panic!("Expected first class member to be a field");
                 }
 
                 // Check the function
-                if let Ast::Function { name, args, returns, body: _ } = &body[1] {
+                if let Ast::Function {
+                    name,
+                    args,
+                    returns,
+                    body: _,
+                } = &body[1]
+                {
                     assert_eq!(name, "onStart");
                     assert_eq!(args.len(), 1);
                     assert_eq!(args[0].name, "state");
-                    assert_eq!(args[0].type_.as_ref().map(|t| &t.ident), Some(&"Dictionary".to_string()));
+                    assert_eq!(
+                        args[0].type_.as_ref().map(|t| &t.ident),
+                        Some(&"Dictionary".to_string())
+                    );
                     assert!(args[0].type_.as_ref().unwrap().optional);
-                    assert_eq!(returns.as_ref().map(|t| &t.ident), Some(&"Void".to_string()));
+                    assert_eq!(
+                        returns.as_ref().map(|t| &t.ident),
+                        Some(&"Void".to_string())
+                    );
                 } else {
                     panic!("Expected second class member to be a function");
                 }
