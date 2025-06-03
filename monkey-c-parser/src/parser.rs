@@ -54,7 +54,7 @@ impl<'a> Parser<'a> {
         &mut self,
         expect: &[token::Type],
     ) -> Result<token::Type, ParserError> {
-        let (_, tkn, _) = self.lexer.next_token();
+        let (pos, tkn, literal) = self.lexer.next_token();
         for expected in expect {
             if tkn == *expected {
                 return Ok(tkn);
@@ -62,7 +62,7 @@ impl<'a> Parser<'a> {
         }
 
         Err(ParserError::TokenizerError(format!(
-            "got unexpected token from `assert_next_token`: '{tkn:?}', expected one of: {expect:?}",
+            "got unexpected token from `assert_next_token`: '{tkn:?}' (literal: '{literal}') at position {pos:?}, expected one of: {expect:?}",
         )))
     }
 
@@ -119,12 +119,10 @@ impl<'a> Parser<'a> {
                 // This could be an assignment or expression statement
                 self.parse_expression_statement()
             }
-            t => {
-                Err(ParserError::ParseError(format!(
-                    "Unexpected token at top level: {:?}",
-                    t
-                )))
-            }
+            t => Err(ParserError::ParseError(format!(
+                "Unexpected token at top level: {:?}",
+                t
+            ))),
         }
     }
 
@@ -185,14 +183,33 @@ impl<'a> Parser<'a> {
                 }
                 (
                     _,
-                    t @ (token::Type::Private
-                    | token::Type::Protected
-                    | token::Type::Public
-                    | token::Type::Var),
+                    t @ (token::Type::Private | token::Type::Protected | token::Type::Public),
                     _,
                 ) => {
-                    self.consume_token(); // Consume the token we peeked
-                    body.push(self.parse_variable_binding(t)?);
+                    self.consume_token(); // Consume the visibility modifier
+                                          // Look ahead to see if this is a function or variable
+                    match self.lexer.peek_token() {
+                        (_, token::Type::Function, _) => {
+                            self.consume_token(); // Consume 'function'
+                            let func = self.parse_function()?;
+                            // Add visibility to the function annotations for now
+                            // TODO: Properly handle function visibility
+                            body.push(func);
+                        }
+                        (_, token::Type::Var, _) => {
+                            body.push(self.parse_variable_binding(t)?);
+                        }
+                        (_, unexpected, _) => {
+                            return Err(ParserError::ParseError(format!(
+                                "Expected 'function' or 'var' after visibility modifier, found: {:?}",
+                                unexpected
+                            )));
+                        }
+                    }
+                }
+                (_, token::Type::Var, _) => {
+                    self.consume_token(); // Consume the 'var' token we peeked
+                    body.push(self.parse_variable_binding(token::Type::Var)?);
                 }
                 (_, token::Type::Newline, _) => {
                     self.consume_token();
@@ -232,12 +249,12 @@ impl<'a> Parser<'a> {
             while self.next_token_of_type(&[token::Type::Newline]) {
                 self.consume_token();
             }
-            
+
             // Check if we hit the closing paren after skipping newlines
             if self.next_token_of_type(&[token::Type::RParen]) {
                 break;
             }
-            
+
             if !args.is_empty() {
                 self.assert_next_token(&[token::Type::Comma])?;
                 // Skip newlines after comma
@@ -248,6 +265,12 @@ impl<'a> Parser<'a> {
             let variable = self.parse_variable()?;
             args.push(variable);
         }
+
+        // Skip any newlines before the closing parenthesis
+        while self.next_token_of_type(&[token::Type::Newline]) {
+            self.consume_token();
+        }
+
         self.assert_next_token(&[token::Type::RParen])?;
 
         let returns = if self.next_token_of_type(&[token::Type::As]) {
@@ -336,18 +359,18 @@ impl<'a> Parser<'a> {
         let generic_params = if self.next_token_of_type(&[token::Type::Less]) {
             self.consume_token(); // consume <
             let mut params = Vec::new();
-            
+
             // Parse first parameter
             if !self.next_token_of_type(&[token::Type::Greater]) {
                 params.push(self.parse_type()?);
-                
+
                 // Parse additional parameters
                 while self.next_token_of_type(&[token::Type::Comma]) {
                     self.consume_token(); // consume ,
                     params.push(self.parse_type()?);
                 }
             }
-            
+
             self.assert_next_token(&[token::Type::Greater])?; // consume >
             params
         } else {
@@ -359,10 +382,10 @@ impl<'a> Parser<'a> {
             self.lexer.next_token();
         }
 
-        Ok(Type { 
-            ident, 
+        Ok(Type {
+            ident,
             generic_params,
-            optional 
+            optional,
         })
     }
 

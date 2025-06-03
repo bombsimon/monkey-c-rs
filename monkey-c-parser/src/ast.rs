@@ -43,11 +43,11 @@ pub enum Ast {
         annotations: Vec<String>,
         body: Vec<Ast>,
     },
-    
+
     // Comments and annotations
     Comment(String),
     Annotation(String),
-    
+
     // Statements
     Block(Vec<Ast>),
     If {
@@ -68,7 +68,7 @@ pub enum Ast {
     Return(Option<Box<Ast>>),
     Break,
     Continue,
-    
+
     // Declarations & Assignments
     Variable(Variable),
     Assign {
@@ -76,7 +76,7 @@ pub enum Ast {
         operator: AssignOperator,
         value: Box<Ast>,
     },
-    
+
     // Expressions
     Binary {
         left: Box<Ast>,
@@ -109,7 +109,7 @@ pub enum Ast {
     },
     Array(Vec<Ast>),
     Dictionary(Vec<(Ast, Ast)>),
-    
+
     // Literals & Identifiers
     BasicLit(LiteralValue),
     Identifier(Ident),
@@ -131,50 +131,51 @@ pub enum LiteralValue {
 #[derive(Debug, PartialEq)]
 pub enum BinaryOperator {
     // Arithmetic
-    Add,      // +
-    Sub,      // -
-    Mul,      // *
-    Div,      // /
-    Mod,      // %
-    
+    Add, // +
+    Sub, // -
+    Mul, // *
+    Div, // /
+    Mod, // %
+
     // Comparison
-    Eq,       // ==
-    NotEq,    // !=
-    Lt,       // <
-    LtEq,     // <=
-    Gt,       // >
-    GtEq,     // >=
-    
+    Eq,         // ==
+    NotEq,      // !=
+    Lt,         // <
+    LtEq,       // <=
+    Gt,         // >
+    GtEq,       // >=
+    InstanceOf, // instanceof
+
     // Logical
-    And,      // &&
-    Or,       // ||
-    
+    And, // &&
+    Or,  // ||
+
     // Bitwise
-    BitAnd,   // &
-    BitOr,    // |
-    BitXor,   // ^
+    BitAnd, // &
+    BitOr,  // |
+    BitXor, // ^
 }
 
 #[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
-    Neg,      // -
-    Not,      // !
-    BitNot,   // ~
-    PreInc,   // ++x
-    PreDec,   // --x
-    PostInc,  // x++
-    PostDec,  // x--
+    Neg,     // -
+    Not,     // !
+    BitNot,  // ~
+    PreInc,  // ++x
+    PreDec,  // --x
+    PostInc, // x++
+    PostDec, // x--
 }
 
 #[derive(Debug, PartialEq)]
 pub enum AssignOperator {
-    Assign,          // =
-    AddAssign,       // +=
-    SubAssign,       // -=
-    MulAssign,       // *=
-    DivAssign,      // /=
-    ModAssign,      // %=
-    BitAndAssign,   // &=
-    BitOrAssign,    // |=
-    BitXorAssign,   // ^=
+    Assign,       // =
+    AddAssign,    // +=
+    SubAssign,    // -=
+    MulAssign,    // *=
+    DivAssign,    // /=
+    ModAssign,    // %=
+    BitAndAssign, // &=
+    BitOrAssign,  // |=
+    BitXorAssign, // ^=
 }
