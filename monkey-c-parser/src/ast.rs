@@ -11,6 +11,7 @@ pub enum Visibility {
 #[derive(Debug, PartialEq)]
 pub struct Type {
     pub ident: Ident,
+    pub generic_params: Vec<Type>,
     pub optional: bool,
 }
 
@@ -32,14 +33,20 @@ pub enum Ast {
     Class {
         name: Ident,
         extends: Option<Ident>,
+        annotations: Vec<String>,
         body: Vec<Ast>,
     },
     Function {
         name: Ident,
         args: Vec<Variable>,
         returns: Option<Type>,
+        annotations: Vec<String>,
         body: Vec<Ast>,
     },
+    
+    // Comments and annotations
+    Comment(String),
+    Annotation(String),
     
     // Statements
     Block(Vec<Ast>),
@@ -88,9 +95,17 @@ pub enum Ast {
         object: Box<Ast>,
         property: Ident,
     },
+    Index {
+        object: Box<Ast>,
+        index: Box<Ast>,
+    },
     New {
         class: Ident,
         args: Vec<Ast>,
+    },
+    TypeCast {
+        expr: Box<Ast>,
+        target_type: Type,
     },
     Array(Vec<Ast>),
     Dictionary(Vec<(Ast, Ast)>),

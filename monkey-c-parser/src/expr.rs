@@ -99,7 +99,7 @@ impl Parser<'_> {
     }
 
     fn parse_comparison(&mut self) -> Result<Ast, ParserError> {
-        let mut expr = self.parse_term()?;
+        let mut expr = self.parse_cast()?;
 
         while self.next_token_of_type(&[
             token::Type::Less,
@@ -114,11 +114,26 @@ impl Parser<'_> {
                 token::Type::GreaterOrEqual => BinaryOperator::GtEq,
                 _ => unreachable!(),
             };
-            let right = self.parse_term()?;
+            let right = self.parse_cast()?;
             expr = Ast::Binary {
                 left: Box::new(expr),
                 operator,
                 right: Box::new(right),
+            };
+        }
+
+        Ok(expr)
+    }
+
+    fn parse_cast(&mut self) -> Result<Ast, ParserError> {
+        let mut expr = self.parse_term()?;
+
+        while self.next_token_of_type(&[token::Type::As]) {
+            self.consume_token(); // consume 'as'
+            let target_type = self.parse_type()?;
+            expr = Ast::TypeCast {
+                expr: Box::new(expr),
+                target_type,
             };
         }
 
@@ -134,6 +149,12 @@ impl Parser<'_> {
                 token::Type::Minus => BinaryOperator::Sub,
                 _ => unreachable!(),
             };
+            
+            // Skip newlines after operator
+            while self.next_token_of_type(&[token::Type::Newline]) {
+                self.consume_token();
+            }
+            
             let right = self.parse_factor()?;
             expr = Ast::Binary {
                 left: Box::new(expr),
@@ -159,6 +180,12 @@ impl Parser<'_> {
                 token::Type::Modulu => BinaryOperator::Mod,
                 _ => unreachable!(),
             };
+            
+            // Skip newlines after operator
+            while self.next_token_of_type(&[token::Type::Newline]) {
+                self.consume_token();
+            }
+            
             let right = self.parse_unary()?;
             expr = Ast::Binary {
                 left: Box::new(expr),
@@ -230,6 +257,14 @@ impl Parser<'_> {
                         "Expected identifier after .".to_string(),
                     ));
                 }
+            } else if self.next_token_of_type(&[token::Type::LSqBracket]) {
+                self.consume_token(); // consume [
+                let index = self.parse_expression()?;
+                self.assert_next_token(&[token::Type::RSqBracket])?; // consume ]
+                expr = Ast::Index {
+                    object: Box::new(expr),
+                    index: Box::new(index),
+                };
             } else if self.next_token_of_type(&[token::Type::Increment]) {
                 self.consume_token();
                 expr = Ast::Unary {
@@ -251,6 +286,11 @@ impl Parser<'_> {
     }
 
     fn parse_primary(&mut self) -> Result<Ast, ParserError> {
+        // Skip any newlines before parsing primary expression
+        while self.next_token_of_type(&[token::Type::Newline]) {
+            self.consume_token();
+        }
+        
         let token = self.next_token_type();
         match token {
             token::Type::LParen => {
@@ -281,15 +321,43 @@ impl Parser<'_> {
             }
             token::Type::LSqBracket => {
                 let mut elements = Vec::new();
+                
+                // Skip newlines after opening bracket
+                while self.next_token_of_type(&[token::Type::Newline]) {
+                    self.consume_token();
+                }
+                
                 if !self.next_token_of_type(&[token::Type::RSqBracket]) {
                     loop {
                         elements.push(self.parse_expression()?);
+                        
+                        // Skip newlines after element
+                        while self.next_token_of_type(&[token::Type::Newline]) {
+                            self.consume_token();
+                        }
+                        
                         if !self.next_token_of_type(&[token::Type::Comma]) {
                             break;
                         }
                         self.consume_token(); // consume ,
+                        
+                        // Skip newlines after comma
+                        while self.next_token_of_type(&[token::Type::Newline]) {
+                            self.consume_token();
+                        }
+                        
+                        // Check for trailing comma (closing bracket after comma and newlines)
+                        if self.next_token_of_type(&[token::Type::RSqBracket]) {
+                            break;
+                        }
                     }
                 }
+                
+                // Skip newlines before closing bracket
+                while self.next_token_of_type(&[token::Type::Newline]) {
+                    self.consume_token();
+                }
+                
                 self.assert_next_token(&[token::Type::RSqBracket])?;
                 Ok(Ast::Array(elements))
             }

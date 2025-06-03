@@ -63,6 +63,15 @@ impl<'a> Lexer<'a> {
                 self.next_char();
                 (start_position, token::Type::Newline, self.position)
             }
+            '(' if self.ch1 == Some(':') => {
+                // Parse annotation (:annotation)
+                let annotation = self.parse_annotation();
+                (
+                    start_position,
+                    token::Type::Annotation(annotation),
+                    self.position,
+                )
+            }
             '/' if self.ch1.unwrap() == '/' => {
                 // TODO: Can't just parse comments like this, need context.
                 let comment = self.parse_comment();
@@ -88,7 +97,25 @@ impl<'a> Lexer<'a> {
                     self.position,
                 )
             }
-            '(' | ')' | '[' | ']' | '{' | '}' => {
+            '(' => {
+                // Check for annotation pattern (:
+                if let Some(':') = self.ch1 {
+                    let annotation = self.parse_annotation();
+                    (
+                        start_position,
+                        token::Type::Annotation(annotation),
+                        self.position,
+                    )
+                } else {
+                    self.next_char();
+                    (
+                        start_position,
+                        token::Type::from_str(&current_ch.to_string()).unwrap(),
+                        self.position,
+                    )
+                }
+            }
+            ')' | '[' | ']' | '{' | '}' => {
                 self.next_char();
                 (
                     start_position,
@@ -128,7 +155,7 @@ impl<'a> Lexer<'a> {
                     ),
                 }
             }
-            '<' | '>' | '=' => {
+            '<' | '>' => {
                 self.next_char();
 
                 let mut s = String::new();
@@ -149,12 +176,31 @@ impl<'a> Lexer<'a> {
                         s.push(b);
                         s.push(c);
                     }
+                    ('<', _, _) => return (start_position, token::Type::Less, self.position),
+                    ('>', _, _) => return (start_position, token::Type::Greater, self.position),
                     (_, _, _) => s = current_ch.to_string(),
                 };
 
                 (
                     start_position,
                     token::Type::from_str(&s).unwrap(),
+                    self.position,
+                )
+            }
+            '=' => {
+                self.next_char();
+
+                let s = match self.ch0 {
+                    Some('=') => {
+                        self.next_char();
+                        "=="
+                    }
+                    _ => "=",
+                };
+
+                (
+                    start_position,
+                    token::Type::from_str(s).unwrap(),
                     self.position,
                 )
             }
@@ -231,6 +277,26 @@ impl<'a> Lexer<'a> {
         }
 
         comment
+    }
+
+    fn parse_annotation(&mut self) -> String {
+        let mut annotation = String::new();
+
+        // Skip the opening '(:'
+        self.next_char(); // skip '('
+        self.next_char(); // skip ':'
+
+        while let Some(c) = self.ch0 {
+            if c == ')' {
+                self.next_char(); // consume the closing ')'
+                break;
+            }
+
+            annotation.push(c);
+            self.next_char();
+        }
+
+        annotation
     }
 
     fn parse_number(&mut self) -> (f64, bool) {

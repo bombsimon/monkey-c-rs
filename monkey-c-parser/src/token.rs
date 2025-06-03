@@ -15,6 +15,7 @@ pub(crate) enum Type {
 
     Identifier(String),
     Comment(String),
+    Annotation(String), // (:annotation)
 
     // Characters
     Comma,        // ,
@@ -94,8 +95,8 @@ pub(crate) enum Type {
     // RelationalOperator
     Equal,          // ==
     NotEqual,       // !=
-    Greater,        // >
     Less,           // <
+    Greater,        // >
     GreaterOrEqual, // >=
     LessOrEqual,    // <=
 
@@ -201,8 +202,8 @@ impl FromStr for Type {
 
             "==" => Ok(Type::Equal),
             "!=" => Ok(Type::NotEqual),
-            ">" => Ok(Type::Greater),
             "<" => Ok(Type::Less),
+            ">" => Ok(Type::Greater),
             ">=" => Ok(Type::GreaterOrEqual),
             "<=" => Ok(Type::LessOrEqual),
 

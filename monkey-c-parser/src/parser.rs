@@ -101,6 +101,8 @@ impl<'a> Parser<'a> {
     fn parse_top_level(&mut self) -> Result<Ast, ParserError> {
         match self.next_token_type() {
             token::Type::Newline => self.parse_top_level(),
+            token::Type::Comment(content) => Ok(Ast::Comment(content)),
+            token::Type::Annotation(content) => Ok(Ast::Annotation(content)),
             token::Type::Import => self.parse_import(),
             token::Type::Class => self.parse_class(),
             token::Type::Function => self.parse_function(),
@@ -112,9 +114,16 @@ impl<'a> Parser<'a> {
             | t @ token::Type::Protected
             | t @ token::Type::Public
             | t @ token::Type::Var => self.parse_variable_binding(t),
+            token::Type::Eof => Ok(Ast::Eof),
+            token::Type::Identifier(_) => {
+                // This could be an assignment or expression statement
+                self.parse_expression_statement()
+            }
             t => {
-                dbg!(t);
-                Ok(Ast::Eof)
+                Err(ParserError::ParseError(format!(
+                    "Unexpected token at top level: {:?}",
+                    t
+                )))
             }
         }
     }
@@ -170,7 +179,10 @@ impl<'a> Parser<'a> {
             }
 
             match self.lexer.peek_token() {
-                (_, token::Type::Function, _) => body.push(self.parse_function()?),
+                (_, token::Type::Function, _) => {
+                    self.consume_token(); // Consume the 'function' token we peeked
+                    body.push(self.parse_function()?)
+                }
                 (
                     _,
                     t @ (token::Type::Private
@@ -186,6 +198,12 @@ impl<'a> Parser<'a> {
                     self.consume_token();
                     continue;
                 }
+                (_, token::Type::Comment(_), _) => {
+                    body.push(self.parse_top_level()?);
+                }
+                (_, token::Type::Annotation(_), _) => {
+                    body.push(self.parse_top_level()?);
+                }
                 (_, t, _) => {
                     return Err(ParserError::ParseError(format!(
                         "Unexpected token in class body: {:?}",
@@ -199,19 +217,33 @@ impl<'a> Parser<'a> {
         Ok(Ast::Class {
             name,
             extends,
+            annotations: vec![], // TODO: Parse annotations before class
             body,
         })
     }
 
     fn parse_function(&mut self) -> Result<Ast, ParserError> {
-        self.consume_token(); // consume 'function'
         let name = self.identifier_name()?;
         self.assert_next_token(&[token::Type::LParen])?;
 
         let mut args = vec![];
         while !self.next_token_of_type(&[token::Type::RParen]) {
+            // Skip newlines
+            while self.next_token_of_type(&[token::Type::Newline]) {
+                self.consume_token();
+            }
+            
+            // Check if we hit the closing paren after skipping newlines
+            if self.next_token_of_type(&[token::Type::RParen]) {
+                break;
+            }
+            
             if !args.is_empty() {
                 self.assert_next_token(&[token::Type::Comma])?;
+                // Skip newlines after comma
+                while self.next_token_of_type(&[token::Type::Newline]) {
+                    self.consume_token();
+                }
             }
             let variable = self.parse_variable()?;
             args.push(variable);
@@ -267,6 +299,7 @@ impl<'a> Parser<'a> {
             name,
             args,
             returns,
+            annotations: vec![], // TODO: Parse annotations before function
             body,
         })
     }
@@ -289,7 +322,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_type(&mut self) -> Result<Type, ParserError> {
+    pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
         let ident = match self.next_token_type() {
             token::Type::Identifier(type_) => type_,
             tkn => {
@@ -299,12 +332,38 @@ impl<'a> Parser<'a> {
             }
         };
 
+        // Parse generic parameters if present
+        let generic_params = if self.next_token_of_type(&[token::Type::Less]) {
+            self.consume_token(); // consume <
+            let mut params = Vec::new();
+            
+            // Parse first parameter
+            if !self.next_token_of_type(&[token::Type::Greater]) {
+                params.push(self.parse_type()?);
+                
+                // Parse additional parameters
+                while self.next_token_of_type(&[token::Type::Comma]) {
+                    self.consume_token(); // consume ,
+                    params.push(self.parse_type()?);
+                }
+            }
+            
+            self.assert_next_token(&[token::Type::Greater])?; // consume >
+            params
+        } else {
+            Vec::new()
+        };
+
         let optional = self.next_token_of_type(&[token::Type::QuestionMark]);
         if optional {
             self.lexer.next_token();
         }
 
-        Ok(Type { ident, optional })
+        Ok(Type { 
+            ident, 
+            generic_params,
+            optional 
+        })
     }
 
     fn parse_variable_binding(
@@ -356,6 +415,14 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<Ast, ParserError> {
         match self.lexer.peek_token() {
+            (_, token::Type::Comment(content), _) => {
+                self.consume_token(); // consume the comment token
+                Ok(Ast::Comment(content))
+            }
+            (_, token::Type::Annotation(content), _) => {
+                self.consume_token(); // consume the annotation token
+                Ok(Ast::Annotation(content))
+            }
             (_, token::Type::If, _) => self.parse_if_statement(),
             (_, token::Type::While, _) => self.parse_while_statement(),
             (_, token::Type::For, _) => self.parse_for_statement(),
@@ -470,15 +537,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expression_statement(&mut self) -> Result<Ast, ParserError> {
-        let expr = match self.lexer.peek_token() {
-            (_, token::Type::Identifier(_), _) => self.parse_expression()?,
-            (_, t, _) => {
-                return Err(ParserError::TokenizerError(format!(
-                    "Unexpected token in expression statement: {:?}",
-                    t
-                )))
-            }
-        };
+        let expr = self.parse_expression()?;
         self.assert_next_token(&[token::Type::SemiColon])?;
         Ok(expr)
     }
@@ -577,6 +636,7 @@ mod test {
             if let Ast::Class {
                 name,
                 extends,
+                annotations: _,
                 body,
             } = &nodes[2]
             {
@@ -603,6 +663,7 @@ mod test {
                     name,
                     args,
                     returns,
+                    annotations: _,
                     body: _,
                 } = &body[1]
                 {
