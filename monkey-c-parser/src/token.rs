@@ -1,240 +1,298 @@
-#![allow(dead_code)]
-use std::str::FromStr;
-
 /// Language specification https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Type {
-    Newline,
-    LParen,     // (
-    RParen,     // )
-    LSqBracket, // [
-    RSqBracket, // ]
-    LBracket,   // {
-    RBracket,   // }
-    Eof,
-
-    Identifier(String),
-    Comment(String),
-    Annotation(String), // (:annotation)
-
-    // Characters
-    Comma,        // ,
-    Colon,        // :
-    SemiColon,    // ;
-    Dot,          // .
-    QuestionMark, // ?
-
-    // Types
-    Number(i32), // Not used
-    Float(f32),  // Not used
-    Long(i64),
-    Double(f64),
-    Boolean(bool),
-    Char(char),
-    String(String),
-    Symbol(String),
-
-    // Containers
-    Array,
-    Dictionary,
-
-    // Keywords not in spec?
-    Import,
-    Use,
-
+pub enum Type {
     // Keywords
-    And,
-    As,
-    Break,
-    Catch,
-    Case,
     Class,
-    Const,
-    Continue,
-    Default,
-    Do,
-    Else,
-    Enum,
-    Extends,
-    Finally,
-    For,
     Function,
-    Has,
+    Var,
     Hidden,
-    If,
-    InstanceOf,
-    Me,
+    Static,
+    Const,
+    Using,
     Module,
-    NaN,
-    Native,
+    Enum,
+    If,
+    Else,
+    While,
+    For,
+    Return,
+    Break,
+    Continue,
+    Switch,
+    Case,
+    Default,
+    Try,
+    Catch,
+    Finally,
+    Throw,
+    Has,
+    Is,
+    Where,
+    Do,
+    Until,
+    As,
+    Extends,
+    Import,
     New,
-    Null,
-    Or,
+    InstanceOf,
+
+    // Visibility modifiers
     Private,
     Protected,
     Public,
-    Return,
+
+    // Literals
+    Long(i64),
+    Double(f64),
+    String(String),
+    Boolean(bool),
+    Null,
+    NaN,
+
+    // Identifiers
+    Identifier(String),
+    Me,
     Self_,
-    Static,
-    Switch,
-    Throw,
-    Try,
-    Using,
-    Var,
-    While,
 
-    // ArithmeticOperator
-    Plus,      // +
-    Minus,     // -
-    Multiply,  // *
-    Divide,    // /
-    Modulu,    // %
-    Increment, // ++
-    Decrement, // --
+    // Comments and Annotations
+    Comment(String),
+    Annotation(String),
 
-    // RelationalOperator
-    Equal,          // ==
-    NotEqual,       // !=
-    Less,           // <
-    Greater,        // >
-    GreaterOrEqual, // >=
-    LessOrEqual,    // <=
+    // Operators
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Bang,
+    Tilde,
+    PlusPlus,
+    MinusMinus,
+    EqualEqual,
+    BangEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    And,
+    Or,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Assign,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    ModAssign,
+    BitAndAssign,
+    BitOrAssign,
+    BitXorAssign,
 
-    // LogicalOperator
-    LogicalAnd, // &&
-    LogicalOr,  // ||
-    LogicalNot, // !
+    // Delimiters
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    Comma,
+    Dot,
+    Semicolon,
+    Colon,
+    Question,
 
-    // BitwiseOperator
-    BitwiseAnd, // &
-    BitwiseOr,  // |
-    BitwiseXor, // ^
-    BitwiseNot, // ~
-
-    // AssignmentOperator
-    Assign,           // =
-    AssignAdd,        // +=
-    AssignSubtract,   // -=
-    AssignMultiply,   // *=
-    AssignDivide,     // /=
-    AssignRemainder,  // %=
-    AssignLeftShift,  // <<=
-    AssignRightShift, // >>=
-    AssignAnd,        // &=
-    AssignOr,         // |=
-    AssignXor,        // ^=
-
-    // MiscellaneousOperator
-    TernaryIf,   // ?
-    TernaryElse, // :
+    // Special
+    Newline,
+    Eof,
+    Illegal,
 }
 
-impl FromStr for Type {
-    type Err = ();
-
-    fn from_str(input: &str) -> Result<Type, Self::Err> {
-        match input {
-            "," => Ok(Type::Comma),
-            ":" => Ok(Type::Colon),
-            ";" => Ok(Type::SemiColon),
-            "." => Ok(Type::Dot),
-            "?" => Ok(Type::QuestionMark),
-
-            // "?" => Ok(Type::TernaryIf),
-            // ":" => Ok(Type::TernaryElse),
-            "(" => Ok(Type::LParen),
-            ")" => Ok(Type::RParen),
-            "[" => Ok(Type::LSqBracket),
-            "]" => Ok(Type::RSqBracket),
-            "{" => Ok(Type::LBracket),
-            "}" => Ok(Type::RBracket),
-
-            "import" => Ok(Type::Import),
-            "use" => Ok(Type::Use),
-
-            "and" => Ok(Type::And),
-            "as" => Ok(Type::As),
-            "break" => Ok(Type::Break),
-            "catch" => Ok(Type::Catch),
-            "case" => Ok(Type::Case),
-            "class" => Ok(Type::Class),
-            "const" => Ok(Type::Const),
-            "continue" => Ok(Type::Continue),
-            "default" => Ok(Type::Default),
-            "do" => Ok(Type::Do),
-            "else" => Ok(Type::Else),
-            "enum" => Ok(Type::Enum),
-            "extends" => Ok(Type::Extends),
-            "finally" => Ok(Type::Finally),
-            "for" => Ok(Type::For),
-            "function" => Ok(Type::Function),
-            "has" => Ok(Type::Has),
-            "hidden" => Ok(Type::Hidden),
-            "if" => Ok(Type::If),
-            "instanceof" => Ok(Type::InstanceOf),
-            "me" => Ok(Type::Me),
-            "module" => Ok(Type::Module),
-            "nan" => Ok(Type::NaN),
-            "native" => Ok(Type::Native),
-            "new" => Ok(Type::New),
-            "null" => Ok(Type::Null),
-            "or" => Ok(Type::Or),
-            "private" => Ok(Type::Private),
-            "protected" => Ok(Type::Protected),
-            "public" => Ok(Type::Public),
-            "return" => Ok(Type::Return),
-            "self" => Ok(Type::Self_),
-            "static" => Ok(Type::Static),
-            "switch" => Ok(Type::Switch),
-            "throw" => Ok(Type::Throw),
-            "try" => Ok(Type::Try),
-            "using" => Ok(Type::Using),
-            "var" => Ok(Type::Var),
-            "while" => Ok(Type::While),
-
-            "+" => Ok(Type::Plus),
-            "-" => Ok(Type::Minus),
-            "*" => Ok(Type::Multiply),
-            "/" => Ok(Type::Divide),
-            "%" => Ok(Type::Modulu),
-            "++" => Ok(Type::Increment),
-            "--" => Ok(Type::Decrement),
-
-            "==" => Ok(Type::Equal),
-            "!=" => Ok(Type::NotEqual),
-            "<" => Ok(Type::Less),
-            ">" => Ok(Type::Greater),
-            ">=" => Ok(Type::GreaterOrEqual),
-            "<=" => Ok(Type::LessOrEqual),
-
-            "&&" => Ok(Type::LogicalAnd),
-            "||" => Ok(Type::LogicalOr),
-            "!" => Ok(Type::LogicalNot),
-
-            "&" => Ok(Type::BitwiseAnd),
-            "|" => Ok(Type::BitwiseOr),
-            "^" => Ok(Type::BitwiseXor),
-            "~" => Ok(Type::BitwiseNot),
-
-            "=" => Ok(Type::Assign),
-            "+=" => Ok(Type::AssignAdd),
-            "-=" => Ok(Type::AssignSubtract),
-            "*=" => Ok(Type::AssignMultiply),
-            "/=" => Ok(Type::AssignDivide),
-            "%=" => Ok(Type::AssignRemainder),
-            "<<=" => Ok(Type::AssignLeftShift),
-            ">>=" => Ok(Type::AssignRightShift),
-            "&=" => Ok(Type::AssignAnd),
-            "|=" => Ok(Type::AssignOr),
-            "^=" => Ok(Type::AssignXor),
-
-            "true" => Ok(Type::Boolean(true)),
-            "false" => Ok(Type::Boolean(false)),
-
-            _ => Err(()),
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Type::Class => write!(f, "class"),
+            Type::Function => write!(f, "function"),
+            Type::Var => write!(f, "var"),
+            Type::Hidden => write!(f, "hidden"),
+            Type::Static => write!(f, "static"),
+            Type::Const => write!(f, "const"),
+            Type::Using => write!(f, "using"),
+            Type::Module => write!(f, "module"),
+            Type::Enum => write!(f, "enum"),
+            Type::If => write!(f, "if"),
+            Type::Else => write!(f, "else"),
+            Type::While => write!(f, "while"),
+            Type::For => write!(f, "for"),
+            Type::Return => write!(f, "return"),
+            Type::Break => write!(f, "break"),
+            Type::Continue => write!(f, "continue"),
+            Type::Switch => write!(f, "switch"),
+            Type::Case => write!(f, "case"),
+            Type::Default => write!(f, "default"),
+            Type::Try => write!(f, "try"),
+            Type::Catch => write!(f, "catch"),
+            Type::Finally => write!(f, "finally"),
+            Type::Throw => write!(f, "throw"),
+            Type::Has => write!(f, "has"),
+            Type::Is => write!(f, "is"),
+            Type::Where => write!(f, "where"),
+            Type::Do => write!(f, "do"),
+            Type::Until => write!(f, "until"),
+            Type::As => write!(f, "as"),
+            Type::Extends => write!(f, "extends"),
+            Type::Import => write!(f, "import"),
+            Type::New => write!(f, "new"),
+            Type::InstanceOf => write!(f, "instanceof"),
+            Type::Long(n) => write!(f, "{}", n),
+            Type::Double(n) => write!(f, "{}", n),
+            Type::String(s) => write!(f, "{}", s),
+            Type::Boolean(b) => write!(f, "{}", b),
+            Type::Null => write!(f, "null"),
+            Type::NaN => write!(f, "NaN"),
+            Type::Identifier(s) => write!(f, "{}", s),
+            Type::Me => write!(f, "me"),
+            Type::Self_ => write!(f, "self"),
+            Type::Comment(s) => write!(f, "//{}", s),
+            Type::Annotation(s) => write!(f, "@{}", s),
+            Type::Plus => write!(f, "+"),
+            Type::Minus => write!(f, "-"),
+            Type::Star => write!(f, "*"),
+            Type::Slash => write!(f, "/"),
+            Type::Percent => write!(f, "%"),
+            Type::Bang => write!(f, "!"),
+            Type::Tilde => write!(f, "~"),
+            Type::PlusPlus => write!(f, "++"),
+            Type::MinusMinus => write!(f, "--"),
+            Type::EqualEqual => write!(f, "=="),
+            Type::BangEqual => write!(f, "!="),
+            Type::Less => write!(f, "<"),
+            Type::LessEqual => write!(f, "<="),
+            Type::Greater => write!(f, ">"),
+            Type::GreaterEqual => write!(f, ">="),
+            Type::And => write!(f, "&&"),
+            Type::Or => write!(f, "||"),
+            Type::BitAnd => write!(f, "&"),
+            Type::BitOr => write!(f, "|"),
+            Type::BitXor => write!(f, "^"),
+            Type::Assign => write!(f, "="),
+            Type::AddAssign => write!(f, "+="),
+            Type::SubAssign => write!(f, "-="),
+            Type::MulAssign => write!(f, "*="),
+            Type::DivAssign => write!(f, "/="),
+            Type::ModAssign => write!(f, "%="),
+            Type::BitAndAssign => write!(f, "&="),
+            Type::BitOrAssign => write!(f, "|="),
+            Type::BitXorAssign => write!(f, "^="),
+            Type::LParen => write!(f, "("),
+            Type::RParen => write!(f, ")"),
+            Type::LBrace => write!(f, "{{"),
+            Type::RBrace => write!(f, "}}"),
+            Type::LBracket => write!(f, "["),
+            Type::RBracket => write!(f, "]"),
+            Type::Comma => write!(f, ","),
+            Type::Dot => write!(f, "."),
+            Type::Semicolon => write!(f, ";"),
+            Type::Colon => write!(f, ":"),
+            Type::Question => write!(f, "?"),
+            Type::Newline => writeln!(f),
+            Type::Eof => write!(f, "EOF"),
+            Type::Illegal => write!(f, "ILLEGAL"),
+            Type::Private => write!(f, "private"),
+            Type::Protected => write!(f, "protected"),
+            Type::Public => write!(f, "public"),
         }
     }
 }
 
-pub(crate) type Pos = usize;
-pub(crate) type Span = (Pos, Type, Pos);
+impl std::str::FromStr for Type {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "class" => Ok(Type::Class),
+            "function" => Ok(Type::Function),
+            "var" => Ok(Type::Var),
+            "hidden" => Ok(Type::Hidden),
+            "static" => Ok(Type::Static),
+            "const" => Ok(Type::Const),
+            "using" => Ok(Type::Using),
+            "module" => Ok(Type::Module),
+            "enum" => Ok(Type::Enum),
+            "if" => Ok(Type::If),
+            "else" => Ok(Type::Else),
+            "while" => Ok(Type::While),
+            "for" => Ok(Type::For),
+            "return" => Ok(Type::Return),
+            "break" => Ok(Type::Break),
+            "continue" => Ok(Type::Continue),
+            "switch" => Ok(Type::Switch),
+            "case" => Ok(Type::Case),
+            "default" => Ok(Type::Default),
+            "try" => Ok(Type::Try),
+            "catch" => Ok(Type::Catch),
+            "finally" => Ok(Type::Finally),
+            "throw" => Ok(Type::Throw),
+            "has" => Ok(Type::Has),
+            "is" => Ok(Type::Is),
+            "where" => Ok(Type::Where),
+            "do" => Ok(Type::Do),
+            "until" => Ok(Type::Until),
+            "as" => Ok(Type::As),
+            "extends" => Ok(Type::Extends),
+            "import" => Ok(Type::Import),
+            "new" => Ok(Type::New),
+            "instanceof" => Ok(Type::InstanceOf),
+            "true" => Ok(Type::Boolean(true)),
+            "false" => Ok(Type::Boolean(false)),
+            "null" => Ok(Type::Null),
+            "NaN" => Ok(Type::NaN),
+            "me" => Ok(Type::Me),
+            "self" => Ok(Type::Self_),
+            "+" => Ok(Type::Plus),
+            "-" => Ok(Type::Minus),
+            "*" => Ok(Type::Star),
+            "/" => Ok(Type::Slash),
+            "%" => Ok(Type::Percent),
+            "!" => Ok(Type::Bang),
+            "~" => Ok(Type::Tilde),
+            "++" => Ok(Type::PlusPlus),
+            "--" => Ok(Type::MinusMinus),
+            "==" => Ok(Type::EqualEqual),
+            "!=" => Ok(Type::BangEqual),
+            "<" => Ok(Type::Less),
+            "<=" => Ok(Type::LessEqual),
+            ">" => Ok(Type::Greater),
+            ">=" => Ok(Type::GreaterEqual),
+            "&&" => Ok(Type::And),
+            "||" => Ok(Type::Or),
+            "&" => Ok(Type::BitAnd),
+            "|" => Ok(Type::BitOr),
+            "^" => Ok(Type::BitXor),
+            "=" => Ok(Type::Assign),
+            "+=" => Ok(Type::AddAssign),
+            "-=" => Ok(Type::SubAssign),
+            "*=" => Ok(Type::MulAssign),
+            "/=" => Ok(Type::DivAssign),
+            "%=" => Ok(Type::ModAssign),
+            "&=" => Ok(Type::BitAndAssign),
+            "|=" => Ok(Type::BitOrAssign),
+            "^=" => Ok(Type::BitXorAssign),
+            "(" => Ok(Type::LParen),
+            ")" => Ok(Type::RParen),
+            "{" => Ok(Type::LBrace),
+            "}" => Ok(Type::RBrace),
+            "[" => Ok(Type::LBracket),
+            "]" => Ok(Type::RBracket),
+            "," => Ok(Type::Comma),
+            "." => Ok(Type::Dot),
+            ";" => Ok(Type::Semicolon),
+            ":" => Ok(Type::Colon),
+            "?" => Ok(Type::Question),
+            "private" => Ok(Type::Private),
+            "protected" => Ok(Type::Protected),
+            "public" => Ok(Type::Public),
+            _ => Err(format!("Unknown token: {}", s)),
+        }
+    }
+}
