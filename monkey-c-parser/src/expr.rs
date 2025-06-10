@@ -307,6 +307,24 @@ impl Parser<'_> {
                 };
                 continue;
             }
+            if self.current_token == token::Type::PlusPlus
+                || self.current_token == token::Type::MinusMinus
+            {
+                let operator_token = self.current_token.clone();
+                let (start, _, _) = self.next_token_span();
+                let operator = match operator_token {
+                    token::Type::PlusPlus => UnaryOperator::PostInc,
+                    token::Type::MinusMinus => UnaryOperator::PostDec,
+                    _ => unreachable!(),
+                };
+                let (_, _, end) = self.lexer.peek_token();
+                expr = Ast::Unary {
+                    operator,
+                    operand: Box::new(expr),
+                    span: Span { start, end },
+                };
+                continue;
+            }
             break;
         }
         Ok(expr)
@@ -630,7 +648,6 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexer;
     use crate::parser::Parser;
 
     #[test]
@@ -704,8 +721,6 @@ mod tests {
     #[test]
     fn test_parse_x_eq_null() {
         let input = "x == null";
-        let mut lexer = Lexer::new(input);
-        let (start, token, end) = lexer.next_token();
         let mut parser = Parser::new(input);
         let result = parser.parse_expression();
         assert!(result.is_ok());

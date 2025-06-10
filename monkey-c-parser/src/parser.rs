@@ -436,24 +436,35 @@ impl<'a> Parser<'a> {
                 })
             }
             token::Type::For => {
-                self.next_token_span(); // advance past For token
-                let init = if self.current_token == token::Type::Semicolon {
-                    None
-                } else {
-                    Some(Box::new(self.parse_expression()?))
+                self.assert_next_token(&[token::Type::For])?; // Consume `for`
+                self.assert_next_token(&[token::Type::LParen])?; // Consume `(`
+
+                let init = match self.current_token {
+                    token::Type::Semicolon => {
+                        self.next_token_span(); // Consume `;`
+                        None
+                    }
+                    token::Type::Var => Some(Box::new(self.parse_statement()?)),
+                    _ => Some(Box::new(self.parse_expression()?)),
                 };
-                self.assert_next_token(&[token::Type::Semicolon])?;
+
                 let condition = if self.current_token == token::Type::Semicolon {
                     None
                 } else {
                     Some(Box::new(self.parse_expression()?))
                 };
+
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                let update = if self.current_token == token::Type::LBrace {
+
+                let update = if self.current_token == token::Type::LParen {
                     None
                 } else {
                     Some(Box::new(self.parse_expression()?))
                 };
+
+                self.assert_next_token(&[token::Type::RParen])?; // Consume `)`
+                self.assert_next_token(&[token::Type::LBrace])?; // Consume `{`
+
                 let body = Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 }));
                 let (_, _, end) = self.peek_token_span();
                 Ok(Ast::For {
