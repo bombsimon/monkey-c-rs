@@ -130,11 +130,17 @@ impl<'a> Lexer<'a> {
             while self.ch != b')' && self.ch != 0 && self.ch != b'\n' {
                 self.read_char();
             }
-            let annotation_content = self.input[annotation_start..self.position].trim().to_string();
+            let annotation_content = self.input[annotation_start..self.position]
+                .trim()
+                .to_string();
             if self.ch == b')' {
                 self.read_char(); // consume ')'
             }
-            return (start, token::Type::Annotation(annotation_content), self.position);
+            return (
+                start,
+                token::Type::Annotation(annotation_content),
+                self.position,
+            );
         }
 
         let token_type = match self.ch {
@@ -489,7 +495,8 @@ mod tests {
             }
             tokens.push(t);
         }
-        assert_eq!(tokens,
+        assert_eq!(
+            tokens,
             vec![
                 token::Type::Identifier("x".to_string()),
                 token::Type::Assign,
@@ -514,7 +521,8 @@ mod tests {
             }
             tokens.push(t);
         }
-        assert_eq!(tokens,
+        assert_eq!(
+            tokens,
             vec![
                 token::Type::Identifier("msg".to_string()),
                 token::Type::Assign,
@@ -524,4 +532,3 @@ mod tests {
         );
     }
 }
-

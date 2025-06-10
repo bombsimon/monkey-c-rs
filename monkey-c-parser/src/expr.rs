@@ -51,7 +51,11 @@ impl Parser<'_> {
         }
     }
 
-    fn handle_logical_operator(&mut self, left: Ast, operator_token: token::Type) -> Result<Ast, ParserError> {
+    fn handle_logical_operator(
+        &mut self,
+        left: Ast,
+        operator_token: token::Type,
+    ) -> Result<Ast, ParserError> {
         let (start, _, _) = self.next_token_span();
         let operator = match operator_token {
             token::Type::Or => BinaryOperator::Or,
@@ -84,7 +88,11 @@ impl Parser<'_> {
         Ok(expr)
     }
 
-    fn handle_equality_operator(&mut self, left: Ast, operator_token: token::Type) -> Result<Ast, ParserError> {
+    fn handle_equality_operator(
+        &mut self,
+        left: Ast,
+        operator_token: token::Type,
+    ) -> Result<Ast, ParserError> {
         let (start, _, _) = self.next_token_span();
         let operator = match operator_token {
             token::Type::EqualEqual => BinaryOperator::Eq,
@@ -103,7 +111,10 @@ impl Parser<'_> {
 
     fn parse_equality(&mut self) -> Result<Ast, ParserError> {
         let mut expr = self.parse_comparison()?;
-        while matches!(self.current_token, token::Type::EqualEqual | token::Type::BangEqual) {
+        while matches!(
+            self.current_token,
+            token::Type::EqualEqual | token::Type::BangEqual
+        ) {
             let operator_token = self.current_token.clone();
             expr = self.handle_equality_operator(expr, operator_token)?;
         }
@@ -142,7 +153,11 @@ impl Parser<'_> {
         Ok(expr)
     }
 
-    fn handle_binary_operator(&mut self, left: Ast, operators: &[token::Type]) -> Result<Ast, ParserError> {
+    fn handle_binary_operator(
+        &mut self,
+        left: Ast,
+        operators: &[token::Type],
+    ) -> Result<Ast, ParserError> {
         let mut expr = left;
         while self.current_token_is(operators) {
             let operator_token = self.current_token.clone();
@@ -174,7 +189,10 @@ impl Parser<'_> {
 
     fn parse_factor(&mut self) -> Result<Ast, ParserError> {
         let expr = self.parse_unary()?;
-        self.handle_binary_operator(expr, &[token::Type::Star, token::Type::Slash, token::Type::Percent])
+        self.handle_binary_operator(
+            expr,
+            &[token::Type::Star, token::Type::Slash, token::Type::Percent],
+        )
     }
 
     fn handle_unary_operator(&mut self) -> Result<Ast, ParserError> {
@@ -200,19 +218,22 @@ impl Parser<'_> {
         let depth_check = RECURSION_DEPTH.with(|depth| {
             let d = depth.get();
             if d > 1000 {
-                return Err(ParserError::ParseError("Expression too complex".to_string()));
+                return Err(ParserError::ParseError(
+                    "Expression too complex".to_string(),
+                ));
             }
             depth.set(d + 1);
             Ok(())
         });
         depth_check?;
 
-        let result = if matches!(self.current_token,
-            token::Type::Minus |
-            token::Type::Bang |
-            token::Type::Tilde |
-            token::Type::PlusPlus |
-            token::Type::MinusMinus
+        let result = if matches!(
+            self.current_token,
+            token::Type::Minus
+                | token::Type::Bang
+                | token::Type::Tilde
+                | token::Type::PlusPlus
+                | token::Type::MinusMinus
         ) {
             self.handle_unary_operator()
         } else {
@@ -317,22 +338,34 @@ impl Parser<'_> {
             token::Type::Long(value) => {
                 let (_, _, end) = self.lexer.peek_token();
                 self.next_token_span();
-                Ok(Ast::BasicLit(LiteralValue::Long(value), Span { start: 0, end }))
+                Ok(Ast::BasicLit(
+                    LiteralValue::Long(value),
+                    Span { start: 0, end },
+                ))
             }
             token::Type::Double(value) => {
                 let (_, _, end) = self.lexer.peek_token();
                 self.next_token_span();
-                Ok(Ast::BasicLit(LiteralValue::Double(value), Span { start: 0, end }))
+                Ok(Ast::BasicLit(
+                    LiteralValue::Double(value),
+                    Span { start: 0, end },
+                ))
             }
             token::Type::String(value) => {
                 let (_, _, end) = self.lexer.peek_token();
                 self.next_token_span();
-                Ok(Ast::BasicLit(LiteralValue::String(value), Span { start: 0, end }))
+                Ok(Ast::BasicLit(
+                    LiteralValue::String(value),
+                    Span { start: 0, end },
+                ))
             }
             token::Type::Boolean(value) => {
                 let (_, _, end) = self.lexer.peek_token();
                 self.next_token_span();
-                Ok(Ast::BasicLit(LiteralValue::Boolean(value), Span { start: 0, end }))
+                Ok(Ast::BasicLit(
+                    LiteralValue::Boolean(value),
+                    Span { start: 0, end },
+                ))
             }
             token::Type::Null => {
                 let (_, _, end) = self.lexer.peek_token();
@@ -374,6 +407,30 @@ impl Parser<'_> {
                 let (_, _, end) = self.lexer.peek_token();
                 Ok(Ast::Array(elements, Span { start: 0, end }))
             }
+            token::Type::LBrace => {
+                self.next_token_span(); // consume {
+                let mut elements = Vec::new();
+                while self.current_token != token::Type::RBrace {
+                    let key = self.parse_primary()?;
+                    self.assert_next_token(&[token::Type::Colon])?;
+                    let value = self.parse_expression()?;
+                    elements.push((key, value));
+
+                    if self.current_token == token::Type::Comma {
+                        self.next_token_span();
+                    } else if self.current_token == token::Type::RBrace {
+                        break;
+                    } else {
+                        return Err(ParserError::ParseError(format!(
+                            "Expected ',' or '}}', got {:?}",
+                            self.current_token
+                        )));
+                    }
+                }
+                self.next_token_span(); // consume }
+                let (_, _, end) = self.lexer.peek_token();
+                Ok(Ast::Dictionary(elements, Span { start: 0, end }))
+            }
             _ => Err(ParserError::ParseError(format!(
                 "Unexpected token in expression: {:?}",
                 token_type
@@ -393,7 +450,9 @@ impl Parser<'_> {
             d > 128
         });
         if exceeded {
-            return Err(ParserError::ParseError("Recursion limit exceeded in parse_primary_no_postfix".to_string()));
+            return Err(ParserError::ParseError(
+                "Recursion limit exceeded in parse_primary_no_postfix".to_string(),
+            ));
         }
         let token_type = self.current_token.clone();
         let result = self.handle_primary_expression(token_type);
@@ -404,7 +463,6 @@ impl Parser<'_> {
         result
     }
 
-
     // Parse an expression without allowing postfixes (for array elements)
     pub(crate) fn parse_expression_no_postfix(&mut self) -> Result<Ast, ParserError> {
         let exceeded = RECURSION_DEPTH.with(|depth| {
@@ -413,7 +471,9 @@ impl Parser<'_> {
             d > 128
         });
         if exceeded {
-            return Err(ParserError::ParseError("Recursion limit exceeded in parse_expression_no_postfix".to_string()));
+            return Err(ParserError::ParseError(
+                "Recursion limit exceeded in parse_expression_no_postfix".to_string(),
+            ));
         }
         let result = self.parse_assignment_no_postfix();
         RECURSION_DEPTH.with(|depth| {
@@ -434,9 +494,9 @@ impl Parser<'_> {
             | token::Type::ModAssign
             | token::Type::BitAndAssign
             | token::Type::BitOrAssign
-            | token::Type::BitXorAssign => {
-                Err(ParserError::ParseError("Assignment not allowed in this context".to_string()))
-            }
+            | token::Type::BitXorAssign => Err(ParserError::ParseError(
+                "Assignment not allowed in this context".to_string(),
+            )),
             _ => Ok(expr),
         }
     }
@@ -475,7 +535,10 @@ impl Parser<'_> {
 
     fn parse_equality_no_postfix(&mut self) -> Result<Ast, ParserError> {
         let mut expr = self.parse_comparison_no_postfix()?;
-        while matches!(self.current_token, token::Type::EqualEqual | token::Type::BangEqual) {
+        while matches!(
+            self.current_token,
+            token::Type::EqualEqual | token::Type::BangEqual
+        ) {
             let operator_token = self.current_token.clone();
             let (start, _, _) = self.next_token_span(); // advance past operator and update current_token
             let operator = match operator_token {
@@ -497,7 +560,14 @@ impl Parser<'_> {
 
     fn parse_comparison_no_postfix(&mut self) -> Result<Ast, ParserError> {
         let mut expr = self.parse_term_no_postfix()?;
-        while matches!(self.current_token, token::Type::Less | token::Type::LessEqual | token::Type::Greater | token::Type::GreaterEqual | token::Type::InstanceOf) {
+        while matches!(
+            self.current_token,
+            token::Type::Less
+                | token::Type::LessEqual
+                | token::Type::Greater
+                | token::Type::GreaterEqual
+                | token::Type::InstanceOf
+        ) {
             let operator_token = self.current_token.clone();
             let (start, _, _) = self.next_token_span(); // advance past operator and update current_token
             let operator = match operator_token {
@@ -527,7 +597,10 @@ impl Parser<'_> {
 
     fn parse_factor_no_postfix(&mut self) -> Result<Ast, ParserError> {
         let expr = self.parse_unary_no_postfix()?;
-        self.handle_binary_operator(expr, &[token::Type::Star, token::Type::Slash, token::Type::Percent])
+        self.handle_binary_operator(
+            expr,
+            &[token::Type::Star, token::Type::Slash, token::Type::Percent],
+        )
     }
 
     fn parse_unary_no_postfix(&mut self) -> Result<Ast, ParserError> {
@@ -557,8 +630,8 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::Parser;
     use crate::lexer::Lexer;
+    use crate::parser::Parser;
 
     #[test]
     fn test_assignment_with_type_cast() {
@@ -570,21 +643,27 @@ mod tests {
             assert_eq!(nodes.len(), 1);
             if let Ast::Class { body, .. } = &nodes[0] {
                 // Find the function
-                let func = body.iter().find_map(|node| {
-                    if let Ast::Function { body, .. } = node {
-                        Some(body)
-                    } else {
-                        None
-                    }
-                }).expect("Should find a function node");
+                let func = body
+                    .iter()
+                    .find_map(|node| {
+                        if let Ast::Function { body, .. } = node {
+                            Some(body)
+                        } else {
+                            None
+                        }
+                    })
+                    .expect("Should find a function node");
                 // Find the assignment statement
-                let assign = func.iter().find_map(|stmt| {
-                    if let Ast::Assign { target, value, .. } = stmt {
-                        Some((target, value))
-                    } else {
-                        None
-                    }
-                }).expect("Should find an assignment");
+                let assign = func
+                    .iter()
+                    .find_map(|stmt| {
+                        if let Ast::Assign { target, value, .. } = stmt {
+                            Some((target, value))
+                        } else {
+                            None
+                        }
+                    })
+                    .expect("Should find an assignment");
                 // Target should be identifier 'x'
                 if let Ast::Identifier(name, _) = &**assign.0 {
                     assert_eq!(name, "x");
@@ -592,7 +671,10 @@ mod tests {
                     panic!("Target is not identifier");
                 }
                 // Value should be a type cast
-                if let Ast::TypeCast { expr, target_type, .. } = &**assign.1 {
+                if let Ast::TypeCast {
+                    expr, target_type, ..
+                } = &**assign.1
+                {
                     // expr should be an array
                     if let Ast::Array(elems, _) = &**expr {
                         assert_eq!(elems.len(), 2);

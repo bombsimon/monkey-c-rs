@@ -81,7 +81,10 @@ impl<'a> Parser<'a> {
                 let name = name.clone();
                 Ok(name)
             }
-            _ => Err(ParserError::ParseError(format!("Expected identifier, got {:?}", self.current_token)))
+            _ => Err(ParserError::ParseError(format!(
+                "Expected identifier, got {:?}",
+                self.current_token
+            ))),
         }
     }
 
@@ -140,6 +143,7 @@ impl<'a> Parser<'a> {
         let mut visibility = None;
         let mut is_static = false;
         let mut is_hidden = false;
+
         loop {
             match self.current_token {
                 token::Type::Private => {
@@ -256,14 +260,17 @@ impl<'a> Parser<'a> {
                     None
                 };
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Ast::Variable(Variable {
-                    name,
-                    type_,
-                    visibility,
-                    initializer,
-                    is_static,
-                    is_hidden,
-                }, Span { start: 0, end: 0 }))
+                Ok(Ast::Variable(
+                    Variable {
+                        name,
+                        type_,
+                        visibility,
+                        initializer,
+                        is_static,
+                        is_hidden,
+                    },
+                    Span { start: 0, end: 0 },
+                ))
             }
             token::Type::Identifier(name) => {
                 let (_, _, end) = self.peek_token_span();
@@ -304,9 +311,9 @@ impl<'a> Parser<'a> {
                 None
             };
 
-            args.push(Variable { 
-                name, 
-                type_, 
+            args.push(Variable {
+                name,
+                type_,
                 visibility: None,
                 initializer: None,
                 is_static: false,
@@ -368,14 +375,17 @@ impl<'a> Parser<'a> {
                     None
                 };
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Ast::Variable(Variable {
-                    name,
-                    type_,
-                    visibility: None,
-                    initializer,
-                    is_static: false,
-                    is_hidden: false,
-                }, Span { start: 0, end: 0 }))
+                Ok(Ast::Variable(
+                    Variable {
+                        name,
+                        type_,
+                        visibility: None,
+                        initializer,
+                        is_static: false,
+                        is_hidden: false,
+                    },
+                    Span { start: 0, end: 0 },
+                ))
             }
             token::Type::Return => {
                 self.next_token_span(); // advance past Return token
@@ -394,10 +404,15 @@ impl<'a> Parser<'a> {
                 let condition = Box::new(self.parse_expression_no_postfix()?);
                 self.assert_next_token(&[token::Type::RParen])?; // consume closing parenthesis
                 self.assert_next_token(&[token::Type::LBrace])?; // consume opening brace
-                let then_branch = Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 }));
+                let then_branch =
+                    Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 }));
                 let else_branch = if self.current_token == token::Type::Else {
-                    self.next_token_span();
-                    Some(Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 })))
+                    self.next_token_span(); // Consume `else`
+                    self.next_token_span(); // Consume `{`
+                    Some(Box::new(Ast::Block(
+                        self.parse_block()?,
+                        Span { start: 0, end: 0 },
+                    )))
                 } else {
                     None
                 };
@@ -469,7 +484,9 @@ impl<'a> Parser<'a> {
                 }
                 let expr = self.parse_expression();
                 match expr {
-                    Err(ParserError::ParseError(msg)) if msg == "Block parsing should not be handled in parse_primary" => {
+                    Err(ParserError::ParseError(msg))
+                        if msg == "Block parsing should not be handled in parse_primary" =>
+                    {
                         let block = self.parse_block()?;
                         if block.is_empty() {
                             Ok(Ast::Eof)
@@ -483,7 +500,7 @@ impl<'a> Parser<'a> {
                         self.assert_next_token(&[token::Type::Semicolon])?;
                         Ok(expr)
                     }
-                    Err(e) => Err(e)
+                    Err(e) => Err(e),
                 }
             }
         }
@@ -514,7 +531,6 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::*;
     use crate::ast::LiteralValue;
-    
 
     #[test]
     fn test_parse_simple_class_with_var() {
@@ -523,24 +539,31 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "MyClass");
         // Find the variable node
-        let var = class.1.iter().find_map(|node| {
-            if let Ast::Variable(var, _) = node {
-                Some(var)
-            } else {
-                None
-            }
-        }).expect("Should find a variable node");
+        let var = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Variable(var, _) = node {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a variable node");
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
     }
@@ -552,24 +575,31 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "MyClass");
         // Find the variable node
-        let var = class.1.iter().find_map(|node| {
-            if let Ast::Variable(var, _) = node {
-                Some(var)
-            } else {
-                None
-            }
-        }).expect("Should find a variable node");
+        let var = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Variable(var, _) = node {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a variable node");
         assert_eq!(var.name, "speedPickerDefaults");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
         assert_eq!(var.type_.as_ref().unwrap().generic_params.len(), 1);
@@ -581,7 +611,11 @@ mod tests {
         let input = "class Foo { function bar() { x = 1.0; } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        assert!(ast.is_ok(), "Parser should handle assignment in function body: {:?}", ast);
+        assert!(
+            ast.is_ok(),
+            "Parser should handle assignment in function body: {:?}",
+            ast
+        );
     }
 
     #[test]
@@ -589,7 +623,11 @@ mod tests {
         let input = "class Foo { function bar() { x = [0, 0] as Array<Number>; } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        assert!(ast.is_ok(), "Parser should handle assignment of array literal with type cast: {:?}", ast);
+        assert!(
+            ast.is_ok(),
+            "Parser should handle assignment of array literal with type cast: {:?}",
+            ast
+        );
     }
 
     #[test]
@@ -599,28 +637,38 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "Foo");
         // Find the variable node
-        let var = class.1.iter().find_map(|node| {
-            if let Ast::Variable(var, _) = node {
-                Some(var)
-            } else {
-                None
-            }
-        }).expect("Should find a variable node");
+        let var = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Variable(var, _) = node {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a variable node");
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
         // Verify the initialization value
-        let initializer = var.initializer.as_ref().expect("Should have an initializer");
+        let initializer = var
+            .initializer
+            .as_ref()
+            .expect("Should have an initializer");
         if let Ast::BasicLit(LiteralValue::Double(value), _) = initializer.as_ref() {
             assert_eq!(*value, 1.0);
         } else {
@@ -635,31 +683,49 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "Foo");
         // Find the variable node
-        let var = class.1.iter().find_map(|node| {
-            if let Ast::Variable(var, _) = node {
-                Some(var)
-            } else {
-                None
-            }
-        }).expect("Should find a variable node");
+        let var = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Variable(var, _) = node {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a variable node");
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
-        assert_eq!(var.type_.as_ref().unwrap().generic_params[0].ident, "Number");
+        assert_eq!(
+            var.type_.as_ref().unwrap().generic_params[0].ident,
+            "Number"
+        );
         // Verify the initialization value
-        let initializer = var.initializer.as_ref().expect("Should have an initializer");
+        let initializer = var
+            .initializer
+            .as_ref()
+            .expect("Should have an initializer");
         // Should be a type-cast expression
-        if let Ast::TypeCast { expr, target_type: ty, .. } = initializer.as_ref() {
+        if let Ast::TypeCast {
+            expr,
+            target_type: ty,
+            ..
+        } = initializer.as_ref()
+        {
             assert_eq!(ty.ident, "Array");
             assert_eq!(ty.generic_params[0].ident, "Number");
             // The inner expr should be the array literal
@@ -687,29 +753,42 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "Foo");
         // Find the variable node
-        let var = class.1.iter().find_map(|node| {
-            if let Ast::Variable(var, _) = node {
-                Some(var)
-            } else {
-                None
-            }
-        }).expect("Should find a variable node");
+        let var = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Variable(var, _) = node {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a variable node");
         assert_eq!(var.name, "x");
         // Verify the initialization value is a function call
-        let initializer = var.initializer.as_ref().expect("Should have an initializer");
+        let initializer = var
+            .initializer
+            .as_ref()
+            .expect("Should have an initializer");
         if let Ast::Call { callee, args, .. } = initializer.as_ref() {
-            if let Ast::Member { object, property, .. } = callee.as_ref() {
+            if let Ast::Member {
+                object, property, ..
+            } = callee.as_ref()
+            {
                 if let Ast::Identifier(name, _) = object.as_ref() {
                     assert_eq!(name, "Storage");
                 } else {
@@ -737,33 +816,55 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
+            _ => panic!("Should be a document node"),
+        };
+        // Find the function
+        let func = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Function { name, body, .. } = node {
                     Some((name, body))
                 } else {
                     None
                 }
-            }).expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        // Find the function
-        let func = class.1.iter().find_map(|node| {
-            if let Ast::Function { name, body, .. } = node {
-                Some((name, body))
-            } else {
-                None
-            }
-        }).expect("Should find a function node");
+            })
+            .expect("Should find a function node");
         // Find the if statement
-        let if_stmt = func.1.iter().find_map(|node| {
-            if let Ast::If { condition, then_branch, .. } = node {
-                Some((condition, then_branch))
-            } else {
-                None
-            }
-        }).expect("Should find an if statement");
+        let if_stmt = func
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::If {
+                    condition,
+                    then_branch,
+                    ..
+                } = node
+                {
+                    Some((condition, then_branch))
+                } else {
+                    None
+                }
+            })
+            .expect("Should find an if statement");
         // The condition should be a binary expression: x == null
-        if let Ast::Binary { left, operator, right, .. } = if_stmt.0.as_ref() {
+        if let Ast::Binary {
+            left,
+            operator,
+            right,
+            ..
+        } = if_stmt.0.as_ref()
+        {
             if let Ast::Identifier(name, _) = left.as_ref() {
                 assert_eq!(name, "x");
             } else {
@@ -786,24 +887,31 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "Foo");
         // Find the function node
-        let func = class.1.iter().find_map(|node| {
-            if let Ast::Function { name, args, .. } = node {
-                Some((name, args))
-            } else {
-                None
-            }
-        }).expect("Should find a function node");
+        let func = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Function { name, args, .. } = node {
+                    Some((name, args))
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a function node");
         assert_eq!(func.0, "setSpeed");
         assert_eq!(func.1.len(), 1);
         assert_eq!(func.1[0].name, "_speed");
@@ -815,7 +923,11 @@ mod tests {
         let input = "class Foo { function bar() as Void { x = 1; } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        assert!(ast.is_ok(), "Parser should handle function with return type and body: {:?}", ast);
+        assert!(
+            ast.is_ok(),
+            "Parser should handle function with return type and body: {:?}",
+            ast
+        );
     }
 
     #[test]
@@ -823,7 +935,11 @@ mod tests {
         let input = "class Foo { function bar() { var x = arr[0] + arr[1] / 2; } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        assert!(ast.is_ok(), "Parser should handle var with complex initializer: {:?}", ast);
+        assert!(
+            ast.is_ok(),
+            "Parser should handle var with complex initializer: {:?}",
+            ast
+        );
     }
 
     #[test]
@@ -840,7 +956,11 @@ mod tests {
         "#;
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        assert!(ast.is_ok(), "Parser should handle array literal with method calls as elements: {:?}", ast);
+        assert!(
+            ast.is_ok(),
+            "Parser should handle array literal with method calls as elements: {:?}",
+            ast
+        );
     }
 
     #[test]
@@ -850,24 +970,31 @@ mod tests {
         let ast = parser.parse().expect("Should parse successfully");
         // Match the document node and find the class
         let class = match ast {
-            Ast::Document(nodes) => nodes.into_iter().find_map(|node| {
-                if let Ast::Class { name, body, .. } = node {
-                    Some((name, body))
-                } else {
-                    None
-                }
-            }).expect("Should find a class node"),
+            Ast::Document(nodes) => nodes
+                .into_iter()
+                .find_map(|node| {
+                    if let Ast::Class { name, body, .. } = node {
+                        Some((name, body))
+                    } else {
+                        None
+                    }
+                })
+                .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "Foo");
         // Find the variable node
-        let var = class.1.iter().find_map(|node| {
-            if let Ast::Variable(var, _) = node {
-                Some(var)
-            } else {
-                None
-            }
-        }).expect("Should find a variable node");
+        let var = class
+            .1
+            .iter()
+            .find_map(|node| {
+                if let Ast::Variable(var, _) = node {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+            .expect("Should find a variable node");
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
         assert_eq!(var.visibility, Some(Visibility::Private));
@@ -886,7 +1013,11 @@ mod tests {
         let input = "class Foo { static hidden function bar() {} }";
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        assert!(ast.is_ok(), "Should parse static hidden function: {:?}", ast);
+        assert!(
+            ast.is_ok(),
+            "Should parse static hidden function: {:?}",
+            ast
+        );
     }
 
     #[test]
@@ -920,6 +1051,38 @@ mod tests {
         let ast = parser.parse();
         assert!(ast.is_ok(), "Should parse static var: {:?}", ast);
     }
+
+    #[test]
+    fn test_parse_complex_expressions() {
+        let input = r#"
+            function complexMath(x as Number, y as Number) as Number {
+                var result = (x * y) + (x / y);
+                if (result > 100) {
+                    return result;
+                } else {
+                    return result * 2;
+                }
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "Should parse complex expression: {:?}", ast);
+    }
+
+    #[test]
+    fn test_parse_collections() {
+        let input = r#"
+            function collections() as Void {
+                var arr = [1, 2, 3, 4, 5];
+                var dict = {"key1": "value1", "key2": "value2"};
+                var sum = 0;
+                for (var i = 0; i < arr.size(); i++) {
+                    sum = sum + arr[i];
+                }
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "Should parse collections: {:?}", ast);
+    }
 }
-
-
