@@ -40,6 +40,7 @@ impl Parser<'_> {
                 };
                 let value = self.parse_expression()?;
                 let (_, _, end) = self.lexer.peek_token();
+
                 Ok(Ast::Assign {
                     target: Box::new(expr),
                     operator,
@@ -64,6 +65,7 @@ impl Parser<'_> {
         };
         let right = self.parse_logical_and()?;
         let (_, _, end) = self.lexer.peek_token();
+
         Ok(Ast::Binary {
             left: Box::new(left),
             operator,
@@ -77,6 +79,7 @@ impl Parser<'_> {
         while self.current_token == token::Type::Or {
             expr = self.handle_logical_operator(expr, token::Type::Or)?;
         }
+
         Ok(expr)
     }
 
@@ -85,6 +88,7 @@ impl Parser<'_> {
         while self.current_token == token::Type::And {
             expr = self.handle_logical_operator(expr, token::Type::And)?;
         }
+
         Ok(expr)
     }
 
@@ -101,6 +105,7 @@ impl Parser<'_> {
         };
         let right = self.parse_comparison()?;
         let (_, _, end) = self.lexer.peek_token();
+
         Ok(Ast::Binary {
             left: Box::new(left),
             operator,
@@ -118,6 +123,7 @@ impl Parser<'_> {
             let operator_token = self.current_token.clone();
             expr = self.handle_equality_operator(expr, operator_token)?;
         }
+
         Ok(expr)
     }
 
@@ -143,6 +149,7 @@ impl Parser<'_> {
             };
             let right = self.parse_term()?;
             let (_, _, end) = self.lexer.peek_token();
+
             expr = Ast::Binary {
                 left: Box::new(expr),
                 operator,
@@ -150,6 +157,7 @@ impl Parser<'_> {
                 span: Span { start, end },
             };
         }
+
         Ok(expr)
     }
 
@@ -172,6 +180,7 @@ impl Parser<'_> {
             };
             let right = self.parse_factor()?;
             let (_, _, end) = self.lexer.peek_token();
+
             expr = Ast::Binary {
                 left: Box::new(expr),
                 operator,
@@ -179,6 +188,7 @@ impl Parser<'_> {
                 span: Span { start, end },
             };
         }
+
         Ok(expr)
     }
 
@@ -207,6 +217,7 @@ impl Parser<'_> {
         };
         let right = self.parse_unary()?;
         let (_, _, end) = self.lexer.peek_token();
+
         Ok(Ast::Unary {
             operator,
             operand: Box::new(right),
@@ -222,9 +233,12 @@ impl Parser<'_> {
                     "Expression too complex".to_string(),
                 ));
             }
+
             depth.set(d + 1);
+
             Ok(())
         });
+
         depth_check?;
 
         let result = if matches!(
@@ -250,66 +264,83 @@ impl Parser<'_> {
 
     fn parse_postfix(&mut self) -> Result<Ast, ParserError> {
         let mut expr = self.parse_primary()?;
+
         loop {
             if self.current_token == token::Type::Dot {
                 self.next_token_span();
                 let property = self.parse_identifier()?;
                 let (_, _, end) = self.lexer.peek_token();
+
                 expr = Ast::Member {
                     object: Box::new(expr),
                     property,
                     span: Span { start: 0, end },
                 };
+
                 self.next_token_span();
                 continue;
             }
+
             if self.current_token == token::Type::LBracket {
                 self.next_token_span();
                 let index = self.parse_expression()?;
                 let (_, _, end) = self.lexer.peek_token();
+
                 expr = Ast::Index {
                     object: Box::new(expr),
                     index: Box::new(index),
                     span: Span { start: 0, end },
                 };
+
                 self.assert_next_token(&[token::Type::RBracket])?;
                 continue;
             }
+
             if self.current_token == token::Type::LParen {
                 self.next_token_span();
                 let mut args = Vec::new();
+
                 if self.current_token != token::Type::RParen {
                     loop {
                         args.push(self.parse_expression()?);
                         if self.current_token == token::Type::RParen {
                             break;
                         }
+
                         self.assert_next_token(&[token::Type::Comma])?;
                     }
                 }
+
                 let (_, _, end) = self.lexer.peek_token();
                 expr = Ast::Call {
                     callee: Box::new(expr),
                     args,
                     span: Span { start: 0, end },
                 };
+
                 self.assert_next_token(&[token::Type::RParen])?;
                 continue;
             }
+
             if self.current_token == token::Type::As {
                 self.next_token_span();
+
                 let target_type = self.parse_type()?;
                 let (_, _, end) = self.lexer.peek_token();
+
                 expr = Ast::TypeCast {
                     expr: Box::new(expr),
                     target_type,
                     span: Span { start: 0, end },
                 };
+
                 continue;
             }
-            if self.current_token == token::Type::PlusPlus
-                || self.current_token == token::Type::MinusMinus
-            {
+
+            if matches!(
+                self.current_token,
+                token::Type::PlusPlus | token::Type::MinusMinus
+            ) {
                 let operator_token = self.current_token.clone();
                 let (start, _, _) = self.next_token_span();
                 let operator = match operator_token {
@@ -318,15 +349,19 @@ impl Parser<'_> {
                     _ => unreachable!(),
                 };
                 let (_, _, end) = self.lexer.peek_token();
+
                 expr = Ast::Unary {
                     operator,
                     operand: Box::new(expr),
                     span: Span { start, end },
                 };
+
                 continue;
             }
+
             break;
         }
+
         Ok(expr)
     }
 
@@ -641,13 +676,14 @@ impl Parser<'_> {
                 return true;
             }
         }
+
         false
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::ast::Ast;
     use crate::parser::Parser;
 
     #[test]
@@ -655,6 +691,52 @@ mod tests {
         let input = "class Foo { function bar() { x = [0, 0] as Array<Number>; } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
+
+        /*
+        let expected = Ast::Document(vec![Ast::Class {
+            name: "Foo".to_string(),
+            extends: None,
+            annotations: Default::default(),
+            body: vec![Ast::Function {
+                name: "bar".to_string(),
+                args: Default::default(),
+                returns: None,
+                annotations: Default::default(),
+                body: vec![Ast::Assign {
+                    target: Box::new(Ast::Identifier("x".to_string(), Span { start: 0, end: 32 })),
+                    operator: AssignOperator::Assign,
+                    value: Box::new(Ast::TypeCast {
+                        expr: Box::new(Ast::Array(
+                            vec![
+                                Ast::BasicLit(LiteralValue::Long(0), Span { start: 0, end: 36 }),
+                                Ast::BasicLit(LiteralValue::Long(0), Span { start: 0, end: 39 }),
+                            ],
+                            Span { start: 0, end: 48 },
+                        )),
+                        target_type: ast::Type {
+                            ident: "Array".to_string(),
+                            generic_params: vec![ast::Type {
+                                ident: "Number".to_string(),
+                                generic_params: Default::default(),
+                                optional: false,
+                            }],
+                            optional: false,
+                        },
+                        span: Span { start: 0, end: 59 },
+                    }),
+                    span: Span { start: 33, end: 59 },
+                }],
+                visibility: None,
+                is_static: false,
+                is_hidden: false,
+                span: Span { start: 0, end: 61 },
+            }],
+            span: Span { start: 0, end: 61 },
+        }]);
+
+        assert_eq!(expected, ast);
+        */
+
         // Should parse as a document with one class
         if let Ast::Document(nodes) = ast {
             assert_eq!(nodes.len(), 1);
@@ -715,6 +797,7 @@ mod tests {
         let input = "a - b";
         let mut parser = Parser::new(input);
         let expr = parser.parse_expression().unwrap();
+
         assert!(matches!(expr, Ast::Binary { .. }));
     }
 
@@ -723,6 +806,7 @@ mod tests {
         let input = "x == null";
         let mut parser = Parser::new(input);
         let result = parser.parse_expression();
+
         assert!(result.is_ok());
     }
 }
