@@ -3,5 +3,9 @@ name = "monkey-c-formatter"
 version = "0.1.0"
 edition = "2021"
 
+[[example]]
+name = "format"
+path = "examples/format.rs"
+
 [dependencies]
 monkey-c-parser = { path = "../monkey-c-parser" }

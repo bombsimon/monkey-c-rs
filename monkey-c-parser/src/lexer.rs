@@ -112,7 +112,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_comment(&mut self) -> String {
-        let position = self.position + 2; // Skip `//`
+        let position = self.position + 1;
 
         while !self.is_newline_or_end() {
             self.read_char();
