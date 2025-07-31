@@ -58,6 +58,12 @@ impl<'a> Parser<'a> {
         false
     }
 
+    pub(crate) fn skip_comments(&mut self) {
+        while let token::Type::Comment(_) = self.current_token {
+            self.next_token_span();
+        }
+    }
+
     pub(crate) fn assert_next_token(
         &mut self,
         expect: &[token::Type],
@@ -201,38 +207,38 @@ impl<'a> Parser<'a> {
                 self.assert_next_token(&[token::Type::LBrace])?;
 
                 let mut variants = Vec::new();
-                loop {
+                self.skip_comments(); // Skip any comments after opening brace
+                
+                while self.current_token != token::Type::RBrace {
                     let variant_name = self.parse_identifier()?;
-                    dbg!(&variant_name);
+                    self.next_token_span(); // advance past identifier
+                    self.skip_comments(); // Skip any comments after identifier
 
-                    match dbg!(self.next_token_span()) {
-                        (_, token::Type::Comma, _) => {
-                            variants.push((variant_name, None));
-                            self.next_token_span(); // Consume `,`
-                        }
-                        (_, token::Type::Assign, _) => {
-                            self.next_token_span(); // Consume `=`
-                            let value = self.parse_primary()?;
+                    let value = if self.current_token == token::Type::Assign {
+                        self.next_token_span(); // Consume `=`
+                        self.skip_comments(); // Skip any comments after `=`
+                        let val = self.parse_primary()?;
+                        self.skip_comments(); // Skip any comments after value
+                        Some(val)
+                    } else {
+                        None
+                    };
 
-                            variants.push((variant_name, Some(value)));
-                            self.next_token_span(); // Consume `,`
-                        }
-                        (_, token::Type::RBrace, _) => {
-                            variants.push((variant_name, None));
-                            break;
-                        }
-                        _ => {
-                            return Err(ParserError::ParseError(format!(
-                                "Unexpected token parsing enum: {:?}, context: {}",
-                                self.current_token,
-                                self.lexer.context()
-                            )))
-                        }
+                    variants.push((variant_name, value));
+
+                    if self.current_token == token::Type::Comma {
+                        self.next_token_span(); // Consume `,`
+                        self.skip_comments(); // Skip any comments after comma
+                    } else if self.current_token != token::Type::RBrace {
+                        return Err(ParserError::ParseError(format!(
+                            "Expected ',' or '}}' in enum, got {:?}, context: {}",
+                            self.current_token,
+                            self.lexer.context()
+                        )));
                     }
                 }
 
-                // Maybe parse trailing `}`
-                self.next_token_span();
+                self.assert_next_token(&[token::Type::RBrace])?; // consume closing brace
 
                 Ok(Ast::Enum { name, variants })
             }
@@ -1179,7 +1185,103 @@ mod tests {
         "#;
         let mut parser = Parser::new(input);
         let ast = parser.parse();
-        dbg!(&ast);
         assert!(ast.is_ok(), "Should parse enum: {:?}", ast);
+    }
+
+    #[test]
+    fn test_parse_enum_with_comments() {
+        let input = r#"
+            enum MyEnum {
+                a, // some comment
+                b, // another comment
+                c = 5, // value comment
+                d // final comment
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "Should parse enum with end-of-line comments: {:?}", ast);
+        
+        // Verify the enum was parsed correctly
+        if let Ok(Ast::Document(nodes)) = ast {
+            if let Some(Ast::Enum { name, variants }) = nodes.iter().find(|node| matches!(node, Ast::Enum { .. })) {
+                assert_eq!(name, "MyEnum");
+                assert_eq!(variants.len(), 4);
+                assert_eq!(variants[0].0, "a");
+                assert_eq!(variants[1].0, "b");
+                assert_eq!(variants[2].0, "c");
+                assert_eq!(variants[3].0, "d");
+            } else {
+                panic!("Should find enum in parsed AST");
+            }
+        } else {
+            panic!("Should parse successfully");
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_with_mixed_comments() {
+        let input = r#"
+            enum TestEnum {
+                // comment before first variant
+                first = 1, // comment after assignment
+                second, // simple comment
+                // comment between variants
+                third = 999, // final comment with value
+                last // no trailing comma
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "Should parse enum with mixed comments: {:?}", ast);
+        
+        if let Ok(Ast::Document(nodes)) = ast {
+            if let Some(Ast::Enum { name, variants }) = nodes.iter().find(|node| matches!(node, Ast::Enum { .. })) {
+                assert_eq!(name, "TestEnum");
+                assert_eq!(variants.len(), 4);
+                assert_eq!(variants[0].0, "first");
+                assert_eq!(variants[1].0, "second");
+                assert_eq!(variants[2].0, "third");
+                assert_eq!(variants[3].0, "last");
+            } else {
+                panic!("Should find enum in parsed AST");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_enum_empty_with_comments() {
+        let input = r#"
+            enum EmptyEnum {
+                // just a comment inside
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "Should parse empty enum with comments: {:?}", ast);
+        
+        if let Ok(Ast::Document(nodes)) = ast {
+            if let Some(Ast::Enum { name, variants }) = nodes.iter().find(|node| matches!(node, Ast::Enum { .. })) {
+                assert_eq!(name, "EmptyEnum");
+                assert_eq!(variants.len(), 0);
+            } else {
+                panic!("Should find enum in parsed AST");
+            }
+        }
+    }
+
+    #[test]
+    fn test_general_comment_handling() {
+        let input = r#"
+            // Top level comment
+            enum MyEnum {
+                a, // comment after a
+                b = 42 // comment after assignment
+            }
+            // Another top level comment
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        assert!(ast.is_ok(), "Should handle comments throughout code: {:?}", ast);
     }
 }
