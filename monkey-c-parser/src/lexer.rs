@@ -1,5 +1,7 @@
 use crate::token;
 
+const CONTEXT_SIZE: usize = 50;
+
 pub struct Lexer<'a> {
     input: &'a str,
     position: usize,
@@ -18,6 +20,40 @@ impl<'a> Lexer<'a> {
 
         lexer.read_char();
         lexer
+    }
+
+    pub fn context(&self) -> String {
+        let len = self.input.len();
+        let pos = self.position - 1;
+
+        if pos >= len {
+            return "[EOF]".to_string();
+        }
+
+        let start = self
+            .input
+            .char_indices()
+            .rev()
+            .filter(|&(i, _)| i < pos)
+            .take(CONTEXT_SIZE)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        let end = self
+            .input
+            .char_indices()
+            .filter(|&(i, _)| i > pos)
+            .take(CONTEXT_SIZE)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(len);
+
+        let before = &self.input[start..pos];
+        let current = self.input[pos..].chars().next().unwrap_or('�');
+        let after = &self.input[pos + current.len_utf8()..end];
+
+        format!("{before}»[{current}]«{after}")
     }
 
     fn read_char(&mut self) {
@@ -112,11 +148,29 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_comment(&mut self) -> String {
-        let position = self.position + 1;
+        let position = self.position;
 
         while !self.is_newline_or_end() {
             self.read_char();
         }
+
+        self.input[position..self.position].to_string()
+    }
+
+    fn read_multiline_comment(&mut self) -> String {
+        let position = self.position;
+
+        loop {
+            if self.ch == b'*' && self.peek_char() == b'/' {
+                break;
+            }
+
+            self.read_char();
+        }
+
+        // Consume ending `*/`
+        self.read_char();
+        self.read_char();
 
         self.input[position..self.position].to_string()
     }
@@ -191,9 +245,12 @@ impl<'a> Lexer<'a> {
                     self.read_char();
                     token::Type::DivAssign
                 } else if self.peek_char() == b'/' {
-                    self.read_char();
-                    self.read_char();
                     let content = self.read_comment();
+
+                    return (start, token::Type::Comment(content), self.position);
+                } else if self.peek_char() == b'*' {
+                    let content = self.read_multiline_comment();
+
                     return (start, token::Type::Comment(content), self.position);
                 } else {
                     self.read_char();
@@ -395,6 +452,24 @@ mod tests {
         }
 
         tokens
+    }
+
+    #[test]
+    fn test_parse_comments() {
+        let input = r#"// Single line comment
+
+/*
+ * Multiline
+ * comment
+ */"#;
+        let tokens = consume_all_tokens(input);
+
+        let expected = vec![
+            Type::Comment("// Single line comment".to_string()),
+            Type::Comment("/*\n * Multiline\n * comment\n */".to_string()),
+        ];
+
+        assert_eq!(expected, tokens);
     }
 
     #[test]

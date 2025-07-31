@@ -66,12 +66,16 @@ impl<'a> Parser<'a> {
             if self.current_token == *expected {
                 let tkn = self.current_token.clone();
                 self.next_token_span(); // Advance to next token
+
                 return Ok(tkn);
             }
         }
+
         Err(ParserError::TokenizerError(format!(
-            "got unexpected token from `assert_next_token`: '{:?}', expected one of: {:?}",
-            self.current_token, expect
+            "got unexpected token from `assert_next_token`: '{:?}', expected one of: {:?}, context: {}",
+            self.current_token,
+            expect,
+            self.lexer.context()
         )))
     }
 
@@ -82,8 +86,9 @@ impl<'a> Parser<'a> {
                 Ok(name)
             }
             _ => Err(ParserError::ParseError(format!(
-                "Expected identifier, got {:?}",
-                self.current_token
+                "Expected identifier, got {:?}, context: {}",
+                self.current_token,
+                self.lexer.context(),
             ))),
         }
     }
@@ -189,14 +194,56 @@ impl<'a> Parser<'a> {
                     span: Span { start: 0, end },
                 })
             }
+            token::Type::Enum => {
+                self.next_token_span(); // advance past Enum token
+                let name = self.parse_identifier()?;
+                self.next_token_span(); // advance past identifier
+                self.assert_next_token(&[token::Type::LBrace])?;
+
+                let mut variants = Vec::new();
+                loop {
+                    let variant_name = self.parse_identifier()?;
+                    dbg!(&variant_name);
+
+                    match dbg!(self.next_token_span()) {
+                        (_, token::Type::Comma, _) => {
+                            variants.push((variant_name, None));
+                            self.next_token_span(); // Consume `,`
+                        }
+                        (_, token::Type::Assign, _) => {
+                            self.next_token_span(); // Consume `=`
+                            let value = self.parse_primary()?;
+
+                            variants.push((variant_name, Some(value)));
+                            self.next_token_span(); // Consume `,`
+                        }
+                        (_, token::Type::RBrace, _) => {
+                            variants.push((variant_name, None));
+                            break;
+                        }
+                        _ => {
+                            return Err(ParserError::ParseError(format!(
+                                "Unexpected token parsing enum: {:?}, context: {}",
+                                self.current_token,
+                                self.lexer.context()
+                            )))
+                        }
+                    }
+                }
+
+                // Maybe parse trailing `}`
+                self.next_token_span();
+
+                Ok(Ast::Enum { name, variants })
+            }
             token::Type::Class => {
                 self.next_token_span(); // advance past Class token
                 let name = self.parse_identifier()?;
                 self.next_token_span(); // advance past identifier
                 let extends = if self.current_token == token::Type::Extends {
                     self.next_token_span(); // advance past extends
-                    let name = self.parse_identifier()?;
-                    self.next_token_span(); // advance past identifier
+                    let name = self.parse_dotted_identifier()?;
+
                     Some(name)
                 } else {
                     None
@@ -241,7 +288,8 @@ impl<'a> Parser<'a> {
                     span: Span { start: 0, end },
                 })
             }
-            token::Type::Var => {
+            // TODO: Const need custom block.
+            token::Type::Var | token::Type::Const => {
                 self.next_token_span(); // advance past Var token
                 let name = self.parse_identifier()?;
                 self.next_token_span(); // advance past identifier
@@ -289,8 +337,9 @@ impl<'a> Parser<'a> {
             }
             token::Type::Eof => Ok(Ast::Eof),
             _ => Err(ParserError::ParseError(format!(
-                "Unexpected token at top level: {:?}",
-                self.current_token
+                "Unexpected token at top level: {:?}, context: {}",
+                self.current_token,
+                self.lexer.context()
             ))),
         }
     }
@@ -548,6 +597,7 @@ mod tests {
         let input = "class MyClass { var x as Float; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
+
         // Match the document node and find the class
         let class = match ast {
             Ast::Document(nodes) => nodes
@@ -562,7 +612,9 @@ mod tests {
                 .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
+
         assert_eq!(class.0, "MyClass");
+
         // Find the variable node
         let var = class
             .1
@@ -575,6 +627,7 @@ mod tests {
                 }
             })
             .expect("Should find a variable node");
+
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
     }
@@ -646,6 +699,7 @@ mod tests {
         let input = "class Foo { var x as Float = 1.0; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
+
         // Match the document node and find the class
         let class = match ast {
             Ast::Document(nodes) => nodes
@@ -660,7 +714,9 @@ mod tests {
                 .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
+
         assert_eq!(class.0, "Foo");
+
         // Find the variable node
         let var = class
             .1
@@ -673,13 +729,16 @@ mod tests {
                 }
             })
             .expect("Should find a variable node");
+
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
+
         // Verify the initialization value
         let initializer = var
             .initializer
             .as_ref()
             .expect("Should have an initializer");
+
         if let Ast::BasicLit(LiteralValue::Double(value), _) = initializer.as_ref() {
             assert_eq!(*value, 1.0);
         } else {
@@ -692,6 +751,7 @@ mod tests {
         let input = "class Foo { var x as Array<Number> = [1, 2, 3] as Array<Number>; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
+
         // Match the document node and find the class
         let class = match ast {
             Ast::Document(nodes) => nodes
@@ -706,7 +766,9 @@ mod tests {
                 .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
         };
+
         assert_eq!(class.0, "Foo");
+
         // Find the variable node
         let var = class
             .1
@@ -719,17 +781,20 @@ mod tests {
                 }
             })
             .expect("Should find a variable node");
+
         assert_eq!(var.name, "x");
         assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
         assert_eq!(
             var.type_.as_ref().unwrap().generic_params[0].ident,
             "Number"
         );
+
         // Verify the initialization value
         let initializer = var
             .initializer
             .as_ref()
             .expect("Should have an initializer");
+
         // Should be a type-cast expression
         if let Ast::TypeCast {
             expr,
@@ -777,6 +842,7 @@ mod tests {
             _ => panic!("Should be a document node"),
         };
         assert_eq!(class.0, "Foo");
+
         // Find the variable node
         let var = class
             .1
@@ -790,11 +856,13 @@ mod tests {
             })
             .expect("Should find a variable node");
         assert_eq!(var.name, "x");
+
         // Verify the initialization value is a function call
         let initializer = var
             .initializer
             .as_ref()
             .expect("Should have an initializer");
+
         if let Ast::Call { callee, args, .. } = initializer.as_ref() {
             if let Ast::Member {
                 object, property, ..
@@ -1095,5 +1163,23 @@ mod tests {
         let mut parser = Parser::new(input);
         let ast = parser.parse();
         assert!(ast.is_ok(), "Should parse collections: {:?}", ast);
+    }
+
+    #[test]
+    fn test_parse_enum() {
+        let input = r#"
+            enum MyEnum {
+                x = 1337,
+                y,
+                z,
+                a = 0,
+                b,
+                c = 1
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse();
+        dbg!(&ast);
+        assert!(ast.is_ok(), "Should parse enum: {:?}", ast);
     }
 }

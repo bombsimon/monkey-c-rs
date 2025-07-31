@@ -52,6 +52,10 @@ pub enum Ast {
         body: Vec<Ast>,
         span: Span,
     },
+    Enum {
+        name: Ident,
+        variants: Vec<(Ident, Option<Ast>)>,
+    },
     Function {
         name: Ident,
         args: Vec<Variable>,

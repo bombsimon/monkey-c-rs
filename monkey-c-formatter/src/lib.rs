@@ -66,7 +66,8 @@ impl Formatter {
             Ast::Comment(comment, _span) => {
                 self.write_indent();
                 // self.write_span(span);
-                self.output.push_str("// ");
+
+                // Comment already contains either `//` or `/* .. */`.
                 self.output.push_str(comment);
                 self.output.push('\n');
             }
@@ -90,6 +91,28 @@ impl Formatter {
                 }
 
                 self.output.push_str(";\n");
+            }
+            Ast::Enum { name, variants } => {
+                self.write_indent();
+                self.output.push_str("enum ");
+                self.output.push_str(name);
+                self.output.push_str(" {\n");
+                self.indent();
+
+                for (variant_name, variant_value) in variants {
+                    self.output.push_str(variant_name);
+
+                    if let Some(val) = variant_value {
+                        self.output.push_str(" = ");
+                        self.format(val);
+                    }
+
+                    self.output.push_str(",\n");
+                }
+
+                self.dedent();
+                self.write_indent();
+                self.output.push_str("}\n");
             }
             Ast::Class {
                 name,
