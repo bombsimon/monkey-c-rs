@@ -1,4 +1,7 @@
-use crate::ast::{Ast, Span, Type, Variable, Visibility};
+use crate::ast::{
+    Ast, BlockStmt, ClassDecl, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ReturnStmt,
+    Span, Stmt, Type, VarStmt, Variable, Visibility, WhileStmt,
+};
 use crate::token;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,18 +26,17 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> Result<Ast, ParserError> {
-        let mut ast = Vec::new();
+        let mut nodes = Vec::new();
 
         loop {
-            let statement = self.parse_declaration()?;
-            if statement == Ast::Eof {
+            let decl = self.parse_declaration()?;
+            if decl == Ast::Eof {
                 break;
             }
-
-            ast.push(statement);
+            nodes.push(decl);
         }
 
-        Ok(Ast::Document(ast))
+        Ok(Ast::Document(nodes))
     }
 
     pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
@@ -65,10 +67,12 @@ impl<'a> Parser<'a> {
         for expected in expect {
             if self.current_token == *expected {
                 let tkn = self.current_token.clone();
-                self.next_token_span(); // Advance to next token
+                self.next_token_span();
+
                 return Ok(tkn);
             }
         }
+
         Err(ParserError::TokenizerError(format!(
             "got unexpected token from `assert_next_token`: '{:?}', expected one of: {:?}",
             self.current_token, expect
@@ -77,10 +81,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_identifier(&mut self) -> Result<String, ParserError> {
         match &self.current_token {
-            token::Type::Identifier(name) => {
-                let name = name.clone();
-                Ok(name)
-            }
+            token::Type::Identifier(name) => Ok(name.clone()),
             _ => Err(ParserError::ParseError(format!(
                 "Expected identifier, got {:?}",
                 self.current_token
@@ -97,10 +98,8 @@ impl<'a> Parser<'a> {
             self.next_token_span(); // consume <
             let mut params = Vec::new();
 
-            // Parse first parameter
             if self.current_token != token::Type::Greater {
                 params.push(self.parse_type()?);
-                // Parse additional parameters
                 while self.current_token == token::Type::Comma {
                     self.next_token_span(); // consume ,
                     params.push(self.parse_type()?);
@@ -127,19 +126,57 @@ impl<'a> Parser<'a> {
 
     fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
         let mut name = self.parse_identifier()?;
-        self.next_token_span(); // advance after first identifier
+        self.next_token_span();
         while self.current_token == token::Type::Dot {
             self.next_token_span(); // consume dot
             let next = self.parse_identifier()?;
             name.push('.');
             name.push_str(&next);
-            self.next_token_span(); // advance after each identifier
+            self.next_token_span();
         }
+
         Ok(name)
     }
 
+    /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.
+    /// Does NOT consume a trailing semicolon — callers are responsible for that.
+    fn parse_var_contents(
+        &mut self,
+        visibility: Option<Visibility>,
+        is_static: bool,
+        is_hidden: bool,
+    ) -> Result<VarStmt, ParserError> {
+        let name = self.parse_identifier()?;
+        self.next_token_span(); // advance past identifier
+
+        let type_ = if self.current_token == token::Type::As {
+            self.next_token_span();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        let initializer = if self.current_token == token::Type::Assign {
+            self.next_token_span(); // consume =
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        Ok(VarStmt {
+            variable: Variable {
+                name,
+                type_,
+                visibility,
+                initializer,
+                is_static,
+                is_hidden,
+            },
+            span: Span { start: 0, end: 0 },
+        })
+    }
+
     fn parse_declaration(&mut self) -> Result<Ast, ParserError> {
-        // Collect modifiers
         let mut visibility = None;
         let mut is_static = false;
         let mut is_hidden = false;
@@ -170,10 +207,9 @@ impl<'a> Parser<'a> {
             }
         }
 
-        let token_type = self.current_token.clone();
-        match token_type {
+        match self.current_token.clone() {
             token::Type::Import => {
-                self.next_token_span(); // advance past Import token
+                self.next_token_span();
                 let name = self.parse_dotted_identifier()?;
                 let alias = if self.current_token == token::Type::As {
                     self.next_token_span();
@@ -181,109 +217,77 @@ impl<'a> Parser<'a> {
                 } else {
                     None
                 };
-                self.assert_next_token(&[token::Type::Semicolon])?; // require and consume semicolon
+                self.assert_next_token(&[token::Type::Semicolon])?;
                 let (_, _, end) = self.peek_token_span();
-                Ok(Ast::Import {
+                Ok(Ast::Import(ImportDecl {
                     name,
                     alias,
                     span: Span { start: 0, end },
-                })
+                }))
             }
             token::Type::Class => {
-                self.next_token_span(); // advance past Class token
+                self.next_token_span();
                 let name = self.parse_identifier()?;
-                self.next_token_span(); // advance past identifier
+                self.next_token_span();
                 let extends = if self.current_token == token::Type::Extends {
-                    self.next_token_span(); // advance past extends
-                    let name = self.parse_identifier()?;
-                    self.next_token_span(); // advance past identifier
-                    Some(name)
+                    self.next_token_span();
+                    let n = self.parse_identifier()?;
+                    self.next_token_span();
+                    Some(n)
                 } else {
                     None
                 };
-                self.assert_next_token(&[token::Type::LBrace])?; // consume opening brace
+
+                self.assert_next_token(&[token::Type::LBrace])?;
                 let body = self.parse_class_body()?;
-                self.assert_next_token(&[token::Type::RBrace])?; // consume closing brace
+                self.assert_next_token(&[token::Type::RBrace])?;
                 let (_, _, end) = self.peek_token_span();
-                Ok(Ast::Class {
+                Ok(Ast::Class(ClassDecl {
                     name,
                     extends,
                     annotations: Vec::new(),
                     body,
                     span: Span { start: 0, end },
-                })
+                }))
             }
             token::Type::Function => {
-                self.next_token_span(); // advance past Function token
+                self.next_token_span();
                 let name = self.parse_identifier()?;
-                self.next_token_span(); // advance past identifier
+                self.next_token_span();
                 let args = self.parse_function_args()?;
                 let returns = if self.current_token == token::Type::As {
                     self.next_token_span();
-                    let t = self.parse_type()?;
-                    Some(t)
+                    Some(self.parse_type()?)
                 } else {
                     None
                 };
-                let annotations = Vec::new(); // TODO: Attach annotations if needed
-                self.assert_next_token(&[token::Type::LBrace])?; // consume LBrace
-                let function_body = self.parse_block()?;
+
+                self.assert_next_token(&[token::Type::LBrace])?;
+                let body = self.parse_block()?;
                 let (_, _, end) = self.peek_token_span();
-                Ok(Ast::Function {
+                Ok(Ast::Function(FunctionDecl {
                     name,
                     args,
                     returns,
-                    annotations,
-                    body: function_body,
+                    annotations: Vec::new(),
+                    body,
                     visibility,
                     is_static,
                     is_hidden,
                     span: Span { start: 0, end },
-                })
+                }))
             }
             token::Type::Var => {
-                self.next_token_span(); // advance past Var token
-                let name = self.parse_identifier()?;
-                self.next_token_span(); // advance past identifier
-                let type_ = if self.current_token == token::Type::As {
-                    self.next_token_span();
-                    let t = self.parse_type()?;
-                    Some(t)
-                } else {
-                    None
-                };
-                let initializer = if self.current_token == token::Type::Assign {
-                    self.next_token_span(); // consume =
-                    let expr = self.parse_expression()?;
-                    Some(Box::new(expr))
-                } else {
-                    None
-                };
+                self.next_token_span();
+                let var_stmt = self.parse_var_contents(visibility, is_static, is_hidden)?;
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Ast::Variable(
-                    Variable {
-                        name,
-                        type_,
-                        visibility,
-                        initializer,
-                        is_static,
-                        is_hidden,
-                    },
-                    Span { start: 0, end: 0 },
-                ))
-            }
-            token::Type::Identifier(name) => {
-                let (_, _, end) = self.peek_token_span();
-                self.next_token_span(); // Advance the token to prevent infinite loop
-                Ok(Ast::Identifier(name, Span { start: 0, end }))
+                Ok(Ast::Variable(var_stmt))
             }
             token::Type::Comment(content) => {
-                let content = content.clone();
                 self.next_token_span();
                 Ok(Ast::Comment(content, Span { start: 0, end: 0 }))
             }
             token::Type::Annotation(content) => {
-                let content = content.clone();
                 self.next_token_span();
                 Ok(Ast::Annotation(content, Span { start: 0, end: 0 }))
             }
@@ -301,12 +305,11 @@ impl<'a> Parser<'a> {
 
         while self.current_token != token::Type::RParen {
             let name = self.parse_identifier()?;
-            self.next_token_span(); // Advance past identifier
+            self.next_token_span();
 
             let type_ = if self.current_token == token::Type::As {
-                self.next_token_span(); // Advance past 'as'
-                let t = self.parse_type()?;
-                Some(t)
+                self.next_token_span();
+                Some(self.parse_type()?)
             } else {
                 None
             };
@@ -321,7 +324,7 @@ impl<'a> Parser<'a> {
             });
 
             if self.current_token == token::Type::Comma {
-                self.next_token_span(); // consume comma
+                self.next_token_span();
             } else if self.current_token != token::Type::RParen {
                 return Err(ParserError::ParseError(format!(
                     "Expected ',' or ')' in function arguments, got {:?}",
@@ -331,6 +334,7 @@ impl<'a> Parser<'a> {
         }
 
         self.next_token_span(); // consume RParen
+
         Ok(args)
     }
 
@@ -340,179 +344,175 @@ impl<'a> Parser<'a> {
             let member = self.parse_declaration()?;
             body.push(member);
         }
+
         Ok(body)
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Ast>, ParserError> {
-        // The opening LBrace should already be consumed by the caller
-        let mut statements = Vec::new();
+    /// Parse a block body. The opening `{` must already be consumed by the caller.
+    /// Consumes the closing `}`.
+    pub(crate) fn parse_block(&mut self) -> Result<Vec<Stmt>, ParserError> {
+        let mut stmts = Vec::new();
         while self.current_token != token::Type::RBrace {
-            let statement = self.parse_statement()?;
-            statements.push(statement);
+            stmts.push(self.parse_statement()?);
         }
-        self.next_token_span(); // consume RBrace
-        Ok(statements)
+
+        self.next_token_span(); // consume }
+
+        Ok(stmts)
     }
 
-    fn parse_statement(&mut self) -> Result<Ast, ParserError> {
-        match &self.current_token {
+    fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
+        match self.current_token.clone() {
             token::Type::Var => {
-                self.next_token_span(); // advance past Var token
-                let name = self.parse_identifier()?;
-                self.next_token_span(); // advance past identifier
-                let type_ = if self.current_token == token::Type::As {
-                    self.next_token_span();
-                    let t = self.parse_type()?;
-                    Some(t)
-                } else {
-                    None
-                };
-                let initializer = if self.current_token == token::Type::Assign {
-                    self.next_token_span(); // consume =
-                    let expr = self.parse_expression()?;
-                    Some(Box::new(expr))
-                } else {
-                    None
-                };
+                self.next_token_span();
+                let var_stmt = self.parse_var_contents(None, false, false)?;
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Ast::Variable(
-                    Variable {
-                        name,
-                        type_,
-                        visibility: None,
-                        initializer,
-                        is_static: false,
-                        is_hidden: false,
-                    },
-                    Span { start: 0, end: 0 },
-                ))
+                Ok(Stmt::Var(var_stmt))
             }
             token::Type::Return => {
-                self.next_token_span(); // advance past Return token
+                self.next_token_span();
                 let value = if self.current_token == token::Type::Semicolon {
                     None
                 } else {
-                    let expr = self.parse_expression()?;
-                    Some(Box::new(expr))
+                    Some(self.parse_expression()?)
                 };
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Ast::Return(value, Span { start: 0, end: 0 }))
+                Ok(Stmt::Return(ReturnStmt {
+                    value,
+                    span: Span { start: 0, end: 0 },
+                }))
+            }
+            token::Type::Break => {
+                self.next_token_span();
+                self.assert_next_token(&[token::Type::Semicolon])?;
+                Ok(Stmt::Break(Span { start: 0, end: 0 }))
+            }
+            token::Type::Continue => {
+                self.next_token_span();
+                self.assert_next_token(&[token::Type::Semicolon])?;
+                Ok(Stmt::Continue(Span { start: 0, end: 0 }))
             }
             token::Type::If => {
-                self.next_token_span(); // advance past If token
-                self.assert_next_token(&[token::Type::LParen])?; // consume opening parenthesis
-                let condition = Box::new(self.parse_expression_no_postfix()?);
-                self.assert_next_token(&[token::Type::RParen])?; // consume closing parenthesis
-                self.assert_next_token(&[token::Type::LBrace])?; // consume opening brace
-                let then_branch =
-                    Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 }));
+                self.next_token_span();
+                self.assert_next_token(&[token::Type::LParen])?;
+                let condition = self.parse_expression_no_postfix()?;
+                self.assert_next_token(&[token::Type::RParen])?;
+                self.assert_next_token(&[token::Type::LBrace])?;
+                let then_stmts = self.parse_block()?;
+                let then_branch = BlockStmt {
+                    stmts: then_stmts,
+                    span: Span { start: 0, end: 0 },
+                };
+
                 let else_branch = if self.current_token == token::Type::Else {
-                    self.next_token_span(); // Consume `else`
-                    self.next_token_span(); // Consume `{`
-                    Some(Box::new(Ast::Block(
-                        self.parse_block()?,
-                        Span { start: 0, end: 0 },
-                    )))
+                    self.next_token_span(); // consume `else`
+                    self.next_token_span(); // consume `{`
+                    let else_stmts = self.parse_block()?;
+                    Some(BlockStmt {
+                        stmts: else_stmts,
+                        span: Span { start: 0, end: 0 },
+                    })
                 } else {
                     None
                 };
+
                 let (_, _, end) = self.peek_token_span();
-                Ok(Ast::If {
+                Ok(Stmt::If(IfStmt {
                     condition,
                     then_branch,
                     else_branch,
                     span: Span { start: 0, end },
-                })
+                }))
             }
             token::Type::While => {
-                self.next_token_span(); // advance past While token
-                let condition = Box::new(self.parse_expression()?);
-                let body = Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 }));
+                self.next_token_span();
+                let condition = self.parse_expression()?;
+                self.assert_next_token(&[token::Type::LBrace])?;
+                let body_stmts = self.parse_block()?;
+                let body = BlockStmt {
+                    stmts: body_stmts,
+                    span: Span { start: 0, end: 0 },
+                };
+
                 let (_, _, end) = self.peek_token_span();
-                Ok(Ast::While {
+
+                Ok(Stmt::While(WhileStmt {
                     condition,
                     body,
                     span: Span { start: 0, end },
-                })
+                }))
             }
             token::Type::For => {
-                self.assert_next_token(&[token::Type::For])?; // Consume `for`
-                self.assert_next_token(&[token::Type::LParen])?; // Consume `(`
+                self.assert_next_token(&[token::Type::For])?;
+                self.assert_next_token(&[token::Type::LParen])?;
 
                 let init = match self.current_token {
                     token::Type::Semicolon => {
-                        self.next_token_span(); // Consume `;`
+                        self.next_token_span();
                         None
                     }
-                    token::Type::Var => Some(Box::new(self.parse_statement()?)),
-                    _ => Some(Box::new(self.parse_expression()?)),
+                    token::Type::Var => {
+                        self.next_token_span(); // consume `var`
+                        let var_stmt = self.parse_var_contents(None, false, false)?;
+                        self.assert_next_token(&[token::Type::Semicolon])?;
+                        Some(ForInit::Var(var_stmt))
+                    }
+                    _ => {
+                        let expr = self.parse_expression()?;
+                        self.assert_next_token(&[token::Type::Semicolon])?;
+                        Some(ForInit::Expr(expr))
+                    }
                 };
 
                 let condition = if self.current_token == token::Type::Semicolon {
                     None
                 } else {
-                    Some(Box::new(self.parse_expression()?))
+                    Some(self.parse_expression()?)
                 };
 
                 self.assert_next_token(&[token::Type::Semicolon])?;
 
-                let update = if self.current_token == token::Type::LParen {
+                let update = if self.current_token == token::Type::RParen {
                     None
                 } else {
-                    Some(Box::new(self.parse_expression()?))
+                    Some(self.parse_expression()?)
                 };
 
-                self.assert_next_token(&[token::Type::RParen])?; // Consume `)`
-                self.assert_next_token(&[token::Type::LBrace])?; // Consume `{`
+                self.assert_next_token(&[token::Type::RParen])?;
+                self.assert_next_token(&[token::Type::LBrace])?;
 
-                let body = Box::new(Ast::Block(self.parse_block()?, Span { start: 0, end: 0 }));
+                let body_stmts = self.parse_block()?;
+                let body = BlockStmt {
+                    stmts: body_stmts,
+                    span: Span { start: 0, end: 0 },
+                };
+
                 let (_, _, end) = self.peek_token_span();
-                Ok(Ast::For {
+
+                Ok(Stmt::For(ForStmt {
                     init,
                     condition,
                     update,
                     body,
                     span: Span { start: 0, end },
-                })
+                }))
             }
             token::Type::Comment(content) => {
-                let content = content.clone();
                 self.next_token_span();
-                Ok(Ast::Comment(content, Span { start: 0, end: 0 }))
+                Ok(Stmt::Comment(content, Span { start: 0, end: 0 }))
+            }
+            token::Type::LBrace => {
+                self.next_token_span(); // consume {
+                let stmts = self.parse_block()?;
+                Ok(Stmt::Block(BlockStmt {
+                    stmts,
+                    span: Span { start: 0, end: 0 },
+                }))
             }
             _ => {
-                if self.current_token == token::Type::LBrace {
-                    let block = self.parse_block()?;
-                    // Instead of wrapping in Ast::Block, return the first statement in the block, or Eof if empty
-                    if block.is_empty() {
-                        return Ok(Ast::Eof);
-                    } else if block.len() == 1 {
-                        return Ok(block.into_iter().next().unwrap());
-                    } else {
-                        // If multiple statements, wrap in a Block node
-                        return Ok(Ast::Block(block, Span { start: 0, end: 0 }));
-                    }
-                }
-                let expr = self.parse_expression();
-                match expr {
-                    Err(ParserError::ParseError(msg))
-                        if msg == "Block parsing should not be handled in parse_primary" =>
-                    {
-                        let block = self.parse_block()?;
-                        if block.is_empty() {
-                            Ok(Ast::Eof)
-                        } else if block.len() == 1 {
-                            Ok(block.into_iter().next().unwrap())
-                        } else {
-                            Ok(Ast::Block(block, Span { start: 0, end: 0 }))
-                        }
-                    }
-                    Ok(expr) => {
-                        self.assert_next_token(&[token::Type::Semicolon])?;
-                        Ok(expr)
-                    }
-                    Err(e) => Err(e),
-                }
+                let expr = self.parse_expression()?;
+                self.assert_next_token(&[token::Type::Semicolon])?;
+                Ok(Stmt::Expr(expr))
             }
         }
     }
@@ -525,58 +525,69 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let annotations = Vec::new(); // TODO: Parse annotations
+
         let body = self.parse_class_body()?;
         let (_, _, end) = self.peek_token_span();
-        Ok(Ast::Class {
+
+        Ok(Ast::Class(ClassDecl {
             name,
             extends,
-            annotations,
+            annotations: Vec::new(),
             body,
             span: Span { start: 0, end },
-        })
+        }))
+    }
+
+    pub(crate) fn current_token_is(&self, expect: &[token::Type]) -> bool {
+        expect.contains(&self.current_token)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::LiteralValue;
+    use crate::ast::{
+        Expr, LitExpr, LiteralValue, Stmt, VarStmt, Visibility,
+    };
 
-    #[test]
-    fn test_parse_simple_class_with_var() {
-        let input = "class MyClass { var x as Float; }";
-        let mut parser = Parser::new(input);
-        let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
+    fn find_class(ast: Ast) -> ClassDecl {
+        match ast {
             Ast::Document(nodes) => nodes
                 .into_iter()
                 .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
+                    if let Ast::Class(c) = node {
+                        Some(c)
                     } else {
                         None
                     }
                 })
                 .expect("Should find a class node"),
             _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "MyClass");
-        // Find the variable node
-        let var = class
-            .1
-            .iter()
+        }
+    }
+
+    fn find_var_in_body(body: &[Ast]) -> &VarStmt {
+        body.iter()
             .find_map(|node| {
-                if let Ast::Variable(var, _) = node {
-                    Some(var)
+                if let Ast::Variable(v) = node {
+                    Some(v)
                 } else {
                     None
                 }
             })
-            .expect("Should find a variable node");
-        assert_eq!(var.name, "x");
-        assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
+            .expect("Should find a variable node")
+    }
+
+    #[test]
+    fn test_parse_simple_class_with_var() {
+        let input = "class MyClass { var x as Float; }";
+        let mut parser = Parser::new(input);
+        let ast = parser.parse().expect("Should parse successfully");
+        let class = find_class(ast);
+        assert_eq!(class.name, "MyClass");
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.variable.name, "x");
+        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Float");
     }
 
     #[test]
@@ -584,37 +595,16 @@ mod tests {
         let input = "class MyClass { var speedPickerDefaults as Array<Float>; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "MyClass");
-        // Find the variable node
-        let var = class
-            .1
-            .iter()
-            .find_map(|node| {
-                if let Ast::Variable(var, _) = node {
-                    Some(var)
-                } else {
-                    None
-                }
-            })
-            .expect("Should find a variable node");
-        assert_eq!(var.name, "speedPickerDefaults");
-        assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
-        assert_eq!(var.type_.as_ref().unwrap().generic_params.len(), 1);
-        assert_eq!(var.type_.as_ref().unwrap().generic_params[0].ident, "Float");
+        let class = find_class(ast);
+        assert_eq!(class.name, "MyClass");
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.variable.name, "speedPickerDefaults");
+        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Array");
+        assert_eq!(var.variable.type_.as_ref().unwrap().generic_params.len(), 1);
+        assert_eq!(
+            var.variable.type_.as_ref().unwrap().generic_params[0].ident,
+            "Float"
+        );
     }
 
     #[test]
@@ -646,41 +636,18 @@ mod tests {
         let input = "class Foo { var x as Float = 1.0; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "Foo");
-        // Find the variable node
-        let var = class
-            .1
-            .iter()
-            .find_map(|node| {
-                if let Ast::Variable(var, _) = node {
-                    Some(var)
-                } else {
-                    None
-                }
-            })
-            .expect("Should find a variable node");
-        assert_eq!(var.name, "x");
-        assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
-        // Verify the initialization value
-        let initializer = var
-            .initializer
-            .as_ref()
-            .expect("Should have an initializer");
-        if let Ast::BasicLit(LiteralValue::Double(value), _) = initializer.as_ref() {
+        let class = find_class(ast);
+        assert_eq!(class.name, "Foo");
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.variable.name, "x");
+        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Float");
+
+        let initializer = var.variable.initializer.as_ref().expect("Should have initializer");
+        if let Expr::Lit(LitExpr {
+            value: LiteralValue::Double(value),
+            ..
+        }) = initializer.as_ref()
+        {
             assert_eq!(*value, 1.0);
         } else {
             panic!("Initializer should be a double literal");
@@ -692,58 +659,28 @@ mod tests {
         let input = "class Foo { var x as Array<Number> = [1, 2, 3] as Array<Number>; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "Foo");
-        // Find the variable node
-        let var = class
-            .1
-            .iter()
-            .find_map(|node| {
-                if let Ast::Variable(var, _) = node {
-                    Some(var)
-                } else {
-                    None
-                }
-            })
-            .expect("Should find a variable node");
-        assert_eq!(var.name, "x");
-        assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
+        let class = find_class(ast);
+        assert_eq!(class.name, "Foo");
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.variable.name, "x");
+        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Array");
         assert_eq!(
-            var.type_.as_ref().unwrap().generic_params[0].ident,
+            var.variable.type_.as_ref().unwrap().generic_params[0].ident,
             "Number"
         );
-        // Verify the initialization value
-        let initializer = var
-            .initializer
-            .as_ref()
-            .expect("Should have an initializer");
-        // Should be a type-cast expression
-        if let Ast::TypeCast {
-            expr,
-            target_type: ty,
-            ..
-        } = initializer.as_ref()
-        {
-            assert_eq!(ty.ident, "Array");
-            assert_eq!(ty.generic_params[0].ident, "Number");
-            // The inner expr should be the array literal
-            if let Ast::Array(elements, _) = expr.as_ref() {
-                assert_eq!(elements.len(), 3);
-                for element in elements {
-                    if let Ast::BasicLit(LiteralValue::Long(value), _) = element {
+
+        let initializer = var.variable.initializer.as_ref().expect("Should have initializer");
+        if let Expr::TypeCast(tc) = initializer.as_ref() {
+            assert_eq!(tc.target_type.ident, "Array");
+            assert_eq!(tc.target_type.generic_params[0].ident, "Number");
+            if let Expr::Array(arr) = tc.expr.as_ref() {
+                assert_eq!(arr.elements.len(), 3);
+                for element in &arr.elements {
+                    if let Expr::Lit(LitExpr {
+                        value: LiteralValue::Long(value),
+                        ..
+                    }) = element
+                    {
                         assert!(*value >= 1 && *value <= 3);
                     } else {
                         panic!("Array element should be a number literal");
@@ -759,58 +696,32 @@ mod tests {
 
     #[test]
     fn test_parse_variable_declaration_with_function_call() {
-        let input = "class Foo { var x = Storage.getValue(\"pace\"); }";
+        let input = r#"class Foo { var x = Storage.getValue("pace"); }"#;
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "Foo");
-        // Find the variable node
-        let var = class
-            .1
-            .iter()
-            .find_map(|node| {
-                if let Ast::Variable(var, _) = node {
-                    Some(var)
-                } else {
-                    None
-                }
-            })
-            .expect("Should find a variable node");
-        assert_eq!(var.name, "x");
-        // Verify the initialization value is a function call
-        let initializer = var
-            .initializer
-            .as_ref()
-            .expect("Should have an initializer");
-        if let Ast::Call { callee, args, .. } = initializer.as_ref() {
-            if let Ast::Member {
-                object, property, ..
-            } = callee.as_ref()
-            {
-                if let Ast::Identifier(name, _) = object.as_ref() {
-                    assert_eq!(name, "Storage");
+        let class = find_class(ast);
+        assert_eq!(class.name, "Foo");
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.variable.name, "x");
+
+        let initializer = var.variable.initializer.as_ref().expect("Should have initializer");
+        if let Expr::Call(call) = initializer.as_ref() {
+            if let Expr::Member(member) = call.callee.as_ref() {
+                if let Expr::Ident(ident) = member.object.as_ref() {
+                    assert_eq!(ident.name, "Storage");
                 } else {
                     panic!("Function call object should be an identifier");
                 }
-                assert_eq!(property, "getValue");
+                assert_eq!(member.property, "getValue");
             } else {
                 panic!("Function call should be a member access");
             }
-            assert_eq!(args.len(), 1);
-            if let Ast::BasicLit(LiteralValue::String(value), _) = &args[0] {
+            assert_eq!(call.args.len(), 1);
+            if let Expr::Lit(LitExpr {
+                value: LiteralValue::String(value),
+                ..
+            }) = &call.args[0]
+            {
                 assert_eq!(value, "pace");
             } else {
                 panic!("Function call argument should be a string literal");
@@ -825,64 +736,44 @@ mod tests {
         let input = "class Foo { function bar() { if (x == null) { y = 1; } } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        // Find the function
+        let class = find_class(ast);
+
         let func = class
-            .1
+            .body
             .iter()
             .find_map(|node| {
-                if let Ast::Function { name, body, .. } = node {
-                    Some((name, body))
+                if let Ast::Function(f) = node {
+                    Some(f)
                 } else {
                     None
                 }
             })
             .expect("Should find a function node");
-        // Find the if statement
+
         let if_stmt = func
-            .1
+            .body
             .iter()
-            .find_map(|node| {
-                if let Ast::If {
-                    condition,
-                    then_branch,
-                    ..
-                } = node
-                {
-                    Some((condition, then_branch))
+            .find_map(|stmt| {
+                if let Stmt::If(s) = stmt {
+                    Some(s)
                 } else {
                     None
                 }
             })
             .expect("Should find an if statement");
-        // The condition should be a binary expression: x == null
-        if let Ast::Binary {
-            left,
-            operator,
-            right,
-            ..
-        } = if_stmt.0.as_ref()
-        {
-            if let Ast::Identifier(name, _) = left.as_ref() {
-                assert_eq!(name, "x");
+
+        if let Expr::Binary(bin) = &if_stmt.condition {
+            if let Expr::Ident(ident) = bin.left.as_ref() {
+                assert_eq!(ident.name, "x");
             } else {
                 panic!("Left side of binary should be identifier");
             }
-            assert_eq!(*operator, crate::ast::BinaryOperator::Eq);
-            if let Ast::BasicLit(LiteralValue::Null, _) = right.as_ref() {
+            assert_eq!(bin.operator, crate::ast::BinaryOperator::Eq);
+            if let Expr::Lit(LitExpr {
+                value: LiteralValue::Null,
+                ..
+            }) = bin.right.as_ref()
+            {
             } else {
                 panic!("Right side of binary should be null literal");
             }
@@ -896,37 +787,25 @@ mod tests {
         let input = "class Foo { function setSpeed(_speed as Float) { x = _speed; } }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "Foo");
-        // Find the function node
+        let class = find_class(ast);
+        assert_eq!(class.name, "Foo");
+
         let func = class
-            .1
+            .body
             .iter()
             .find_map(|node| {
-                if let Ast::Function { name, args, .. } = node {
-                    Some((name, args))
+                if let Ast::Function(f) = node {
+                    Some(f)
                 } else {
                     None
                 }
             })
             .expect("Should find a function node");
-        assert_eq!(func.0, "setSpeed");
-        assert_eq!(func.1.len(), 1);
-        assert_eq!(func.1[0].name, "_speed");
-        assert_eq!(func.1[0].type_.as_ref().unwrap().ident, "Float");
+
+        assert_eq!(func.name, "setSpeed");
+        assert_eq!(func.args.len(), 1);
+        assert_eq!(func.args[0].name, "_speed");
+        assert_eq!(func.args[0].type_.as_ref().unwrap().ident, "Float");
     }
 
     #[test]
@@ -979,36 +858,12 @@ mod tests {
         let input = "class Foo { private var x as Float; }";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse successfully");
-        // Match the document node and find the class
-        let class = match ast {
-            Ast::Document(nodes) => nodes
-                .into_iter()
-                .find_map(|node| {
-                    if let Ast::Class { name, body, .. } = node {
-                        Some((name, body))
-                    } else {
-                        None
-                    }
-                })
-                .expect("Should find a class node"),
-            _ => panic!("Should be a document node"),
-        };
-        assert_eq!(class.0, "Foo");
-        // Find the variable node
-        let var = class
-            .1
-            .iter()
-            .find_map(|node| {
-                if let Ast::Variable(var, _) = node {
-                    Some(var)
-                } else {
-                    None
-                }
-            })
-            .expect("Should find a variable node");
-        assert_eq!(var.name, "x");
-        assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
-        assert_eq!(var.visibility, Some(Visibility::Private));
+        let class = find_class(ast);
+        assert_eq!(class.name, "Foo");
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.variable.name, "x");
+        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Float");
+        assert_eq!(var.variable.visibility, Some(Visibility::Private));
     }
 
     #[test]

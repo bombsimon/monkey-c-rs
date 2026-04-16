@@ -14,16 +14,6 @@ pub struct Type {
     pub optional: bool,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Variable {
-    pub name: Ident,
-    pub type_: Option<Type>,
-    pub visibility: Option<Visibility>,
-    pub initializer: Option<Box<Ast>>,
-    pub is_static: bool,
-    pub is_hidden: bool,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Span {
     pub start: usize,
@@ -36,139 +26,28 @@ impl From<(usize, usize)> for Span {
     }
 }
 
+/// Used for both function parameters and variable declarations.
 #[derive(Debug, PartialEq)]
-pub enum Ast {
-    // Top-level declarations
-    Document(Vec<Ast>),
-    Import {
-        name: Ident,
-        alias: Option<Ident>,
-        span: Span,
-    },
-    Class {
-        name: Ident,
-        extends: Option<Ident>,
-        annotations: Vec<String>,
-        body: Vec<Ast>,
-        span: Span,
-    },
-    Function {
-        name: Ident,
-        args: Vec<Variable>,
-        returns: Option<Type>,
-        annotations: Vec<String>,
-        body: Vec<Ast>,
-        visibility: Option<Visibility>,
-        is_static: bool,
-        is_hidden: bool,
-        span: Span,
-    },
-
-    // Comments and annotations
-    Comment(String, Span),
-    Annotation(String, Span),
-
-    // Statements
-    Block(Vec<Ast>, Span),
-    If {
-        condition: Box<Ast>,
-        then_branch: Box<Ast>,
-        else_branch: Option<Box<Ast>>,
-        span: Span,
-    },
-    While {
-        condition: Box<Ast>,
-        body: Box<Ast>,
-        span: Span,
-    },
-    For {
-        init: Option<Box<Ast>>,
-        condition: Option<Box<Ast>>,
-        update: Option<Box<Ast>>,
-        body: Box<Ast>,
-        span: Span,
-    },
-    Return(Option<Box<Ast>>, Span),
-    Break(Span),
-    Continue(Span),
-
-    // Declarations & Assignments
-    Variable(Variable, Span),
-    Assign {
-        target: Box<Ast>,
-        operator: AssignOperator,
-        value: Box<Ast>,
-        span: Span,
-    },
-
-    // Expressions
-    Binary {
-        left: Box<Ast>,
-        operator: BinaryOperator,
-        right: Box<Ast>,
-        span: Span,
-    },
-    Unary {
-        operator: UnaryOperator,
-        operand: Box<Ast>,
-        span: Span,
-    },
-    Call {
-        callee: Box<Ast>,
-        args: Vec<Ast>,
-        span: Span,
-    },
-    Member {
-        object: Box<Ast>,
-        property: Ident,
-        span: Span,
-    },
-    Index {
-        object: Box<Ast>,
-        index: Box<Ast>,
-        span: Span,
-    },
-    New {
-        class: Ident,
-        args: Vec<Ast>,
-        span: Span,
-    },
-    TypeCast {
-        expr: Box<Ast>,
-        target_type: Type,
-        span: Span,
-    },
-    Array(Vec<Ast>, Span),
-    Dictionary(Vec<(Ast, Ast)>, Span),
-
-    // Literals & Identifiers
-    BasicLit(LiteralValue, Span),
-    Identifier(Ident, Span),
-    Me(Span),
-    Self_(Span),
-    Eof,
+pub struct Variable {
+    pub name: Ident,
+    pub type_: Option<Type>,
+    pub visibility: Option<Visibility>,
+    pub initializer: Option<Box<Expr>>,
+    pub is_static: bool,
+    pub is_hidden: bool,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum LiteralValue {
-    Long(i64),
-    Double(f64),
-    String(String),
-    Boolean(bool),
-    Null,
-    NaN,
-}
+// ---------------------------------------------------------------------------
+// Operators
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, PartialEq)]
 pub enum BinaryOperator {
-    // Arithmetic
-    Add, // +
-    Sub, // -
-    Mul, // *
-    Div, // /
-    Mod, // %
-
-    // Comparison
+    Add,        // +
+    Sub,        // -
+    Mul,        // *
+    Div,        // /
+    Mod,        // %
     Eq,         // ==
     NotEq,      // !=
     Lt,         // <
@@ -176,15 +55,11 @@ pub enum BinaryOperator {
     Gt,         // >
     GtEq,       // >=
     InstanceOf, // instanceof
-
-    // Logical
-    And, // &&
-    Or,  // ||
-
-    // Bitwise
-    BitAnd, // &
-    BitOr,  // |
-    BitXor, // ^
+    And,        // &&
+    Or,         // ||
+    BitAnd,     // &
+    BitOr,      // |
+    BitXor,     // ^
 }
 
 #[derive(Debug, PartialEq)]
@@ -209,4 +84,234 @@ pub enum AssignOperator {
     BitAndAssign, // &=
     BitOrAssign,  // |=
     BitXorAssign, // ^=
+}
+
+// ---------------------------------------------------------------------------
+// Literals
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq)]
+pub enum LiteralValue {
+    Long(i64),
+    Double(f64),
+    String(String),
+    Boolean(bool),
+    Null,
+    NaN,
+}
+
+// ---------------------------------------------------------------------------
+// Expressions
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq)]
+pub enum Expr {
+    Binary(BinaryExpr),
+    Unary(UnaryExpr),
+    Assign(AssignExpr),
+    Call(CallExpr),
+    Member(MemberExpr),
+    Index(IndexExpr),
+    New(NewExpr),
+    TypeCast(TypeCastExpr),
+    Array(ArrayExpr),
+    Dict(DictExpr),
+    Lit(LitExpr),
+    Ident(IdentExpr),
+    Me(Span),
+    Self_(Span),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BinaryExpr {
+    pub left: Box<Expr>,
+    pub operator: BinaryOperator,
+    pub right: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct UnaryExpr {
+    pub operator: UnaryOperator,
+    pub operand: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AssignExpr {
+    pub target: Box<Expr>,
+    pub operator: AssignOperator,
+    pub value: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct CallExpr {
+    pub callee: Box<Expr>,
+    pub args: Vec<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct MemberExpr {
+    pub object: Box<Expr>,
+    pub property: Ident,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IndexExpr {
+    pub object: Box<Expr>,
+    pub index: Box<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct NewExpr {
+    pub class: Ident,
+    pub args: Vec<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TypeCastExpr {
+    pub expr: Box<Expr>,
+    pub target_type: Type,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ArrayExpr {
+    pub elements: Vec<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DictExpr {
+    pub pairs: Vec<(Expr, Expr)>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct LitExpr {
+    pub value: LiteralValue,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IdentExpr {
+    pub name: Ident,
+    pub span: Span,
+}
+
+// ---------------------------------------------------------------------------
+// Statements
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq)]
+pub enum Stmt {
+    Block(BlockStmt),
+    If(IfStmt),
+    While(WhileStmt),
+    For(ForStmt),
+    Return(ReturnStmt),
+    Break(Span),
+    Continue(Span),
+    Var(VarStmt),
+    Comment(String, Span),
+    Expr(Expr),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct BlockStmt {
+    pub stmts: Vec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct IfStmt {
+    pub condition: Expr,
+    pub then_branch: BlockStmt,
+    pub else_branch: Option<BlockStmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct WhileStmt {
+    pub condition: Expr,
+    pub body: BlockStmt,
+    pub span: Span,
+}
+
+/// The init clause of a `for` loop — either a `var` declaration or an expression.
+#[derive(Debug, PartialEq)]
+pub enum ForInit {
+    Var(VarStmt),
+    Expr(Expr),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ForStmt {
+    pub init: Option<ForInit>,
+    pub condition: Option<Expr>,
+    pub update: Option<Expr>,
+    pub body: BlockStmt,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ReturnStmt {
+    pub value: Option<Expr>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct VarStmt {
+    pub variable: Variable,
+    pub span: Span,
+}
+
+// ---------------------------------------------------------------------------
+// Top-level declarations
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, PartialEq)]
+pub enum Ast {
+    Document(Vec<Ast>),
+    Import(ImportDecl),
+    Class(ClassDecl),
+    Function(FunctionDecl),
+    Variable(VarStmt),
+    Comment(String, Span),
+    Annotation(String, Span),
+    Eof,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ImportDecl {
+    pub name: Ident,
+    pub alias: Option<Ident>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ClassDecl {
+    pub name: Ident,
+    pub extends: Option<Ident>,
+    pub annotations: Vec<String>,
+    pub body: Vec<Ast>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FunctionDecl {
+    pub name: Ident,
+    pub args: Vec<Variable>,
+    pub returns: Option<Type>,
+    pub annotations: Vec<String>,
+    pub body: Vec<Stmt>,
+    pub visibility: Option<Visibility>,
+    pub is_static: bool,
+    pub is_hidden: bool,
+    pub span: Span,
 }
