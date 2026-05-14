@@ -86,12 +86,27 @@ impl Parser<'_> {
     }
 
     fn parse_logical_and(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_equality()?;
+        let mut expr = self.parse_bitwise_or()?;
         while self.current_token == token::Type::And {
             expr = self.handle_logical_operator(expr, token::Type::And)?;
         }
 
         Ok(expr)
+    }
+
+    fn parse_bitwise_or(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_bitwise_xor()?;
+        self.handle_binary_operator(expr, &[token::Type::BitOr])
+    }
+
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_bitwise_and()?;
+        self.handle_binary_operator(expr, &[token::Type::BitXor])
+    }
+
+    fn parse_bitwise_and(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_equality()?;
+        self.handle_binary_operator(expr, &[token::Type::BitAnd])
     }
 
     fn handle_equality_operator(
@@ -176,6 +191,9 @@ impl Parser<'_> {
                 token::Type::Star => BinaryOperator::Mul,
                 token::Type::Slash => BinaryOperator::Div,
                 token::Type::Percent => BinaryOperator::Mod,
+                token::Type::BitOr => BinaryOperator::BitOr,
+                token::Type::BitXor => BinaryOperator::BitXor,
+                token::Type::BitAnd => BinaryOperator::BitAnd,
                 _ => unreachable!(),
             };
             let right = self.parse_factor()?;
@@ -618,7 +636,7 @@ impl Parser<'_> {
     }
 
     fn parse_logical_and_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_equality_no_postfix()?;
+        let mut expr = self.parse_bitwise_or_no_postfix()?;
         while self.next_token_of_type(&[token::Type::And]) {
             let (start, _, _) = self.next_token_span();
             let right = self.parse_equality_no_postfix()?;
@@ -632,6 +650,21 @@ impl Parser<'_> {
         }
 
         Ok(expr)
+    }
+
+    fn parse_bitwise_or_no_postfix(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_bitwise_xor_no_postfix()?;
+        self.handle_binary_operator(expr, &[token::Type::BitOr])
+    }
+
+    fn parse_bitwise_xor_no_postfix(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_bitwise_and_no_postfix()?;
+        self.handle_binary_operator(expr, &[token::Type::BitXor])
+    }
+
+    fn parse_bitwise_and_no_postfix(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_equality_no_postfix()?;
+        self.handle_binary_operator(expr, &[token::Type::BitAnd])
     }
 
     fn parse_equality_no_postfix(&mut self) -> Result<Expr, ParserError> {
