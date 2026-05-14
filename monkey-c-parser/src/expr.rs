@@ -227,9 +227,7 @@ impl Parser<'_> {
         let depth_check = RECURSION_DEPTH.with(|depth| {
             let d = depth.get();
             if d > 1000 {
-                return Err(self.parse_error(
-                    "Expression too complex".to_string(),
-                ));
+                return Err(self.parse_error("Expression too complex".to_string()));
             }
             depth.set(d + 1);
             Ok(())
@@ -535,10 +533,7 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
-            _ => Err(self.parse_error(format!(
-                "Unexpected token in expression: {:?}",
-                token_type
-            ))),
+            _ => Err(self.parse_error(format!("Unexpected token in expression: {:?}", token_type))),
         }
     }
 
@@ -555,9 +550,8 @@ impl Parser<'_> {
         });
 
         if exceeded {
-            return Err(self.parse_error(
-                "Recursion limit exceeded in parse_primary_no_postfix".to_string(),
-            ));
+            return Err(self
+                .parse_error("Recursion limit exceeded in parse_primary_no_postfix".to_string()));
         }
 
         let token_type = self.current_token.clone();
@@ -597,9 +591,9 @@ impl Parser<'_> {
             | token::Type::ModAssign
             | token::Type::BitAndAssign
             | token::Type::BitOrAssign
-            | token::Type::BitXorAssign => Err(self.parse_error(
-                "Assignment not allowed in this context".to_string(),
-            )),
+            | token::Type::BitXorAssign => {
+                Err(self.parse_error("Assignment not allowed in this context".to_string()))
+            }
             _ => Ok(expr),
         }
     }
