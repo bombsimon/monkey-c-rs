@@ -183,12 +183,14 @@ pub struct TypeCastExpr {
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
     pub elements: Vec<Expr>,
+    pub trailing_comma: bool,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct DictExpr {
     pub pairs: Vec<(Expr, Expr)>,
+    pub trailing_comma: bool,
     pub span: Span,
 }
 
@@ -309,9 +311,62 @@ pub struct FunctionDecl {
     pub args: Vec<Variable>,
     pub returns: Option<Type>,
     pub annotations: Vec<String>,
-    pub body: Vec<Stmt>,
+    pub body: BlockStmt,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
     pub is_hidden: bool,
     pub span: Span,
+}
+
+// ---------------------------------------------------------------------------
+// Span accessors
+// ---------------------------------------------------------------------------
+
+impl Expr {
+    pub fn span(&self) -> &Span {
+        match self {
+            Expr::Binary(e) => &e.span,
+            Expr::Unary(e) => &e.span,
+            Expr::Assign(e) => &e.span,
+            Expr::Call(e) => &e.span,
+            Expr::Member(e) => &e.span,
+            Expr::Index(e) => &e.span,
+            Expr::New(e) => &e.span,
+            Expr::TypeCast(e) => &e.span,
+            Expr::Array(e) => &e.span,
+            Expr::Dict(e) => &e.span,
+            Expr::Lit(e) => &e.span,
+            Expr::Ident(e) => &e.span,
+            Expr::Me(s) | Expr::Self_(s) => s,
+        }
+    }
+}
+
+impl Stmt {
+    pub fn span(&self) -> &Span {
+        match self {
+            Stmt::Block(s) => &s.span,
+            Stmt::If(s) => &s.span,
+            Stmt::While(s) => &s.span,
+            Stmt::For(s) => &s.span,
+            Stmt::Return(s) => &s.span,
+            Stmt::Break(s) | Stmt::Continue(s) => s,
+            Stmt::Var(s) => &s.span,
+            Stmt::Comment(_, s) => s,
+            Stmt::Expr(e) => e.span(),
+        }
+    }
+}
+
+impl Ast {
+    pub fn span(&self) -> Option<&Span> {
+        match self {
+            Ast::Document(_) | Ast::Eof => None,
+            Ast::Import(d) => Some(&d.span),
+            Ast::Class(d) => Some(&d.span),
+            Ast::Function(d) => Some(&d.span),
+            Ast::Variable(v) => Some(&v.span),
+            Ast::Comment(_, s) | Ast::Annotation(_, s) => Some(s),
+        }
+    }
 }

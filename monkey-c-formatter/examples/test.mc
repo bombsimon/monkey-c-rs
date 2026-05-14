@@ -27,9 +27,12 @@ class TestClass extends BaseClass {
     // Method with arrays and dictionaries
     function collections() as Void {
         var arr = [1, 2, 3, 4, 5];
-        var dict = {"key1": "value1", "key2": "value2"};
+        var dict = {
+            "key1": "value1",
+            "key2": "value2",
+        };
         var sum = 0;
-        for (var i = 0; i < arr.size(); i++) {
+        for ( var i = 0; i < arr.size(); i++ ) {
             sum = sum + arr[i];
         }
     }

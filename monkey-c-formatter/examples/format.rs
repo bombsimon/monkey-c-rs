@@ -20,9 +20,8 @@ fn main() -> io::Result<()> {
     let mut parser = monkey_c_parser::parser::Parser::new(&source);
     match parser.parse() {
         Ok(ast) => {
-            let mut formatter = Formatter::new(source);
-            formatter.format(&ast);
-            print!("{}", formatter.output());
+            let formatter = Formatter::new(&source);
+            print!("{}", formatter.format(&ast));
             Ok(())
         }
         Err(e) => {

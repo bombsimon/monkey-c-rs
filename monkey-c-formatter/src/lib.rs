@@ -1,160 +1,190 @@
+pub mod doc;
+
+use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    Ast, AssignOperator, BinaryOperator, BlockStmt, ClassDecl, Expr, ForInit, FunctionDecl,
-    ImportDecl, LiteralValue, Span, Stmt, UnaryOperator, Variable, VarStmt, Visibility,
+    AssignOperator, Ast, BinaryOperator, BlockStmt, Expr, ForInit, FunctionDecl, LiteralValue,
+    Stmt, Type, UnaryOperator, VarStmt, Variable, Visibility,
 };
+use monkey_c_parser::line_index::LineIndex;
 
 pub struct Formatter {
-    source: String,
-    output: String,
-    indent_level: usize,
-    indent_size: usize,
+    line_index: LineIndex,
+    line_width: usize,
 }
 
 impl Formatter {
-    pub fn new(source: String) -> Self {
+    pub fn new(source: impl AsRef<str>) -> Self {
+        let source = source.as_ref();
         Self {
-            source,
-            output: String::new(),
-            indent_level: 0,
-            indent_size: 4,
+            line_index: LineIndex::new(source),
+            line_width: 100,
         }
     }
 
-    pub fn output(&self) -> &str {
-        &self.output
+    pub fn with_line_width(mut self, width: usize) -> Self {
+        self.line_width = width;
+        self
     }
 
-    pub fn format(&mut self, ast: &Ast) {
-        self.format_ast(ast);
-    }
-
-    // -----------------------------------------------------------------------
-    // Indent helpers
-    // -----------------------------------------------------------------------
-
-    fn indent(&mut self) {
-        self.indent_level += 1;
-    }
-
-    fn dedent(&mut self) {
-        self.indent_level -= 1;
-    }
-
-    fn write_indent(&mut self) {
-        self.output
-            .push_str(&" ".repeat(self.indent_level * self.indent_size));
-    }
-
-    fn write_span(&mut self, span: &Span) {
-        self.output.push_str(&self.source[span.start..span.end]);
+    pub fn format(&self, ast: &Ast) -> String {
+        let doc = self.ast_to_doc(ast);
+        render(&doc, self.line_width)
     }
 
     // -----------------------------------------------------------------------
     // Top-level declarations
     // -----------------------------------------------------------------------
 
-    fn format_ast(&mut self, ast: &Ast) {
+    fn ast_to_doc(&self, ast: &Ast) -> Doc {
         match ast {
-            Ast::Document(nodes) => {
-                for node in nodes {
-                    self.format_ast(node);
-                }
-            }
-            Ast::Import(decl) => self.format_import(decl),
-            Ast::Class(decl) => self.format_class(decl),
-            Ast::Function(decl) => self.format_function(decl),
-            Ast::Variable(var_stmt) => self.format_var_stmt(var_stmt),
-            Ast::Comment(comment, _) => {
-                self.write_indent();
-                self.output.push_str("// ");
-                self.output.push_str(comment);
-                self.output.push('\n');
-            }
-            Ast::Annotation(_, span) => {
-                self.write_indent();
-                self.write_span(span);
-                self.output.push('\n');
-            }
-            Ast::Eof => {}
+            Ast::Document(nodes) => self.decls_to_doc(nodes),
+            Ast::Import(decl) => Doc::concat(vec![
+                Doc::text("import "),
+                Doc::text(&decl.name),
+                decl.alias
+                    .as_ref()
+                    .map(|a| Doc::concat(vec![Doc::text(" as "), Doc::text(a)]))
+                    .unwrap_or(Doc::Empty),
+                Doc::text(";"),
+            ]),
+            Ast::Class(decl) => Doc::concat(vec![
+                Doc::text(format!("class {}", decl.name)),
+                decl.extends
+                    .as_ref()
+                    .map(|e| Doc::text(format!(" extends {}", e)))
+                    .unwrap_or(Doc::Empty),
+                Doc::text(" {"),
+                Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
+                Doc::HardLine,
+                Doc::text("}"),
+            ]),
+            Ast::Function(decl) => self.function_to_doc(decl),
+            Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
+            Ast::Comment(text, _) => Doc::text(format!("//{}", text)),
+            Ast::Annotation(name, _) => Doc::text(format!("(:{name})")),
+            Ast::Eof => Doc::Empty,
         }
     }
 
-    fn format_import(&mut self, decl: &ImportDecl) {
-        self.write_indent();
-        self.output.push_str("import ");
-        self.output.push_str(&decl.name);
-        if let Some(alias) = &decl.alias {
-            self.output.push_str(" as ");
-            self.output.push_str(alias);
+    /// Render a sequence of declarations with blank-line preservation.
+    fn decls_to_doc(&self, decls: &[Ast]) -> Doc {
+        let mut docs = Vec::new();
+
+        for (i, decl) in decls.iter().enumerate() {
+            if i > 0 {
+                let prev = &decls[i - 1];
+                docs.push(self.gap_between_spans(prev.span(), decl.span()));
+            }
+            docs.push(self.ast_to_doc(decl));
         }
-        self.output.push_str(";\n");
+
+        Doc::Concat(docs)
     }
 
-    fn format_class(&mut self, decl: &ClassDecl) {
-        self.write_indent();
-        self.output.push_str("class ");
-        self.output.push_str(&decl.name);
-        if let Some(extends) = &decl.extends {
-            self.output.push_str(" extends ");
-            self.output.push_str(extends);
-        }
-        self.output.push_str(" {\n");
-        self.indent();
-        for member in &decl.body {
-            self.format_ast(member);
-        }
-        self.dedent();
-        self.write_indent();
-        self.output.push_str("}\n");
-    }
+    fn function_to_doc(&self, decl: &FunctionDecl) -> Doc {
+        let mut parts: Vec<Doc> = Vec::new();
 
-    fn format_function(&mut self, decl: &FunctionDecl) {
-        self.write_indent();
-
-        if let Some(visibility) = &decl.visibility {
-            self.format_visibility(visibility);
+        if let Some(vis) = &decl.visibility {
+            parts.push(self.visibility_to_doc(vis));
         }
         if decl.is_static {
-            self.output.push_str("static ");
+            parts.push(Doc::text("static "));
         }
         if decl.is_hidden {
-            self.output.push_str("hidden ");
+            parts.push(Doc::text("hidden "));
         }
 
-        self.output.push_str("function ");
-        self.output.push_str(&decl.name);
-        self.output.push('(');
+        parts.push(Doc::text(format!("function {}(", decl.name)));
+
         for (i, arg) in decl.args.iter().enumerate() {
             if i > 0 {
-                self.output.push_str(", ");
+                parts.push(Doc::text(", "));
             }
-            self.output.push_str(&arg.name);
-            if let Some(type_) = &arg.type_ {
-                self.output.push_str(" as ");
-                self.output.push_str(&type_.ident);
+            parts.push(Doc::text(&arg.name));
+            if let Some(ty) = &arg.type_ {
+                parts.push(Doc::text(" as "));
+                parts.push(self.type_to_doc(ty));
             }
         }
-        self.output.push(')');
-        if let Some(returns) = &decl.returns {
-            self.output.push_str(" as ");
-            self.output.push_str(&returns.ident);
+
+        parts.push(Doc::text(")"));
+
+        if let Some(ret) = &decl.returns {
+            parts.push(Doc::text(" as "));
+            parts.push(self.type_to_doc(ret));
         }
-        self.output.push_str(" {\n");
-        self.indent();
-        for stmt in &decl.body {
-            self.format_stmt(stmt);
-        }
-        self.dedent();
-        self.output.push('\n');
-        self.write_indent();
-        self.output.push_str("}\n");
+
+        parts.push(self.block_to_doc(&decl.body));
+
+        Doc::Concat(parts)
     }
 
-    fn format_visibility(&mut self, visibility: &Visibility) {
-        match visibility {
-            Visibility::Private => self.output.push_str("private "),
-            Visibility::Protected => self.output.push_str("protected "),
-            Visibility::Public => self.output.push_str("public "),
+    fn var_stmt_to_doc(&self, var_stmt: &VarStmt) -> Doc {
+        Doc::concat(vec![
+            self.var_decl_to_doc(&var_stmt.variable),
+            Doc::text(";"),
+        ])
+    }
+
+    fn var_decl_to_doc(&self, var: &Variable) -> Doc {
+        let mut parts: Vec<Doc> = Vec::new();
+
+        if let Some(vis) = &var.visibility {
+            parts.push(self.visibility_to_doc(vis));
+        }
+        if var.is_static {
+            parts.push(Doc::text("static "));
+        }
+        if var.is_hidden {
+            parts.push(Doc::text("hidden "));
+        }
+
+        parts.push(Doc::text(format!("var {}", var.name)));
+
+        if let Some(ty) = &var.type_ {
+            parts.push(Doc::text(" as "));
+            parts.push(self.type_to_doc(ty));
+        }
+
+        if let Some(init) = &var.initializer {
+            parts.push(Doc::text(" = "));
+            parts.push(self.expr_to_doc(init));
+        }
+
+        Doc::Concat(parts)
+    }
+
+    fn visibility_to_doc(&self, vis: &Visibility) -> Doc {
+        Doc::text(match vis {
+            Visibility::Private => "private ",
+            Visibility::Protected => "protected ",
+            Visibility::Public => "public ",
+        })
+    }
+
+    fn type_to_doc(&self, ty: &Type) -> Doc {
+        if ty.generic_params.is_empty() {
+            let suffix = if ty.optional { "?" } else { "" };
+            Doc::text(format!("{}{}", ty.ident, suffix))
+        } else {
+            let params: Vec<Doc> = ty
+                .generic_params
+                .iter()
+                .enumerate()
+                .flat_map(|(i, p)| {
+                    if i > 0 {
+                        vec![Doc::text(", "), self.type_to_doc(p)]
+                    } else {
+                        vec![self.type_to_doc(p)]
+                    }
+                })
+                .collect();
+            let suffix = if ty.optional { "?" } else { "" };
+            Doc::concat(vec![
+                Doc::text(format!("{}<", ty.ident)),
+                Doc::Concat(params),
+                Doc::text(format!(">{}", suffix)),
+            ])
         }
     }
 
@@ -162,244 +192,327 @@ impl Formatter {
     // Statements
     // -----------------------------------------------------------------------
 
-    fn format_stmt(&mut self, stmt: &Stmt) {
+    /// Render a block body inline: ` {\n    ...\n}`.
+    fn block_to_doc(&self, block: &BlockStmt) -> Doc {
+        if block.stmts.is_empty() {
+            return Doc::text(" {}");
+        }
+
+        Doc::concat(vec![
+            Doc::text(" {"),
+            Doc::Indent(vec![Doc::HardLine, self.stmts_to_doc(&block.stmts)]),
+            Doc::HardLine,
+            Doc::text("}"),
+        ])
+    }
+
+    /// Render a sequence of statements with blank-line preservation.
+    fn stmts_to_doc(&self, stmts: &[Stmt]) -> Doc {
+        let mut docs = Vec::new();
+
+        for (i, stmt) in stmts.iter().enumerate() {
+            if i > 0 {
+                let prev = &stmts[i - 1];
+                docs.push(self.gap_between_spans(Some(prev.span()), Some(stmt.span())));
+            }
+            docs.push(self.stmt_to_doc(stmt));
+        }
+
+        Doc::Concat(docs)
+    }
+
+    fn stmt_to_doc(&self, stmt: &Stmt) -> Doc {
         match stmt {
-            Stmt::Block(block) => self.format_block_inline(block),
+            Stmt::Block(block) => Doc::concat(vec![Doc::text("{"), self.block_inner_to_doc(block)]),
+
             Stmt::If(s) => {
-                self.write_indent();
-                self.output.push_str("if (");
-                self.format_expr(&s.condition);
-                self.output.push(')');
-                self.format_block_inline(&s.then_branch);
+                let mut parts = vec![
+                    Doc::text("if ("),
+                    self.expr_to_doc(&s.condition),
+                    Doc::text(")"),
+                    self.block_to_doc(&s.then_branch),
+                ];
                 if let Some(else_branch) = &s.else_branch {
-                    self.output.push_str(" else");
-                    self.format_block_inline(else_branch);
+                    parts.push(Doc::text(" else"));
+                    parts.push(self.block_to_doc(else_branch));
                 }
-                self.output.push('\n');
+                Doc::Concat(parts)
             }
-            Stmt::While(s) => {
-                self.write_indent();
-                self.output.push_str("while (");
-                self.format_expr(&s.condition);
-                self.output.push_str(") ");
-                self.format_block_inline(&s.body);
-                self.output.push('\n');
-            }
+
+            Stmt::While(s) => Doc::concat(vec![
+                Doc::text("while ("),
+                self.expr_to_doc(&s.condition),
+                Doc::text(")"),
+                self.block_to_doc(&s.body),
+            ]),
+
             Stmt::For(s) => {
-                self.write_indent();
-                self.output.push_str("for (");
-                if let Some(init) = &s.init {
-                    match init {
-                        ForInit::Var(var_stmt) => self.format_var_inline(&var_stmt.variable),
-                        ForInit::Expr(expr) => self.format_expr(expr),
-                    }
-                }
-                self.output.push_str("; ");
-                if let Some(cond) = &s.condition {
-                    self.format_expr(cond);
-                }
-                self.output.push_str("; ");
-                if let Some(update) = &s.update {
-                    self.format_expr(update);
-                }
-                self.output.push_str(") ");
-                self.format_block_inline(&s.body);
-                self.output.push('\n');
+                let init_doc = match &s.init {
+                    None => Doc::Empty,
+                    Some(ForInit::Var(v)) => self.var_decl_to_doc(&v.variable),
+                    Some(ForInit::Expr(e)) => self.expr_to_doc(e),
+                };
+                let cond_doc = s
+                    .condition
+                    .as_ref()
+                    .map(|e| self.expr_to_doc(e))
+                    .unwrap_or(Doc::Empty);
+                let update_doc = s
+                    .update
+                    .as_ref()
+                    .map(|e| self.expr_to_doc(e))
+                    .unwrap_or(Doc::Empty);
+
+                Doc::concat(vec![
+                    Doc::text("for ("),
+                    init_doc,
+                    Doc::text("; "),
+                    cond_doc,
+                    Doc::text("; "),
+                    update_doc,
+                    Doc::text(")"),
+                    self.block_to_doc(&s.body),
+                ])
             }
-            Stmt::Return(s) => {
-                self.write_indent();
-                self.output.push_str("return");
-                if let Some(value) = &s.value {
-                    self.output.push(' ');
-                    self.format_expr(value);
-                }
-                self.output.push_str(";\n");
-            }
-            Stmt::Break(_) => {
-                self.write_indent();
-                self.output.push_str("break;\n");
-            }
-            Stmt::Continue(_) => {
-                self.write_indent();
-                self.output.push_str("continue;\n");
-            }
-            Stmt::Var(var_stmt) => self.format_var_stmt(var_stmt),
-            Stmt::Comment(comment, _) => {
-                self.write_indent();
-                self.output.push_str("// ");
-                self.output.push_str(comment);
-                self.output.push('\n');
-            }
-            Stmt::Expr(expr) => {
-                self.write_indent();
-                self.format_expr(expr);
-                self.output.push_str(";\n");
-            }
+
+            Stmt::Return(s) => match &s.value {
+                None => Doc::text("return;"),
+                Some(v) => Doc::concat(vec![
+                    Doc::text("return "),
+                    self.expr_to_doc(v),
+                    Doc::text(";"),
+                ]),
+            },
+
+            Stmt::Break(_) => Doc::text("break;"),
+            Stmt::Continue(_) => Doc::text("continue;"),
+
+            Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
+
+            Stmt::Comment(text, _) => Doc::text(format!("//{}", text)),
+
+            Stmt::Expr(e) => Doc::concat(vec![self.expr_to_doc(e), Doc::text(";")]),
         }
     }
 
-    /// Format a block as `{\n ... \n}` with the opening brace on the same line as the caller.
-    fn format_block_inline(&mut self, block: &BlockStmt) {
-        self.output.push_str(" {\n");
-        self.indent();
-        for stmt in &block.stmts {
-            self.format_stmt(stmt);
+    fn block_inner_to_doc(&self, block: &BlockStmt) -> Doc {
+        if block.stmts.is_empty() {
+            return Doc::text("}");
         }
-        self.dedent();
-        self.write_indent();
-        self.output.push('}');
-    }
 
-    /// Format a `var` declaration as a full statement (with indent, semicolon, and newline).
-    fn format_var_stmt(&mut self, var_stmt: &VarStmt) {
-        self.write_indent();
-        self.format_var_decl(&var_stmt.variable);
-        self.output.push_str(";\n");
-    }
-
-    /// Format a variable declaration without leading indent or trailing semicolon/newline.
-    /// Used both for `var` statements and for `for` loop init clauses.
-    fn format_var_inline(&mut self, var: &Variable) {
-        self.format_var_decl(var);
-    }
-
-    fn format_var_decl(&mut self, var: &Variable) {
-        if let Some(visibility) = &var.visibility {
-            self.format_visibility(visibility);
-        }
-        if var.is_static {
-            self.output.push_str("static ");
-        }
-        if var.is_hidden {
-            self.output.push_str("hidden ");
-        }
-        self.output.push_str("var ");
-        self.output.push_str(&var.name);
-        if let Some(initializer) = &var.initializer {
-            self.output.push_str(" = ");
-            self.format_expr(initializer);
-        }
-        if let Some(type_) = &var.type_ {
-            self.output.push_str(" as ");
-            self.output.push_str(&type_.ident);
-        }
+        Doc::concat(vec![
+            Doc::Indent(vec![Doc::HardLine, self.stmts_to_doc(&block.stmts)]),
+            Doc::HardLine,
+            Doc::text("}"),
+        ])
     }
 
     // -----------------------------------------------------------------------
     // Expressions
     // -----------------------------------------------------------------------
 
-    fn format_expr(&mut self, expr: &Expr) {
+    fn expr_to_doc(&self, expr: &Expr) -> Doc {
         match expr {
-            Expr::Binary(e) => {
-                self.format_expr(&e.left);
-                self.output.push(' ');
-                self.format_binary_op(&e.operator);
-                self.output.push(' ');
-                self.format_expr(&e.right);
-            }
+            Expr::Binary(e) => Doc::concat(vec![
+                self.expr_to_doc(&e.left),
+                Doc::text(format!(" {} ", self.binary_op_str(&e.operator))),
+                self.expr_to_doc(&e.right),
+            ]),
+
             Expr::Unary(e) => match e.operator {
                 UnaryOperator::PostInc => {
-                    self.format_expr(&e.operand);
-                    self.output.push_str("++");
+                    Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("++")])
                 }
                 UnaryOperator::PostDec => {
-                    self.format_expr(&e.operand);
-                    self.output.push_str("--");
+                    Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("--")])
                 }
-                _ => {
-                    self.format_unary_prefix_op(&e.operator);
-                    self.format_expr(&e.operand);
-                }
+                _ => Doc::concat(vec![
+                    Doc::text(self.unary_prefix_op_str(&e.operator)),
+                    self.expr_to_doc(&e.operand),
+                ]),
             },
-            Expr::Assign(e) => {
-                self.format_expr(&e.target);
-                self.output.push(' ');
-                self.format_assign_op(&e.operator);
-                self.output.push(' ');
-                self.format_expr(&e.value);
-            }
+
+            Expr::Assign(e) => Doc::concat(vec![
+                self.expr_to_doc(&e.target),
+                Doc::text(format!(" {} ", self.assign_op_str(&e.operator))),
+                self.expr_to_doc(&e.value),
+            ]),
+
             Expr::Call(e) => {
-                self.format_expr(&e.callee);
-                self.output.push('(');
-                for (i, arg) in e.args.iter().enumerate() {
-                    if i > 0 {
-                        self.output.push_str(", ");
-                    }
-                    self.format_expr(arg);
-                }
-                self.output.push(')');
+                let args: Vec<Doc> = e
+                    .args
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, a)| {
+                        if i > 0 {
+                            vec![Doc::text(", "), self.expr_to_doc(a)]
+                        } else {
+                            vec![self.expr_to_doc(a)]
+                        }
+                    })
+                    .collect();
+                Doc::concat(vec![
+                    self.expr_to_doc(&e.callee),
+                    Doc::text("("),
+                    Doc::Concat(args),
+                    Doc::text(")"),
+                ])
             }
-            Expr::Member(e) => {
-                self.format_expr(&e.object);
-                self.output.push('.');
-                self.output.push_str(&e.property);
-            }
-            Expr::Index(e) => {
-                self.format_expr(&e.object);
-                self.output.push('[');
-                self.format_expr(&e.index);
-                self.output.push(']');
-            }
+
+            Expr::Member(e) => Doc::concat(vec![
+                self.expr_to_doc(&e.object),
+                Doc::text(format!(".{}", e.property)),
+            ]),
+
+            Expr::Index(e) => Doc::concat(vec![
+                self.expr_to_doc(&e.object),
+                Doc::text("["),
+                self.expr_to_doc(&e.index),
+                Doc::text("]"),
+            ]),
+
             Expr::New(e) => {
-                self.output.push_str("new ");
-                self.output.push_str(&e.class);
-                self.output.push('(');
-                for (i, arg) in e.args.iter().enumerate() {
-                    if i > 0 {
-                        self.output.push_str(", ");
-                    }
-                    self.format_expr(arg);
-                }
-                self.output.push(')');
+                let args: Vec<Doc> = e
+                    .args
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, a)| {
+                        if i > 0 {
+                            vec![Doc::text(", "), self.expr_to_doc(a)]
+                        } else {
+                            vec![self.expr_to_doc(a)]
+                        }
+                    })
+                    .collect();
+                Doc::concat(vec![
+                    Doc::text(format!("new {}(", e.class)),
+                    Doc::Concat(args),
+                    Doc::text(")"),
+                ])
             }
-            Expr::TypeCast(e) => {
-                self.format_expr(&e.expr);
-                self.output.push_str(" as ");
-                self.output.push_str(&e.target_type.ident);
-            }
+
+            Expr::TypeCast(e) => Doc::concat(vec![
+                self.expr_to_doc(&e.expr),
+                Doc::text(" as "),
+                self.type_to_doc(&e.target_type),
+            ]),
+
             Expr::Array(e) => {
-                self.output.push('[');
-                for (i, elem) in e.elements.iter().enumerate() {
-                    if i > 0 {
-                        self.output.push_str(", ");
-                    }
-                    self.format_expr(elem);
-                }
-                self.output.push(']');
+                let items = e.elements.iter().map(|el| self.expr_to_doc(el)).collect();
+                self.format_list("[", "]", items, e.trailing_comma)
             }
+
             Expr::Dict(e) => {
-                self.output.push('{');
-                for (i, (key, value)) in e.pairs.iter().enumerate() {
-                    if i > 0 {
-                        self.output.push_str(", ");
-                    }
-                    self.format_expr(key);
-                    self.output.push_str(": ");
-                    self.format_expr(value);
-                }
-                self.output.push('}');
+                let items = e
+                    .pairs
+                    .iter()
+                    .map(|(k, v)| {
+                        Doc::concat(vec![
+                            self.expr_to_doc(k),
+                            Doc::text(": "),
+                            self.expr_to_doc(v),
+                        ])
+                    })
+                    .collect();
+                self.format_list("{", "}", items, e.trailing_comma)
             }
-            Expr::Lit(e) => match &e.value {
-                LiteralValue::Long(v) => self.output.push_str(&v.to_string()),
-                LiteralValue::Double(v) => self.output.push_str(&v.to_string()),
-                LiteralValue::String(v) => {
-                    self.output.push('"');
-                    self.output.push_str(v);
-                    self.output.push('"');
-                }
-                LiteralValue::Boolean(v) => self.output.push_str(&v.to_string()),
-                LiteralValue::Null => self.output.push_str("null"),
-                LiteralValue::NaN => self.output.push_str("NaN"),
-            },
-            Expr::Ident(e) => self.output.push_str(&e.name),
-            Expr::Me(_) => self.output.push_str("me"),
-            Expr::Self_(_) => self.output.push_str("self"),
+
+            Expr::Lit(e) => Doc::text(match &e.value {
+                LiteralValue::Long(v) => v.to_string(),
+                LiteralValue::Double(v) => v.to_string(),
+                LiteralValue::String(v) => format!("\"{}\"", v),
+                LiteralValue::Boolean(v) => v.to_string(),
+                LiteralValue::Null => "null".to_string(),
+                LiteralValue::NaN => "NaN".to_string(),
+            }),
+
+            Expr::Ident(e) => Doc::text(&e.name),
+            Expr::Me(_) => Doc::text("me"),
+            Expr::Self_(_) => Doc::text("self"),
         }
     }
 
-    fn format_binary_op(&mut self, op: &BinaryOperator) {
-        let s = match op {
+    // -----------------------------------------------------------------------
+    // Collection formatting (magic trailing comma)
+    // -----------------------------------------------------------------------
+
+    /// Format `[items]` or `{items}` with the magic trailing comma rule:
+    /// - trailing comma → always multi-line, trailing comma preserved
+    /// - no trailing comma → try flat; break only if too wide
+    fn format_list(&self, open: &str, close: &str, items: Vec<Doc>, trailing_comma: bool) -> Doc {
+        if items.is_empty() {
+            return Doc::text(format!("{}{}", open, close));
+        }
+
+        if trailing_comma {
+            // Always multi-line, trailing comma after last item.
+            let mut inner = Vec::new();
+            for (i, item) in items.into_iter().enumerate() {
+                if i > 0 {
+                    inner.push(Doc::text(","));
+                    inner.push(Doc::HardLine);
+                }
+                inner.push(item);
+            }
+            inner.push(Doc::text(","));
+
+            Doc::concat(vec![
+                Doc::text(open),
+                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+                Doc::HardLine,
+                Doc::text(close),
+            ])
+        } else {
+            // Try to fit on one line; break if it doesn't fit.
+            let mut inner = Vec::new();
+            for (i, item) in items.into_iter().enumerate() {
+                if i > 0 {
+                    inner.push(Doc::text(","));
+                    inner.push(Doc::Line);
+                }
+                inner.push(item);
+            }
+
+            Doc::Group(vec![
+                Doc::text(open),
+                Doc::Indent(vec![Doc::SoftLine, Doc::Concat(inner)]),
+                Doc::SoftLine,
+                Doc::text(close),
+            ])
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Blank-line helpers
+    // -----------------------------------------------------------------------
+
+    /// Return a separator Doc between two adjacent items based on how many
+    /// blank lines separated them in the original source.
+    fn gap_between_spans(
+        &self,
+        prev_span: Option<&monkey_c_parser::ast::Span>,
+        next_span: Option<&monkey_c_parser::ast::Span>,
+    ) -> Doc {
+        let blanks = match (prev_span, next_span) {
+            (Some(prev), Some(next)) if prev.end > 0 && next.start > prev.end => self
+                .line_index
+                .blank_lines_between(prev.end as u32, next.start as u32),
+            _ => 0,
+        };
+
+        if blanks > 0 {
+            Doc::BlankLine
+        } else {
+            Doc::HardLine
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Operator helpers
+    // -----------------------------------------------------------------------
+
+    fn binary_op_str(&self, op: &BinaryOperator) -> &'static str {
+        match op {
             BinaryOperator::Add => "+",
             BinaryOperator::Sub => "-",
             BinaryOperator::Mul => "*",
@@ -417,24 +530,22 @@ impl Formatter {
             BinaryOperator::BitAnd => "&",
             BinaryOperator::BitOr => "|",
             BinaryOperator::BitXor => "^",
-        };
-        self.output.push_str(s);
+        }
     }
 
-    fn format_unary_prefix_op(&mut self, op: &UnaryOperator) {
-        let s = match op {
+    fn unary_prefix_op_str(&self, op: &UnaryOperator) -> &'static str {
+        match op {
             UnaryOperator::Neg => "-",
             UnaryOperator::Not => "!",
             UnaryOperator::BitNot => "~",
             UnaryOperator::PreInc => "++",
             UnaryOperator::PreDec => "--",
             UnaryOperator::PostInc | UnaryOperator::PostDec => unreachable!(),
-        };
-        self.output.push_str(s);
+        }
     }
 
-    fn format_assign_op(&mut self, op: &AssignOperator) {
-        let s = match op {
+    fn assign_op_str(&self, op: &AssignOperator) -> &'static str {
+        match op {
             AssignOperator::Assign => "=",
             AssignOperator::AddAssign => "+=",
             AssignOperator::SubAssign => "-=",
@@ -444,7 +555,6 @@ impl Formatter {
             AssignOperator::BitAndAssign => "&=",
             AssignOperator::BitOrAssign => "|=",
             AssignOperator::BitXorAssign => "^=",
-        };
-        self.output.push_str(s);
+        }
     }
 }

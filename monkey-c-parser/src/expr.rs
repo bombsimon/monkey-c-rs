@@ -227,7 +227,9 @@ impl Parser<'_> {
         let depth_check = RECURSION_DEPTH.with(|depth| {
             let d = depth.get();
             if d > 1000 {
-                return Err(ParserError::ParseError("Expression too complex".to_string()));
+                return Err(ParserError::ParseError(
+                    "Expression too complex".to_string(),
+                ));
             }
             depth.set(d + 1);
             Ok(())
@@ -253,37 +255,38 @@ impl Parser<'_> {
     }
 
     fn parse_postfix(&mut self) -> Result<Expr, ParserError> {
+        let start = self.current_token_start;
         let mut expr = self.parse_primary()?;
 
         loop {
             if self.current_token == token::Type::Dot {
-                self.next_token_span();
+                self.next_token_span(); // consume .
                 let property = self.parse_identifier()?;
-                let (_, _, end) = self.lexer.peek_token();
+                let end = self.current_token_end;
+                self.next_token_span(); // consume property name
                 expr = Expr::Member(MemberExpr {
                     object: Box::new(expr),
                     property,
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 });
-                self.next_token_span();
                 continue;
             }
 
             if self.current_token == token::Type::LBracket {
-                self.next_token_span();
+                self.next_token_span(); // consume [
                 let index = self.parse_expression()?;
-                let (_, _, end) = self.lexer.peek_token();
+                let end = self.current_token_end; // end of ]
                 expr = Expr::Index(IndexExpr {
                     object: Box::new(expr),
                     index: Box::new(index),
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 });
                 self.assert_next_token(&[token::Type::RBracket])?;
                 continue;
             }
 
             if self.current_token == token::Type::LParen {
-                self.next_token_span();
+                self.next_token_span(); // consume (
                 let mut args = Vec::new();
                 if self.current_token != token::Type::RParen {
                     loop {
@@ -294,24 +297,25 @@ impl Parser<'_> {
                         self.assert_next_token(&[token::Type::Comma])?;
                     }
                 }
-                let (_, _, end) = self.lexer.peek_token();
+                let end = self.current_token_end; // end of )
                 expr = Expr::Call(CallExpr {
                     callee: Box::new(expr),
                     args,
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 });
                 self.assert_next_token(&[token::Type::RParen])?;
                 continue;
             }
 
             if self.current_token == token::Type::As {
-                self.next_token_span();
+                self.next_token_span(); // consume `as`
                 let target_type = self.parse_type()?;
-                let (_, _, end) = self.lexer.peek_token();
+                // current_token_start is the start of the token after the type
+                let end = self.current_token_start;
                 expr = Expr::TypeCast(TypeCastExpr {
                     expr: Box::new(expr),
                     target_type,
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 });
                 continue;
             }
@@ -321,13 +325,13 @@ impl Parser<'_> {
                 token::Type::PlusPlus | token::Type::MinusMinus
             ) {
                 let operator_token = self.current_token.clone();
-                let (start, _, _) = self.next_token_span();
+                let end = self.current_token_end;
+                self.next_token_span(); // consume ++/--
                 let operator = match operator_token {
                     token::Type::PlusPlus => UnaryOperator::PostInc,
                     token::Type::MinusMinus => UnaryOperator::PostDec,
                     _ => unreachable!(),
                 };
-                let (_, _, end) = self.lexer.peek_token();
                 expr = Expr::Unary(UnaryExpr {
                     operator,
                     operand: Box::new(expr),
@@ -351,69 +355,78 @@ impl Parser<'_> {
                 Ok(expr)
             }
             token::Type::Identifier(name) => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Ident(IdentExpr {
                     name,
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::Me => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
-                Ok(Expr::Me(Span { start: 0, end }))
+                Ok(Expr::Me(Span { start, end }))
             }
             token::Type::Self_ => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
-                Ok(Expr::Self_(Span { start: 0, end }))
+                Ok(Expr::Self_(Span { start, end }))
             }
             token::Type::Long(value) => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Long(value),
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::Double(value) => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Double(value),
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::String(value) => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::String(value),
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::Boolean(value) => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Boolean(value),
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::Null => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Null,
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::NaN => {
-                let (_, _, end) = self.lexer.peek_token();
+                let start = self.current_token_start;
+                let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::NaN,
-                    span: Span { start: 0, end },
+                    span: Span { start, end },
                 }))
             }
             token::Type::Minus => {
@@ -427,12 +440,18 @@ impl Parser<'_> {
                 }))
             }
             token::Type::LBracket => {
+                let start = self.current_token_start;
                 self.next_token_span(); // consume [
                 let mut elements = Vec::new();
+                let mut trailing_comma = false;
                 while self.current_token != token::Type::RBracket {
                     elements.push(self.parse_expression()?);
                     if self.current_token == token::Type::Comma {
-                        self.next_token_span();
+                        self.next_token_span(); // consume ,
+                        if self.current_token == token::Type::RBracket {
+                            trailing_comma = true;
+                            break;
+                        }
                     } else if self.current_token == token::Type::RBracket {
                         break;
                     } else {
@@ -443,24 +462,31 @@ impl Parser<'_> {
                     }
                 }
 
+                let end = self.current_token_end; // end of ]
                 self.next_token_span(); // consume ]
-                let (_, _, end) = self.lexer.peek_token();
 
                 Ok(Expr::Array(ArrayExpr {
                     elements,
-                    span: Span { start: 0, end },
+                    trailing_comma,
+                    span: Span { start, end },
                 }))
             }
             token::Type::LBrace => {
+                let start = self.current_token_start;
                 self.next_token_span(); // consume {
                 let mut pairs = Vec::new();
+                let mut trailing_comma = false;
                 while self.current_token != token::Type::RBrace {
                     let key = self.parse_primary()?;
                     self.assert_next_token(&[token::Type::Colon])?;
                     let value = self.parse_expression()?;
                     pairs.push((key, value));
                     if self.current_token == token::Type::Comma {
-                        self.next_token_span();
+                        self.next_token_span(); // consume ,
+                        if self.current_token == token::Type::RBrace {
+                            trailing_comma = true;
+                            break;
+                        }
                     } else if self.current_token == token::Type::RBrace {
                         break;
                     } else {
@@ -471,12 +497,13 @@ impl Parser<'_> {
                     }
                 }
 
+                let end = self.current_token_end; // end of }
                 self.next_token_span(); // consume }
-                let (_, _, end) = self.lexer.peek_token();
 
                 Ok(Expr::Dict(DictExpr {
                     pairs,
-                    span: Span { start: 0, end },
+                    trailing_comma,
+                    span: Span { start, end },
                 }))
             }
             _ => Err(ParserError::ParseError(format!(
@@ -697,6 +724,7 @@ mod tests {
 
                 let assign = func
                     .body
+                    .stmts
                     .iter()
                     .find_map(|stmt| {
                         if let Stmt::Expr(Expr::Assign(a)) = stmt {
