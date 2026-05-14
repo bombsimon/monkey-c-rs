@@ -53,6 +53,8 @@ pub enum Type {
     Identifier(String),
     Me,
     Self_,
+    /// The `$` bling symbol — refers to the global namespace.
+    Bling,
 
     // Comments and Annotations
     Comment(String),
@@ -153,6 +155,7 @@ impl std::fmt::Display for Type {
             Type::Identifier(s) => write!(f, "{}", s),
             Type::Me => write!(f, "me"),
             Type::Self_ => write!(f, "self"),
+            Type::Bling => write!(f, "$"),
             Type::Comment(s) => write!(f, "//{}", s),
             Type::Annotation(s) => write!(f, "@{}", s),
             Type::Plus => write!(f, "+"),

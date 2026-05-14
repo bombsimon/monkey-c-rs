@@ -134,6 +134,8 @@ pub enum Expr {
     Me(Span),
     /// The `self` keyword — reference to the current class.
     Self_(Span),
+    /// The `$` bling symbol — reference to the global namespace.
+    Bling(Span),
 }
 
 #[derive(Debug, PartialEq)]
@@ -389,7 +391,7 @@ impl Expr {
             Expr::Dict(e) => &e.span,
             Expr::Lit(e) => &e.span,
             Expr::Ident(e) => &e.span,
-            Expr::Me(s) | Expr::Self_(s) => s,
+            Expr::Me(s) | Expr::Self_(s) | Expr::Bling(s) => s,
         }
     }
 }

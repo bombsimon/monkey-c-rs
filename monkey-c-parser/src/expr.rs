@@ -375,6 +375,12 @@ impl Parser<'_> {
                 self.next_token_span();
                 Ok(Expr::Self_(Span { start, end }))
             }
+            token::Type::Bling => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Bling(Span { start, end }))
+            }
             token::Type::Long(value) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;

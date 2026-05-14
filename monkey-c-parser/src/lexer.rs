@@ -269,6 +269,7 @@ impl<'a> Lexer<'a> {
                 let content = self.read_string();
                 return (start, token::Type::String(content), self.position);
             }
+            b'$' => (token::Type::Bling, 1),
             b'\n' => (token::Type::Newline, 1),
             0 => (token::Type::Eof, 0),
             _ => {

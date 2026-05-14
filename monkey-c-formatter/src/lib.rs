@@ -469,6 +469,7 @@ impl Formatter {
             Expr::Ident(e) => Doc::text(&e.name),
             Expr::Me(_) => Doc::text("me"),
             Expr::Self_(_) => Doc::text("self"),
+            Expr::Bling(_) => Doc::text("$"),
         }
     }
 
