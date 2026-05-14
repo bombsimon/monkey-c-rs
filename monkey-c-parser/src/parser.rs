@@ -275,7 +275,10 @@ impl<'a> Parser<'a> {
                 Ok(Ast::Module(ModuleDecl {
                     name,
                     body,
-                    span: Span { start, end: rbrace_end },
+                    span: Span {
+                        start,
+                        end: rbrace_end,
+                    },
                 }))
             }
             token::Type::Function => {
