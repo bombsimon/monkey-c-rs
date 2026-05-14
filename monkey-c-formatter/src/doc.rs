@@ -76,10 +76,7 @@ impl Doc {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Renderer
-// ---------------------------------------------------------------------------
-
+/// Whether a [`Doc::Group`] is being rendered flat (single line) or broken (multi-line).
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
     Flat,
@@ -166,8 +163,8 @@ fn render_doc(
     }
 }
 
-/// Measure the flat (single-line) width of a sequence of docs.
-/// Returns `None` if any `HardLine` is encountered (can never be flat).
+/// Returns the flat (single-line) character width of `doc`, or `None` if it
+/// contains a [`Doc::HardLine`] or [`Doc::BlankLine`] and can never be flat.
 fn flat_width(doc: &Doc) -> Option<usize> {
     match doc {
         Doc::Empty => Some(0),
@@ -185,6 +182,7 @@ fn flat_width(doc: &Doc) -> Option<usize> {
     }
 }
 
+/// Returns `true` if rendering `docs` in flat mode would fit within `remaining` columns.
 fn fits_flat(docs: &[Doc], remaining: usize) -> bool {
     let mut total = 0usize;
     for d in docs {
@@ -200,10 +198,6 @@ fn fits_flat(docs: &[Doc], remaining: usize) -> bool {
     }
     true
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

@@ -1,22 +1,40 @@
+/// An identifier — a plain string name.
 pub type Ident = String;
 
+/// Visibility modifier on a declaration.
+///
+/// `Hidden` is synonymous with `Protected` — both restrict access to the
+/// declaring class and its subclasses. The distinction is preserved so the
+/// formatter can round-trip the original keyword.
 #[derive(Debug, PartialEq)]
 pub enum Visibility {
     Private,
     Protected,
+    /// The `hidden` keyword — an alias for `protected`.
+    Hidden,
     Public,
 }
 
+/// A Monkey C type annotation, optionally generic and optionally nullable.
 #[derive(Debug, PartialEq)]
 pub struct Type {
+    /// The base type name, e.g. `Array` in `Array<Number>?`.
     pub ident: Ident,
+    /// Type parameters, e.g. `[Number]` in `Array<Number>`.
     pub generic_params: Vec<Type>,
+    /// Whether the type is nullable (`?` suffix).
     pub optional: bool,
 }
 
+/// A half-open byte range `[start, end)` into the original source string.
+///
+/// All offsets are global — measured from byte 0 of the file.
+/// Use [`LineIndex`](crate::line_index::LineIndex) to convert to line/column.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Span {
+    /// Byte offset of the first character of this node.
     pub start: usize,
+    /// Byte offset one past the last character of this node.
     pub end: usize,
 }
 
@@ -26,21 +44,19 @@ impl From<(usize, usize)> for Span {
     }
 }
 
-/// Used for both function parameters and variable declarations.
+/// A named, optionally-typed binding used for function parameters.
 #[derive(Debug, PartialEq)]
 pub struct Variable {
     pub name: Ident,
+    /// Declared type (`as Type`), if present.
     pub type_: Option<Type>,
     pub visibility: Option<Visibility>,
+    /// Default value (`= expr`), if present.
     pub initializer: Option<Box<Expr>>,
     pub is_static: bool,
-    pub is_hidden: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Operators
-// ---------------------------------------------------------------------------
-
+/// A binary (two-operand) operator.
 #[derive(Debug, PartialEq)]
 pub enum BinaryOperator {
     Add,        // +
@@ -62,6 +78,7 @@ pub enum BinaryOperator {
     BitXor,     // ^
 }
 
+/// A unary (single-operand) operator.
 #[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
     Neg,     // -
@@ -73,6 +90,7 @@ pub enum UnaryOperator {
     PostDec, // x--
 }
 
+/// A compound assignment operator.
 #[derive(Debug, PartialEq)]
 pub enum AssignOperator {
     Assign,       // =
@@ -86,10 +104,7 @@ pub enum AssignOperator {
     BitXorAssign, // ^=
 }
 
-// ---------------------------------------------------------------------------
-// Literals
-// ---------------------------------------------------------------------------
-
+/// A compile-time constant value.
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
     Long(i64),
@@ -100,10 +115,7 @@ pub enum LiteralValue {
     NaN,
 }
 
-// ---------------------------------------------------------------------------
-// Expressions
-// ---------------------------------------------------------------------------
-
+/// An expression node.
 #[derive(Debug, PartialEq)]
 pub enum Expr {
     Binary(BinaryExpr),
@@ -118,7 +130,9 @@ pub enum Expr {
     Dict(DictExpr),
     Lit(LitExpr),
     Ident(IdentExpr),
+    /// The `me` keyword — reference to the current instance.
     Me(Span),
+    /// The `self` keyword — reference to the current class.
     Self_(Span),
 }
 
@@ -155,6 +169,7 @@ pub struct CallExpr {
 #[derive(Debug, PartialEq)]
 pub struct MemberExpr {
     pub object: Box<Expr>,
+    /// The property name after the `.`.
     pub property: Ident,
     pub span: Span,
 }
@@ -168,6 +183,7 @@ pub struct IndexExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct NewExpr {
+    /// Fully qualified class name, e.g. `MyModule.Foo`.
     pub class: Ident,
     pub args: Vec<Expr>,
     pub span: Span,
@@ -183,6 +199,8 @@ pub struct TypeCastExpr {
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
     pub elements: Vec<Expr>,
+    /// Whether the source had a trailing comma — drives the magic trailing comma
+    /// formatting rule (trailing comma → always multi-line).
     pub trailing_comma: bool,
     pub span: Span,
 }
@@ -190,6 +208,8 @@ pub struct ArrayExpr {
 #[derive(Debug, PartialEq)]
 pub struct DictExpr {
     pub pairs: Vec<(Expr, Expr)>,
+    /// Whether the source had a trailing comma after the last pair.
+    /// See [`ArrayExpr::trailing_comma`].
     pub trailing_comma: bool,
     pub span: Span,
 }
@@ -206,21 +226,20 @@ pub struct IdentExpr {
     pub span: Span,
 }
 
-// ---------------------------------------------------------------------------
-// Statements
-// ---------------------------------------------------------------------------
-
+/// A statement node.
 #[derive(Debug, PartialEq)]
 pub enum Stmt {
+    /// A line comment (`// …`). The string contains the raw text after `//`.
+    Comment(String, Span),
+    Break(Span),
+    Continue(Span),
     Block(BlockStmt),
     If(IfStmt),
     While(WhileStmt),
     For(ForStmt),
     Return(ReturnStmt),
-    Break(Span),
-    Continue(Span),
-    Var(VarStmt),
-    Comment(String, Span),
+    Var(VarDecl),
+    /// A bare expression used as a statement (e.g. an assignment or call).
     Expr(Expr),
 }
 
@@ -248,7 +267,7 @@ pub struct WhileStmt {
 /// The init clause of a `for` loop — either a `var` declaration or an expression.
 #[derive(Debug, PartialEq)]
 pub enum ForInit {
-    Var(VarStmt),
+    Var(VarDecl),
     Expr(Expr),
 }
 
@@ -267,32 +286,42 @@ pub struct ReturnStmt {
     pub span: Span,
 }
 
+/// A `var` declaration, at module/class scope or inside a function body.
 #[derive(Debug, PartialEq)]
-pub struct VarStmt {
-    pub variable: Variable,
+pub struct VarDecl {
+    pub name: Ident,
+    /// Declared type (`as Type`), if present.
+    pub type_: Option<Type>,
+    pub visibility: Option<Visibility>,
+    /// Initial value (`= expr`), if present.
+    pub initializer: Option<Box<Expr>>,
+    pub is_static: bool,
     pub span: Span,
 }
 
-// ---------------------------------------------------------------------------
-// Top-level declarations
-// ---------------------------------------------------------------------------
-
+/// A top-level AST node. Also used for class and module body members.
 #[derive(Debug, PartialEq)]
 pub enum Ast {
+    /// A line comment (`// …`). The string contains the raw text after `//`.
+    Comment(String, Span),
+    /// A `(:AnnotationName)` decorator.
+    Annotation(String, Span),
+    /// The root of a parsed file.
     Document(Vec<Ast>),
     Import(ImportDecl),
     Module(ModuleDecl),
     Class(ClassDecl),
     Function(FunctionDecl),
-    Variable(VarStmt),
-    Comment(String, Span),
-    Annotation(String, Span),
+    Variable(VarDecl),
+    Const(ConstDecl),
     Eof,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ImportDecl {
+    /// Fully qualified import path, e.g. `Toybox.WatchUi`.
     pub name: Ident,
+    /// Optional `as Alias`.
     pub alias: Option<Ident>,
     pub span: Span,
 }
@@ -307,8 +336,8 @@ pub struct ModuleDecl {
 #[derive(Debug, PartialEq)]
 pub struct ClassDecl {
     pub name: Ident,
+    /// Base class name from `extends BaseClass`.
     pub extends: Option<Ident>,
-    pub annotations: Vec<String>,
     pub body: Vec<Ast>,
     pub span: Span,
 }
@@ -317,20 +346,35 @@ pub struct ClassDecl {
 pub struct FunctionDecl {
     pub name: Ident,
     pub args: Vec<Variable>,
+    /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
-    pub annotations: Vec<String>,
     pub body: BlockStmt,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
-    pub is_hidden: bool,
     pub span: Span,
 }
 
-// ---------------------------------------------------------------------------
-// Span accessors
-// ---------------------------------------------------------------------------
+/// A `const` declaration at module or class scope.
+///
+/// Unlike [`VarDecl`], the initializer is mandatory — `const` without a value
+/// is a syntax error. `const` also cannot appear inside a function body.
+///
+/// Note that `const` only prevents the binding from being reassigned; it does
+/// not deeply freeze its value (a `const` array still has mutable elements).
+#[derive(Debug, PartialEq)]
+pub struct ConstDecl {
+    pub name: Ident,
+    /// Declared type (`as Type`), if present.
+    pub type_: Option<Type>,
+    pub visibility: Option<Visibility>,
+    /// The required initial value.
+    pub initializer: Expr,
+    pub is_static: bool,
+    pub span: Span,
+}
 
 impl Expr {
+    /// Return the source span of this expression.
     pub fn span(&self) -> &Span {
         match self {
             Expr::Binary(e) => &e.span,
@@ -351,6 +395,7 @@ impl Expr {
 }
 
 impl Stmt {
+    /// Return the source span of this statement.
     pub fn span(&self) -> &Span {
         match self {
             Stmt::Block(s) => &s.span,
@@ -367,6 +412,9 @@ impl Stmt {
 }
 
 impl Ast {
+    /// Return the source span of this node, if it has one.
+    ///
+    /// `Document` and `Eof` have no meaningful span.
     pub fn span(&self) -> Option<&Span> {
         match self {
             Ast::Document(_) | Ast::Eof => None,
@@ -375,6 +423,7 @@ impl Ast {
             Ast::Class(d) => Some(&d.span),
             Ast::Function(d) => Some(&d.span),
             Ast::Variable(v) => Some(&v.span),
+            Ast::Const(c) => Some(&c.span),
             Ast::Comment(_, s) | Ast::Annotation(_, s) => Some(s),
         }
     }

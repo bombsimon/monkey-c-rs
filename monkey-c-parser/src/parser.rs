@@ -1,17 +1,36 @@
 use crate::ast::{
-    Ast, BlockStmt, ClassDecl, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl,
-    ReturnStmt, Span, Stmt, Type, VarStmt, Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, ClassDecl, ConstDecl, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl,
+    ModuleDecl, ReturnStmt, Span, Stmt, Type, VarDecl, Variable, Visibility, WhileStmt,
 };
+use crate::line_index::LineIndex;
 use crate::token;
 
+/// A parse error with the source location where it occurred.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParserError {
-    TokenizerError(String),
-    ParseError(String),
+pub struct ParserError {
+    pub message: String,
+    /// 1-indexed line number of the offending token.
+    pub line: u32,
+    /// 1-indexed column number of the offending token.
+    pub col: u32,
 }
 
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}: {}", self.line, self.col, self.message)
+    }
+}
+
+impl std::error::Error for ParserError {}
+
+/// Recursive-descent parser for Monkey C source text.
+///
+/// Construct with [`Parser::new`], then call [`Parser::parse`] to produce an
+/// [`Ast::Document`].
 pub struct Parser<'a> {
     pub(crate) lexer: crate::lexer::Lexer<'a>,
+    pub(crate) line_index: LineIndex,
+    /// The token currently being examined.
     pub current_token: token::Type,
     /// Byte offset of the start of `current_token`.
     pub(crate) current_token_start: usize,
@@ -21,17 +40,20 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
+        let line_index = LineIndex::new(source);
         let mut lexer = crate::lexer::Lexer::new(source);
         let (start, token_type, end) = lexer.next_token();
 
         Self {
             lexer,
+            line_index,
             current_token: token_type,
             current_token_start: start,
             current_token_end: end,
         }
     }
 
+    /// Parse a complete source file into an [`Ast::Document`].
     pub fn parse(&mut self) -> Result<Ast, ParserError> {
         let mut nodes = Vec::new();
 
@@ -40,29 +62,11 @@ impl<'a> Parser<'a> {
             if decl == Ast::Eof {
                 break;
             }
+
             nodes.push(decl);
         }
 
         Ok(Ast::Document(nodes))
-    }
-
-    pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
-        let (start, token_type, end) = self.lexer.next_token();
-        self.current_token = token_type.clone();
-        self.current_token_start = start;
-        self.current_token_end = end;
-        (start, token_type, end)
-    }
-
-    pub(crate) fn next_token_of_type(&mut self, expect: &[token::Type]) -> bool {
-        let (_, tkn, _) = self.lexer.peek_token();
-        for expected in expect {
-            if tkn == *expected {
-                return true;
-            }
-        }
-
-        false
     }
 
     pub(crate) fn assert_next_token(
@@ -78,19 +82,68 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Err(ParserError::TokenizerError(format!(
+        Err(self.parse_error(format!(
             "got unexpected token from `assert_next_token`: '{:?}', expected one of: {:?}",
             self.current_token, expect
         )))
     }
 
+    pub(crate) fn current_token_is(&self, expect: &[token::Type]) -> bool {
+        expect.contains(&self.current_token)
+    }
+
+    pub(crate) fn next_token_of_type(&mut self, expect: &[token::Type]) -> bool {
+        let (_, tkn, _) = self.lexer.peek_token();
+        for expected in expect {
+            if tkn == *expected {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
+        let (start, token_type, end) = self.lexer.next_token();
+        self.current_token = token_type.clone();
+        self.current_token_start = start;
+        self.current_token_end = end;
+
+        (start, token_type, end)
+    }
+
+    /// Build a [`ParserError`] pointing at the start of `current_token`.
+    pub(crate) fn parse_error(&self, message: impl Into<String>) -> ParserError {
+        let lc = self.line_index.line_col(self.current_token_start as u32);
+
+        ParserError {
+            message: message.into(),
+            line: lc.line + 1,
+            col: lc.col + 1,
+        }
+    }
+
+    pub(crate) fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
+        let mut name = self.parse_identifier()?;
+        self.next_token_span();
+
+        while self.current_token == token::Type::Dot {
+            self.next_token_span(); // consume dot
+            let next = self.parse_identifier()?;
+            name.push('.');
+            name.push_str(&next);
+            self.next_token_span();
+        }
+
+        Ok(name)
+    }
+
     pub(crate) fn parse_identifier(&mut self) -> Result<String, ParserError> {
         match &self.current_token {
             token::Type::Identifier(name) => Ok(name.clone()),
-            _ => Err(ParserError::ParseError(format!(
-                "Expected identifier, got {:?}",
-                self.current_token
-            ))),
+            _ => {
+                Err(self.parse_error(format!("Expected identifier, got {:?}", self.current_token)))
+            }
         }
     }
 
@@ -99,6 +152,7 @@ impl<'a> Parser<'a> {
         if self.current_token != token::Type::Less {
             self.next_token_span();
         }
+
         let generic_params = if self.current_token == token::Type::Less {
             self.next_token_span(); // consume <
             let mut params = Vec::new();
@@ -112,6 +166,7 @@ impl<'a> Parser<'a> {
             }
 
             self.assert_next_token(&[token::Type::Greater])?;
+
             params
         } else {
             Vec::new()
@@ -129,64 +184,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub(crate) fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
-        let mut name = self.parse_identifier()?;
-        self.next_token_span();
-        while self.current_token == token::Type::Dot {
-            self.next_token_span(); // consume dot
-            let next = self.parse_identifier()?;
-            name.push('.');
-            name.push_str(&next);
-            self.next_token_span();
-        }
-
-        Ok(name)
-    }
-
-    /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.
-    /// Does NOT consume a trailing semicolon — callers set the final span after consuming it.
-    fn parse_var_contents(
-        &mut self,
-        visibility: Option<Visibility>,
-        is_static: bool,
-        is_hidden: bool,
-    ) -> Result<VarStmt, ParserError> {
-        let name = self.parse_identifier()?;
-        self.next_token_span(); // advance past identifier
-
-        let type_ = if self.current_token == token::Type::As {
-            self.next_token_span();
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-
-        let initializer = if self.current_token == token::Type::Assign {
-            self.next_token_span(); // consume =
-            Some(Box::new(self.parse_expression()?))
-        } else {
-            None
-        };
-
-        Ok(VarStmt {
-            variable: Variable {
-                name,
-                type_,
-                visibility,
-                initializer,
-                is_static,
-                is_hidden,
-            },
-            // Callers fill in the real span after consuming the trailing semicolon.
-            span: Span { start: 0, end: 0 },
-        })
-    }
-
     fn parse_declaration(&mut self) -> Result<Ast, ParserError> {
         let start = self.current_token_start;
         let mut visibility = None;
         let mut is_static = false;
-        let mut is_hidden = false;
 
         loop {
             match self.current_token {
@@ -207,7 +208,7 @@ impl<'a> Parser<'a> {
                     self.next_token_span();
                 }
                 token::Type::Hidden => {
-                    is_hidden = true;
+                    visibility = Some(Visibility::Hidden);
                     self.next_token_span();
                 }
                 _ => break,
@@ -215,128 +216,204 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_token.clone() {
-            token::Type::Import => {
-                self.next_token_span();
-                let name = self.parse_dotted_identifier()?;
-                let alias = if self.current_token == token::Type::As {
-                    self.next_token_span();
-                    Some(self.parse_identifier()?)
-                } else {
-                    None
-                };
-                let semi_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Ast::Import(ImportDecl {
-                    name,
-                    alias,
-                    span: Span {
-                        start,
-                        end: semi_end,
-                    },
-                }))
-            }
-            token::Type::Class => {
-                self.next_token_span();
-                let name = self.parse_identifier()?;
-                self.next_token_span();
-                let extends = if self.current_token == token::Type::Extends {
-                    self.next_token_span();
-                    let n = self.parse_identifier()?;
-                    self.next_token_span();
-                    Some(n)
-                } else {
-                    None
-                };
-
-                self.assert_next_token(&[token::Type::LBrace])?;
-                let body = self.parse_class_body()?;
-                let rbrace_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::RBrace])?;
-                Ok(Ast::Class(ClassDecl {
-                    name,
-                    extends,
-                    annotations: Vec::new(),
-                    body,
-                    span: Span {
-                        start,
-                        end: rbrace_end,
-                    },
-                }))
-            }
-            token::Type::Module => {
-                self.next_token_span(); // consume `module`
-                let name = self.parse_identifier()?;
-                self.next_token_span(); // advance past name
-
-                self.assert_next_token(&[token::Type::LBrace])?;
-                let body = self.parse_class_body()?;
-                let rbrace_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::RBrace])?;
-                Ok(Ast::Module(ModuleDecl {
-                    name,
-                    body,
-                    span: Span {
-                        start,
-                        end: rbrace_end,
-                    },
-                }))
-            }
-            token::Type::Function => {
-                self.next_token_span();
-                let name = self.parse_identifier()?;
-                self.next_token_span();
-                let args = self.parse_function_args()?;
-                let returns = if self.current_token == token::Type::As {
-                    self.next_token_span();
-                    Some(self.parse_type()?)
-                } else {
-                    None
-                };
-
-                let brace_start = self.current_token_start;
-                self.assert_next_token(&[token::Type::LBrace])?;
-                let body = self.parse_block(brace_start)?;
-                let end = body.span.end;
-
-                Ok(Ast::Function(FunctionDecl {
-                    name,
-                    args,
-                    returns,
-                    annotations: Vec::new(),
-                    body,
-                    visibility,
-                    is_static,
-                    is_hidden,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Var => {
-                self.next_token_span();
-                let mut var_stmt = self.parse_var_contents(visibility, is_static, is_hidden)?;
-                let semi_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::Semicolon])?;
-                var_stmt.span = Span {
-                    start,
-                    end: semi_end,
-                };
-                Ok(Ast::Variable(var_stmt))
-            }
-            token::Type::Comment(content) => {
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Ast::Comment(content, Span { start, end }))
-            }
-            token::Type::Annotation(content) => {
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Ast::Annotation(content, Span { start, end }))
-            }
+            token::Type::Annotation(content) => self.parse_annotation_decl(start, content),
+            token::Type::Class => self.parse_class_decl(start),
+            token::Type::Comment(content) => self.parse_comment_decl(start, content),
+            token::Type::Const => self.parse_const_decl(start, visibility, is_static),
+            token::Type::Function => self.parse_function_decl(start, visibility, is_static),
+            token::Type::Import => self.parse_import_decl(start),
+            token::Type::Module => self.parse_module_decl(start),
+            token::Type::Var => self.parse_var_decl(start, visibility, is_static),
             token::Type::Eof => Ok(Ast::Eof),
-            _ => Err(ParserError::ParseError(format!(
+            _ => Err(self.parse_error(format!(
                 "Unexpected token at top level: {:?}",
                 self.current_token
             ))),
         }
+    }
+
+    fn parse_annotation_decl(&mut self, start: usize, content: String) -> Result<Ast, ParserError> {
+        let end = self.current_token_end;
+        self.next_token_span();
+
+        Ok(Ast::Annotation(content, Span { start, end }))
+    }
+
+    fn parse_class_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+        self.next_token_span();
+        let name = self.parse_identifier()?;
+        self.next_token_span();
+
+        let extends = if self.current_token == token::Type::Extends {
+            self.next_token_span();
+            let n = self.parse_identifier()?;
+            self.next_token_span();
+
+            Some(n)
+        } else {
+            None
+        };
+
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_class_body()?;
+        let rbrace_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::RBrace])?;
+
+        Ok(Ast::Class(ClassDecl {
+            name,
+            extends,
+            body,
+            span: Span {
+                start,
+                end: rbrace_end,
+            },
+        }))
+    }
+
+    fn parse_class_body(&mut self) -> Result<Vec<Ast>, ParserError> {
+        let mut body = Vec::new();
+        while self.current_token != token::Type::RBrace {
+            let member = self.parse_declaration()?;
+            body.push(member);
+        }
+
+        Ok(body)
+    }
+
+    fn parse_comment_decl(&mut self, start: usize, content: String) -> Result<Ast, ParserError> {
+        let end = self.current_token_end;
+        self.next_token_span();
+
+        Ok(Ast::Comment(content, Span { start, end }))
+    }
+
+    fn parse_const_decl(
+        &mut self,
+        start: usize,
+        visibility: Option<Visibility>,
+        is_static: bool,
+    ) -> Result<Ast, ParserError> {
+        self.next_token_span();
+        let name = self.parse_identifier()?;
+        self.next_token_span();
+
+        let type_ = if self.current_token == token::Type::As {
+            self.next_token_span();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        self.assert_next_token(&[token::Type::Assign])?;
+        let initializer = self.parse_expression()?;
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Ast::Const(ConstDecl {
+            name,
+            type_,
+            visibility,
+            initializer,
+            is_static,
+            span: Span {
+                start,
+                end: semi_end,
+            },
+        }))
+    }
+
+    fn parse_function_decl(
+        &mut self,
+        start: usize,
+        visibility: Option<Visibility>,
+        is_static: bool,
+    ) -> Result<Ast, ParserError> {
+        self.next_token_span();
+        let name = self.parse_identifier()?;
+        self.next_token_span();
+        let args = self.parse_function_args()?;
+
+        let returns = if self.current_token == token::Type::As {
+            self.next_token_span();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        let brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_block(brace_start)?;
+        let end = body.span.end;
+
+        Ok(Ast::Function(FunctionDecl {
+            name,
+            args,
+            returns,
+            body,
+            visibility,
+            is_static,
+            span: Span { start, end },
+        }))
+    }
+
+    fn parse_import_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+        self.next_token_span();
+        let name = self.parse_dotted_identifier()?;
+        let alias = if self.current_token == token::Type::As {
+            self.next_token_span();
+            Some(self.parse_identifier()?)
+        } else {
+            None
+        };
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Ast::Import(ImportDecl {
+            name,
+            alias,
+            span: Span {
+                start,
+                end: semi_end,
+            },
+        }))
+    }
+
+    fn parse_module_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+        self.next_token_span(); // consume `module`
+        let name = self.parse_identifier()?;
+        self.next_token_span(); // advance past name
+
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_class_body()?;
+        let rbrace_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::RBrace])?;
+
+        Ok(Ast::Module(ModuleDecl {
+            name,
+            body,
+            span: Span {
+                start,
+                end: rbrace_end,
+            },
+        }))
+    }
+
+    fn parse_var_decl(
+        &mut self,
+        start: usize,
+        visibility: Option<Visibility>,
+        is_static: bool,
+    ) -> Result<Ast, ParserError> {
+        self.next_token_span();
+        let mut var_decl = self.parse_var_contents(visibility, is_static)?;
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+        var_decl.span = Span {
+            start,
+            end: semi_end,
+        };
+
+        Ok(Ast::Variable(var_decl))
     }
 
     fn parse_function_args(&mut self) -> Result<Vec<Variable>, ParserError> {
@@ -360,13 +437,12 @@ impl<'a> Parser<'a> {
                 visibility: None,
                 initializer: None,
                 is_static: false,
-                is_hidden: false,
             });
 
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
             } else if self.current_token != token::Type::RParen {
-                return Err(ParserError::ParseError(format!(
+                return Err(self.parse_error(format!(
                     "Expected ',' or ')' in function arguments, got {:?}",
                     self.current_token
                 )));
@@ -378,14 +454,39 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    fn parse_class_body(&mut self) -> Result<Vec<Ast>, ParserError> {
-        let mut body = Vec::new();
-        while self.current_token != token::Type::RBrace {
-            let member = self.parse_declaration()?;
-            body.push(member);
-        }
+    /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.
+    /// Does NOT consume a trailing semicolon — callers set the final span after consuming it.
+    fn parse_var_contents(
+        &mut self,
+        visibility: Option<Visibility>,
+        is_static: bool,
+    ) -> Result<VarDecl, ParserError> {
+        let name = self.parse_identifier()?;
+        self.next_token_span(); // advance past identifier
 
-        Ok(body)
+        let type_ = if self.current_token == token::Type::As {
+            self.next_token_span();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+
+        let initializer = if self.current_token == token::Type::Assign {
+            self.next_token_span(); // consume =
+            Some(Box::new(self.parse_expression()?))
+        } else {
+            None
+        };
+
+        Ok(VarDecl {
+            name,
+            type_,
+            visibility,
+            initializer,
+            is_static,
+            // Callers fill in the real span after consuming the trailing semicolon.
+            span: Span { start: 0, end: 0 },
+        })
     }
 
     /// Parse a block body. `brace_start` is the byte offset of the already-consumed `{`.
@@ -409,217 +510,212 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         match self.current_token.clone() {
+            token::Type::Comment(content) => self.parse_comment_stmt(content),
+            token::Type::Break => self.parse_break_stmt(),
+            token::Type::Continue => self.parse_continue_stmt(),
+            token::Type::Var => self.parse_var_stmt(),
+            token::Type::Return => self.parse_return_stmt(),
+            token::Type::If => self.parse_if_stmt(),
+            token::Type::While => self.parse_while_stmt(),
+            token::Type::For => self.parse_for_stmt(),
+            token::Type::LBrace => self.parse_block_stmt(),
+            _ => self.parse_expr_stmt(),
+        }
+    }
+
+    fn parse_block_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let brace_start = self.current_token_start;
+        self.next_token_span(); // consume `{`
+        let block = self.parse_block(brace_start)?;
+
+        Ok(Stmt::Block(block))
+    }
+
+    fn parse_break_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span();
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Stmt::Break(Span {
+            start,
+            end: semi_end,
+        }))
+    }
+
+    fn parse_comment_stmt(&mut self, content: String) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        let end = self.current_token_end;
+        self.next_token_span();
+
+        Ok(Stmt::Comment(content, Span { start, end }))
+    }
+
+    fn parse_continue_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span();
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Stmt::Continue(Span {
+            start,
+            end: semi_end,
+        }))
+    }
+
+    fn parse_expr_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let expr = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Stmt::Expr(expr))
+    }
+
+    fn parse_for_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span(); // consume `for`
+        self.assert_next_token(&[token::Type::LParen])?;
+
+        let init = match self.current_token {
+            token::Type::Semicolon => {
+                self.next_token_span();
+                None
+            }
             token::Type::Var => {
-                let start = self.current_token_start;
-                self.next_token_span();
-                let mut var_stmt = self.parse_var_contents(None, false, false)?;
+                let var_start = self.current_token_start;
+                self.next_token_span(); // consume `var`
+                let mut var_decl = self.parse_var_contents(None, false)?;
                 let semi_end = self.current_token_end;
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                var_stmt.span = Span {
-                    start,
+                var_decl.span = Span {
+                    start: var_start,
                     end: semi_end,
                 };
-                Ok(Stmt::Var(var_stmt))
-            }
-            token::Type::Return => {
-                let start = self.current_token_start;
-                self.next_token_span();
-                let value = if self.current_token == token::Type::Semicolon {
-                    None
-                } else {
-                    Some(self.parse_expression()?)
-                };
-                let semi_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Stmt::Return(ReturnStmt {
-                    value,
-                    span: Span {
-                        start,
-                        end: semi_end,
-                    },
-                }))
-            }
-            token::Type::Break => {
-                let start = self.current_token_start;
-                self.next_token_span();
-                let semi_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Stmt::Break(Span {
-                    start,
-                    end: semi_end,
-                }))
-            }
-            token::Type::Continue => {
-                let start = self.current_token_start;
-                self.next_token_span();
-                let semi_end = self.current_token_end;
-                self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Stmt::Continue(Span {
-                    start,
-                    end: semi_end,
-                }))
-            }
-            token::Type::If => {
-                let start = self.current_token_start;
-                self.next_token_span();
-                self.assert_next_token(&[token::Type::LParen])?;
-                let condition = self.parse_expression_no_postfix()?;
-                self.assert_next_token(&[token::Type::RParen])?;
-
-                let then_brace_start = self.current_token_start;
-                self.assert_next_token(&[token::Type::LBrace])?;
-                let then_branch = self.parse_block(then_brace_start)?;
-
-                let else_branch = if self.current_token == token::Type::Else {
-                    self.next_token_span(); // consume `else`
-                    let else_brace_start = self.current_token_start;
-                    self.next_token_span(); // consume `{`
-                    Some(self.parse_block(else_brace_start)?)
-                } else {
-                    None
-                };
-
-                let end = else_branch
-                    .as_ref()
-                    .map(|b| b.span.end)
-                    .unwrap_or(then_branch.span.end);
-
-                Ok(Stmt::If(IfStmt {
-                    condition,
-                    then_branch,
-                    else_branch,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::While => {
-                let start = self.current_token_start;
-                self.next_token_span();
-                let condition = self.parse_expression()?;
-
-                let brace_start = self.current_token_start;
-                self.assert_next_token(&[token::Type::LBrace])?;
-                let body = self.parse_block(brace_start)?;
-                let end = body.span.end;
-
-                Ok(Stmt::While(WhileStmt {
-                    condition,
-                    body,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::For => {
-                let start = self.current_token_start;
-                self.assert_next_token(&[token::Type::For])?;
-                self.assert_next_token(&[token::Type::LParen])?;
-
-                let init = match self.current_token {
-                    token::Type::Semicolon => {
-                        self.next_token_span();
-                        None
-                    }
-                    token::Type::Var => {
-                        let var_start = self.current_token_start;
-                        self.next_token_span(); // consume `var`
-                        let mut var_stmt = self.parse_var_contents(None, false, false)?;
-                        let semi_end = self.current_token_end;
-                        self.assert_next_token(&[token::Type::Semicolon])?;
-                        var_stmt.span = Span {
-                            start: var_start,
-                            end: semi_end,
-                        };
-                        Some(ForInit::Var(var_stmt))
-                    }
-                    _ => {
-                        let expr = self.parse_expression()?;
-                        self.assert_next_token(&[token::Type::Semicolon])?;
-                        Some(ForInit::Expr(expr))
-                    }
-                };
-
-                let condition = if self.current_token == token::Type::Semicolon {
-                    None
-                } else {
-                    Some(self.parse_expression()?)
-                };
-
-                self.assert_next_token(&[token::Type::Semicolon])?;
-
-                let update = if self.current_token == token::Type::RParen {
-                    None
-                } else {
-                    Some(self.parse_expression()?)
-                };
-
-                self.assert_next_token(&[token::Type::RParen])?;
-
-                let brace_start = self.current_token_start;
-                self.assert_next_token(&[token::Type::LBrace])?;
-                let body = self.parse_block(brace_start)?;
-                let end = body.span.end;
-
-                Ok(Stmt::For(ForStmt {
-                    init,
-                    condition,
-                    update,
-                    body,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Comment(content) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Stmt::Comment(content, Span { start, end }))
-            }
-            token::Type::LBrace => {
-                let brace_start = self.current_token_start;
-                self.next_token_span(); // consume {
-                let block = self.parse_block(brace_start)?;
-                Ok(Stmt::Block(block))
+                Some(ForInit::Var(var_decl))
             }
             _ => {
                 let expr = self.parse_expression()?;
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Ok(Stmt::Expr(expr))
+                Some(ForInit::Expr(expr))
             }
-        }
+        };
+
+        let condition = if self.current_token == token::Type::Semicolon {
+            None
+        } else {
+            Some(self.parse_expression()?)
+        };
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        let update = if self.current_token == token::Type::RParen {
+            None
+        } else {
+            Some(self.parse_expression()?)
+        };
+        self.assert_next_token(&[token::Type::RParen])?;
+
+        let brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_block(brace_start)?;
+        let end = body.span.end;
+
+        Ok(Stmt::For(ForStmt {
+            init,
+            condition,
+            update,
+            body,
+            span: Span { start, end },
+        }))
     }
 
-    pub fn parse_class(&mut self) -> Result<Ast, ParserError> {
+    fn parse_if_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
-        let name = self.parse_identifier()?;
-        let extends = if self.current_token == token::Type::Extends {
-            self.next_token_span();
-            Some(self.parse_identifier()?)
+        self.next_token_span();
+        self.assert_next_token(&[token::Type::LParen])?;
+        let condition = self.parse_expression_no_postfix()?;
+        self.assert_next_token(&[token::Type::RParen])?;
+
+        let then_brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let then_branch = self.parse_block(then_brace_start)?;
+
+        let else_branch = if self.current_token == token::Type::Else {
+            self.next_token_span(); // consume `else`
+            let else_brace_start = self.current_token_start;
+            self.next_token_span(); // consume `{`
+            Some(self.parse_block(else_brace_start)?)
         } else {
             None
         };
 
-        let body = self.parse_class_body()?;
-        let rbrace_end = self.current_token_end;
-        self.next_token_span(); // consume }
+        let end = else_branch
+            .as_ref()
+            .map(|b| b.span.end)
+            .unwrap_or(then_branch.span.end);
 
-        Ok(Ast::Class(ClassDecl {
-            name,
-            extends,
-            annotations: Vec::new(),
-            body,
+        Ok(Stmt::If(IfStmt {
+            condition,
+            then_branch,
+            else_branch,
+            span: Span { start, end },
+        }))
+    }
+
+    fn parse_return_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span();
+        let value = if self.current_token == token::Type::Semicolon {
+            None
+        } else {
+            Some(self.parse_expression()?)
+        };
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Stmt::Return(ReturnStmt {
+            value,
             span: Span {
                 start,
-                end: rbrace_end,
+                end: semi_end,
             },
         }))
     }
 
-    pub(crate) fn current_token_is(&self, expect: &[token::Type]) -> bool {
-        expect.contains(&self.current_token)
+    fn parse_var_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span();
+        let mut var_decl = self.parse_var_contents(None, false)?;
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+        var_decl.span = Span {
+            start,
+            end: semi_end,
+        };
+
+        Ok(Stmt::Var(var_decl))
+    }
+
+    fn parse_while_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span();
+        let condition = self.parse_expression()?;
+
+        let brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_block(brace_start)?;
+        let end = body.span.end;
+
+        Ok(Stmt::While(WhileStmt {
+            condition,
+            body,
+            span: Span { start, end },
+        }))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Expr, LitExpr, LiteralValue, Stmt, VarStmt, Visibility};
+    use crate::ast::{Expr, LitExpr, LiteralValue, Stmt, VarDecl, Visibility};
 
     fn find_class(ast: Ast) -> ClassDecl {
         match ast {
@@ -637,7 +733,7 @@ mod tests {
         }
     }
 
-    fn find_var_in_body(body: &[Ast]) -> &VarStmt {
+    fn find_var_in_body(body: &[Ast]) -> &VarDecl {
         body.iter()
             .find_map(|node| {
                 if let Ast::Variable(v) = node {
@@ -657,8 +753,8 @@ mod tests {
         let class = find_class(ast);
         assert_eq!(class.name, "MyClass");
         let var = find_var_in_body(&class.body);
-        assert_eq!(var.variable.name, "x");
-        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Float");
+        assert_eq!(var.name, "x");
+        assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
     }
 
     #[test]
@@ -669,13 +765,10 @@ mod tests {
         let class = find_class(ast);
         assert_eq!(class.name, "MyClass");
         let var = find_var_in_body(&class.body);
-        assert_eq!(var.variable.name, "speedPickerDefaults");
-        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Array");
-        assert_eq!(var.variable.type_.as_ref().unwrap().generic_params.len(), 1);
-        assert_eq!(
-            var.variable.type_.as_ref().unwrap().generic_params[0].ident,
-            "Float"
-        );
+        assert_eq!(var.name, "speedPickerDefaults");
+        assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
+        assert_eq!(var.type_.as_ref().unwrap().generic_params.len(), 1);
+        assert_eq!(var.type_.as_ref().unwrap().generic_params[0].ident, "Float");
     }
 
     #[test]
@@ -710,14 +803,10 @@ mod tests {
         let class = find_class(ast);
         assert_eq!(class.name, "Foo");
         let var = find_var_in_body(&class.body);
-        assert_eq!(var.variable.name, "x");
-        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Float");
+        assert_eq!(var.name, "x");
+        assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
 
-        let initializer = var
-            .variable
-            .initializer
-            .as_ref()
-            .expect("Should have initializer");
+        let initializer = var.initializer.as_ref().expect("Should have initializer");
         if let Expr::Lit(LitExpr {
             value: LiteralValue::Double(value),
             ..
@@ -737,18 +826,14 @@ mod tests {
         let class = find_class(ast);
         assert_eq!(class.name, "Foo");
         let var = find_var_in_body(&class.body);
-        assert_eq!(var.variable.name, "x");
-        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Array");
+        assert_eq!(var.name, "x");
+        assert_eq!(var.type_.as_ref().unwrap().ident, "Array");
         assert_eq!(
-            var.variable.type_.as_ref().unwrap().generic_params[0].ident,
+            var.type_.as_ref().unwrap().generic_params[0].ident,
             "Number"
         );
 
-        let initializer = var
-            .variable
-            .initializer
-            .as_ref()
-            .expect("Should have initializer");
+        let initializer = var.initializer.as_ref().expect("Should have initializer");
         if let Expr::TypeCast(tc) = initializer.as_ref() {
             assert_eq!(tc.target_type.ident, "Array");
             assert_eq!(tc.target_type.generic_params[0].ident, "Number");
@@ -781,13 +866,9 @@ mod tests {
         let class = find_class(ast);
         assert_eq!(class.name, "Foo");
         let var = find_var_in_body(&class.body);
-        assert_eq!(var.variable.name, "x");
+        assert_eq!(var.name, "x");
 
-        let initializer = var
-            .variable
-            .initializer
-            .as_ref()
-            .expect("Should have initializer");
+        let initializer = var.initializer.as_ref().expect("Should have initializer");
         if let Expr::Call(call) = initializer.as_ref() {
             if let Expr::Member(member) = call.callee.as_ref() {
                 if let Expr::Ident(ident) = member.object.as_ref() {
@@ -945,9 +1026,9 @@ mod tests {
         let class = find_class(ast);
         assert_eq!(class.name, "Foo");
         let var = find_var_in_body(&class.body);
-        assert_eq!(var.variable.name, "x");
-        assert_eq!(var.variable.type_.as_ref().unwrap().ident, "Float");
-        assert_eq!(var.variable.visibility, Some(Visibility::Private));
+        assert_eq!(var.name, "x");
+        assert_eq!(var.type_.as_ref().unwrap().ident, "Float");
+        assert_eq!(var.visibility, Some(Visibility::Private));
     }
 
     #[test]
@@ -982,16 +1063,50 @@ mod tests {
     fn test_parse_hidden_function() {
         let input = "class Foo { hidden function bar() {} }";
         let mut parser = Parser::new(input);
-        let ast = parser.parse();
-        assert!(ast.is_ok(), "Should parse hidden function: {:?}", ast);
+        let ast = parser.parse().expect("Should parse hidden function");
+        let class = find_class(ast);
+        if let Ast::Function(f) = &class.body[0] {
+            assert_eq!(f.visibility, Some(Visibility::Hidden));
+        } else {
+            panic!("Expected function");
+        }
     }
 
     #[test]
     fn test_parse_hidden_var() {
         let input = "class Foo { hidden var x = 1; }";
         let mut parser = Parser::new(input);
-        let ast = parser.parse();
-        assert!(ast.is_ok(), "Should parse hidden var: {:?}", ast);
+        let ast = parser.parse().expect("Should parse hidden var");
+        let class = find_class(ast);
+        let var = find_var_in_body(&class.body);
+        assert_eq!(var.visibility, Some(Visibility::Hidden));
+    }
+
+    #[test]
+    fn test_parse_const() {
+        let input = "class Foo { const MAX = 100; }";
+        let mut parser = Parser::new(input);
+        let ast = parser.parse().expect("Should parse const");
+        let class = find_class(ast);
+        if let Ast::Const(c) = &class.body[0] {
+            assert_eq!(c.name, "MAX");
+        } else {
+            panic!("Expected Ast::Const");
+        }
+    }
+
+    #[test]
+    fn test_parse_const_with_type() {
+        let input = "class Foo { static const RATE as Float = 3.14; }";
+        let mut parser = Parser::new(input);
+        let ast = parser.parse().expect("Should parse static const with type");
+        let class = find_class(ast);
+        if let Ast::Const(c) = &class.body[0] {
+            assert!(c.is_static);
+            assert_eq!(c.type_.as_ref().unwrap().ident, "Float");
+        } else {
+            panic!("Expected Ast::Const");
+        }
     }
 
     #[test]
@@ -1065,7 +1180,7 @@ mod tests {
         if let Ast::Document(nodes) = ast {
             if let Ast::Function(f) = &nodes[0] {
                 if let Stmt::Var(v) = &f.body.stmts[0] {
-                    if let Some(Expr::New(new_expr)) = v.variable.initializer.as_deref() {
+                    if let Some(Expr::New(new_expr)) = v.initializer.as_deref() {
                         assert_eq!(new_expr.class, "MyModule.Foo");
                     } else {
                         panic!("Expected new expression as initializer");

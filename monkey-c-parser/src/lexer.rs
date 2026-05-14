@@ -31,6 +31,12 @@ impl<'a> Lexer<'a> {
         self.read_position += 1;
     }
 
+    fn read_n_chars(&mut self, n: usize) {
+        for _ in 0..n {
+            self.read_char();
+        }
+    }
+
     fn peek_char(&self) -> u8 {
         if self.read_position >= self.input.len() {
             0
@@ -86,7 +92,7 @@ impl<'a> Lexer<'a> {
 
         loop {
             match self.ch {
-                b'"' => break, // Only consume the closing quote, do not advance further
+                b'"' => break, // End of string, non escaped quote
                 0 => break,    // End of input
                 b'\\' => {
                     self.read_char();
@@ -122,257 +128,173 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_annotation(&mut self) -> token::Type {
-        self.read_char(); // consume '('
-        self.read_char(); // consume ':'
-                          //
+        self.read_n_chars(2); // consume '(:'
         let annotation = self.read_identifier();
-
         self.read_char(); // consume ')'
 
         token::Type::Annotation(annotation)
+    }
+
+    pub fn peek_token(&self) -> (usize, token::Type, usize) {
+        Self {
+            input: self.input,
+            position: self.position,
+            read_position: self.read_position,
+            ch: self.ch,
+        }
+        .next_token()
     }
 
     pub fn next_token(&mut self) -> (usize, token::Type, usize) {
         self.skip_whitespace();
 
         let start = self.position;
-        let token_type = match self.ch {
+        let (token_type, chars_to_read) = match self.ch {
             b'=' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::EqualEqual
+                    (token::Type::EqualEqual, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Assign
+                    (token::Type::Assign, 1)
                 }
             }
             b'+' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::AddAssign
+                    (token::Type::AddAssign, 2)
                 } else if self.peek_char() == b'+' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::PlusPlus
+                    (token::Type::PlusPlus, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Plus
+                    (token::Type::Plus, 1)
                 }
             }
             b'-' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::SubAssign
+                    (token::Type::SubAssign, 2)
                 } else if self.peek_char() == b'-' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::MinusMinus
+                    (token::Type::MinusMinus, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Minus
+                    (token::Type::Minus, 1)
                 }
             }
             b'*' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::MulAssign
+                    (token::Type::MulAssign, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Star
+                    (token::Type::Star, 1)
                 }
             }
             b'/' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::DivAssign
+                    (token::Type::DivAssign, 2)
                 } else if self.peek_char() == b'/' {
-                    self.read_char();
-                    self.read_char();
+                    self.read_n_chars(2);
                     let content = self.read_comment();
                     return (start, token::Type::Comment(content), self.position);
                 } else {
-                    self.read_char();
-                    token::Type::Slash
+                    (token::Type::Slash, 1)
                 }
             }
             b'%' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::ModAssign
+                    (token::Type::ModAssign, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Percent
+                    (token::Type::Percent, 1)
                 }
             }
             b'!' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::BangEqual
+                    (token::Type::BangEqual, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Bang
+                    (token::Type::Bang, 1)
                 }
             }
             b'<' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::LessEqual
+                    (token::Type::LessEqual, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Less
+                    (token::Type::Less, 1)
                 }
             }
             b'>' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::GreaterEqual
+                    (token::Type::GreaterEqual, 2)
                 } else {
-                    self.read_char();
-                    token::Type::Greater
+                    (token::Type::Greater, 1)
                 }
             }
             b'&' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::BitAndAssign
+                    (token::Type::BitAndAssign, 2)
                 } else if self.peek_char() == b'&' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::And
+                    (token::Type::And, 2)
                 } else {
-                    self.read_char();
-                    token::Type::BitAnd
+                    (token::Type::BitAnd, 1)
                 }
             }
             b'|' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::BitOrAssign
+                    (token::Type::BitOrAssign, 2)
                 } else if self.peek_char() == b'|' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::Or
+                    (token::Type::Or, 2)
                 } else {
-                    self.read_char();
-                    token::Type::BitOr
+                    (token::Type::BitOr, 1)
                 }
             }
             b'^' => {
                 if self.peek_char() == b'=' {
-                    self.read_char();
-                    self.read_char();
-                    token::Type::BitXorAssign
+                    (token::Type::BitXorAssign, 2)
                 } else {
-                    self.read_char();
-                    token::Type::BitXor
+                    (token::Type::BitXor, 1)
                 }
             }
-            b'~' => {
-                self.read_char();
-                token::Type::Tilde
-            }
-            b'?' => {
-                self.read_char();
-                token::Type::Question
-            }
-            b':' => {
-                self.read_char();
-                token::Type::Colon
-            }
-            b';' => {
-                self.read_char();
-                token::Type::Semicolon
-            }
-            b',' => {
-                self.read_char();
-                token::Type::Comma
-            }
-            b'.' => {
-                self.read_char();
-                token::Type::Dot
-            }
+            b'~' => (token::Type::Tilde, 1),
+            b'?' => (token::Type::Question, 1),
+            b':' => (token::Type::Colon, 1),
+            b';' => (token::Type::Semicolon, 1),
+            b',' => (token::Type::Comma, 1),
+            b'.' => (token::Type::Dot, 1),
             b'(' => {
                 if self.peek_char() == b':' {
-                    self.read_annotation()
+                    (self.read_annotation(), 0)
                 } else {
-                    self.read_char();
-                    token::Type::LParen
+                    (token::Type::LParen, 1)
                 }
             }
-            b')' => {
-                self.read_char();
-                token::Type::RParen
-            }
-            b'{' => {
-                self.read_char();
-                token::Type::LBrace
-            }
-            b'}' => {
-                self.read_char();
-                token::Type::RBrace
-            }
-            b'[' => {
-                self.read_char();
-                token::Type::LBracket
-            }
-            b']' => {
-                self.read_char();
-                token::Type::RBracket
-            }
+            b')' => (token::Type::RParen, 1),
+            b'{' => (token::Type::LBrace, 1),
+            b'}' => (token::Type::RBrace, 1),
+            b'[' => (token::Type::LBracket, 1),
+            b']' => (token::Type::RBracket, 1),
             b'"' => {
                 self.read_char(); // Move past opening quote
                 let content = self.read_string();
                 return (start, token::Type::String(content), self.position);
             }
-            b'\n' => {
-                self.read_char();
-                token::Type::Newline
-            }
-            0 => token::Type::Eof,
+            b'\n' => (token::Type::Newline, 1),
+            0 => (token::Type::Eof, 0),
             _ => {
                 if self.ch.is_ascii_alphabetic() || self.ch == b'_' {
                     let ident = self.read_identifier();
                     if let Ok(token_type) = ident.parse() {
-                        token_type
+                        (token_type, 0)
                     } else {
-                        token::Type::Identifier(ident)
+                        (token::Type::Identifier(ident), 0)
                     }
                 } else if self.ch.is_ascii_digit() {
                     let (num, is_float) = self.read_number();
                     if is_float {
-                        token::Type::Double(num.parse().unwrap_or(0.0))
+                        (token::Type::Double(num.parse().unwrap_or(0.0)), 0)
                     } else {
-                        token::Type::Long(num.parse().unwrap_or(0))
+                        (token::Type::Long(num.parse().unwrap_or(0)), 0)
                     }
                 } else {
-                    token::Type::Illegal
+                    (token::Type::Illegal, 0)
                 }
             }
         };
 
+        self.read_n_chars(chars_to_read);
+
         (start, token_type, self.position)
-    }
-
-    pub fn peek_token(&self) -> (usize, token::Type, usize) {
-        let mut lexer = Self {
-            input: self.input,
-            position: self.position,
-            read_position: self.read_position,
-            ch: self.ch,
-        };
-
-        lexer.next_token()
     }
 }
 

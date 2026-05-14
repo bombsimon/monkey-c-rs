@@ -1,4 +1,4 @@
-/// Language specification https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/
+/// Language specification <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference>
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     // Keywords

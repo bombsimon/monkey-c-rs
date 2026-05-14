@@ -14,6 +14,10 @@ class TestClass extends BaseClass {
         return count;
     }
 
+
+
+
+
     // Method with complex expressions
     function complexMath(x as Number, y as Number) as Number {
         var result = (x * y) + (x / y);

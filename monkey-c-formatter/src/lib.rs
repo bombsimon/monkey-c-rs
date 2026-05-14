@@ -1,39 +1,54 @@
 pub mod doc;
+mod operators;
 
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    AssignOperator, Ast, BinaryOperator, BlockStmt, Expr, ForInit, FunctionDecl, LiteralValue,
-    Stmt, Type, UnaryOperator, VarStmt, Variable, Visibility,
+    Ast, BlockStmt, ConstDecl, Expr, ForInit, FunctionDecl, LiteralValue, Stmt, Type, VarDecl,
+    Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
+/// Formats a Monkey C AST back into source text.
+///
+/// Construct with [`Formatter::new`], optionally configure with
+/// [`Formatter::with_line_width`], then call [`Formatter::format`].
+///
+/// The formatter uses the Wadler-Lindig algorithm (see [`doc`]) to make
+/// line-breaking decisions globally rather than per-node, so a dict or array
+/// that fits on one line is kept there automatically.
 pub struct Formatter {
     line_index: LineIndex,
+    /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
 }
 
 impl Formatter {
+    /// Create a formatter for `source`.
+    ///
+    /// The source string is used to build a [`LineIndex`] for blank-line
+    /// preservation — the formatter does not re-emit source text verbatim.
     pub fn new(source: impl AsRef<str>) -> Self {
         let source = source.as_ref();
+
         Self {
             line_index: LineIndex::new(source),
             line_width: 100,
         }
     }
 
+    /// Override the target line width (default: 100).
     pub fn with_line_width(mut self, width: usize) -> Self {
         self.line_width = width;
+
         self
     }
 
+    /// Format `ast` and return the result as a `String`.
     pub fn format(&self, ast: &Ast) -> String {
         let doc = self.ast_to_doc(ast);
+
         render(&doc, self.line_width)
     }
-
-    // -----------------------------------------------------------------------
-    // Top-level declarations
-    // -----------------------------------------------------------------------
 
     fn ast_to_doc(&self, ast: &Ast) -> Doc {
         match ast {
@@ -66,13 +81,15 @@ impl Formatter {
             ]),
             Ast::Function(decl) => self.function_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
+            Ast::Const(decl) => self.const_decl_to_doc(decl),
             Ast::Comment(text, _) => Doc::text(format!("//{}", text)),
             Ast::Annotation(name, _) => Doc::text(format!("(:{name})")),
             Ast::Eof => Doc::Empty,
         }
     }
 
-    /// Render a sequence of declarations with blank-line preservation.
+    /// Render a sequence of declarations, inserting a [`Doc::BlankLine`] wherever
+    /// the original source had one.
     fn decls_to_doc(&self, decls: &[Ast]) -> Doc {
         let mut docs = Vec::new();
 
@@ -95,9 +112,6 @@ impl Formatter {
         }
         if decl.is_static {
             parts.push(Doc::text("static "));
-        }
-        if decl.is_hidden {
-            parts.push(Doc::text("hidden "));
         }
 
         parts.push(Doc::text(format!("function {}(", decl.name)));
@@ -125,14 +139,38 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    fn var_stmt_to_doc(&self, var_stmt: &VarStmt) -> Doc {
-        Doc::concat(vec![
-            self.var_decl_to_doc(&var_stmt.variable),
-            Doc::text(";"),
-        ])
+    fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
+        Doc::concat(vec![self.var_decl_to_doc(var_decl), Doc::text(";")])
     }
 
-    fn var_decl_to_doc(&self, var: &Variable) -> Doc {
+    fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
+        let mut parts: Vec<Doc> = Vec::new();
+
+        if let Some(vis) = &decl.visibility {
+            parts.push(self.visibility_to_doc(vis));
+        }
+        if decl.is_static {
+            parts.push(Doc::text("static "));
+        }
+
+        parts.push(Doc::text(format!("const {}", decl.name)));
+
+        if let Some(ty) = &decl.type_ {
+            parts.push(Doc::text(" as "));
+            parts.push(self.type_to_doc(ty));
+        }
+
+        parts.push(Doc::text(" = "));
+        parts.push(self.expr_to_doc(&decl.initializer));
+        parts.push(Doc::text(";"));
+
+        Doc::Concat(parts)
+    }
+
+    /// Render a `var` declaration without a trailing semicolon.
+    ///
+    /// Used for both `var` statements and `for`-loop init clauses.
+    fn var_decl_to_doc(&self, var: &VarDecl) -> Doc {
         let mut parts: Vec<Doc> = Vec::new();
 
         if let Some(vis) = &var.visibility {
@@ -140,9 +178,6 @@ impl Formatter {
         }
         if var.is_static {
             parts.push(Doc::text("static "));
-        }
-        if var.is_hidden {
-            parts.push(Doc::text("hidden "));
         }
 
         parts.push(Doc::text(format!("var {}", var.name)));
@@ -164,6 +199,7 @@ impl Formatter {
         Doc::text(match vis {
             Visibility::Private => "private ",
             Visibility::Protected => "protected ",
+            Visibility::Hidden => "hidden ",
             Visibility::Public => "public ",
         })
     }
@@ -171,34 +207,32 @@ impl Formatter {
     fn type_to_doc(&self, ty: &Type) -> Doc {
         if ty.generic_params.is_empty() {
             let suffix = if ty.optional { "?" } else { "" };
-            Doc::text(format!("{}{}", ty.ident, suffix))
-        } else {
-            let params: Vec<Doc> = ty
-                .generic_params
-                .iter()
-                .enumerate()
-                .flat_map(|(i, p)| {
-                    if i > 0 {
-                        vec![Doc::text(", "), self.type_to_doc(p)]
-                    } else {
-                        vec![self.type_to_doc(p)]
-                    }
-                })
-                .collect();
-            let suffix = if ty.optional { "?" } else { "" };
-            Doc::concat(vec![
-                Doc::text(format!("{}<", ty.ident)),
-                Doc::Concat(params),
-                Doc::text(format!(">{}", suffix)),
-            ])
+
+            return Doc::text(format!("{}{}", ty.ident, suffix));
         }
+
+        let params: Vec<Doc> = ty
+            .generic_params
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| {
+                if i > 0 {
+                    vec![Doc::text(", "), self.type_to_doc(p)]
+                } else {
+                    vec![self.type_to_doc(p)]
+                }
+            })
+            .collect();
+        let suffix = if ty.optional { "?" } else { "" };
+
+        Doc::concat(vec![
+            Doc::text(format!("{}<", ty.ident)),
+            Doc::Concat(params),
+            Doc::text(format!(">{}", suffix)),
+        ])
     }
 
-    // -----------------------------------------------------------------------
-    // Statements
-    // -----------------------------------------------------------------------
-
-    /// Render a block body inline: ` {\n    ...\n}`.
+    /// Render a block as ` {\n    …\n}` with the opening brace on the same line.
     fn block_to_doc(&self, block: &BlockStmt) -> Doc {
         if block.stmts.is_empty() {
             return Doc::text(" {}");
@@ -212,7 +246,8 @@ impl Formatter {
         ])
     }
 
-    /// Render a sequence of statements with blank-line preservation.
+    /// Render a sequence of statements, inserting a [`Doc::BlankLine`] wherever
+    /// the original source had one.
     fn stmts_to_doc(&self, stmts: &[Stmt]) -> Doc {
         let mut docs = Vec::new();
 
@@ -242,6 +277,7 @@ impl Formatter {
                     parts.push(Doc::text(" else"));
                     parts.push(self.block_to_doc(else_branch));
                 }
+
                 Doc::Concat(parts)
             }
 
@@ -255,7 +291,7 @@ impl Formatter {
             Stmt::For(s) => {
                 let init_doc = match &s.init {
                     None => Doc::Empty,
-                    Some(ForInit::Var(v)) => self.var_decl_to_doc(&v.variable),
+                    Some(ForInit::Var(v)) => self.var_decl_to_doc(v),
                     Some(ForInit::Expr(e)) => self.expr_to_doc(e),
                 };
                 let cond_doc = s
@@ -292,15 +328,13 @@ impl Formatter {
 
             Stmt::Break(_) => Doc::text("break;"),
             Stmt::Continue(_) => Doc::text("continue;"),
-
             Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
-
             Stmt::Comment(text, _) => Doc::text(format!("//{}", text)),
-
             Stmt::Expr(e) => Doc::concat(vec![self.expr_to_doc(e), Doc::text(";")]),
         }
     }
 
+    /// Render the interior of a standalone `{ … }` block statement.
     fn block_inner_to_doc(&self, block: &BlockStmt) -> Doc {
         if block.stmts.is_empty() {
             return Doc::text("}");
@@ -313,34 +347,30 @@ impl Formatter {
         ])
     }
 
-    // -----------------------------------------------------------------------
-    // Expressions
-    // -----------------------------------------------------------------------
-
     fn expr_to_doc(&self, expr: &Expr) -> Doc {
         match expr {
             Expr::Binary(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.left),
-                Doc::text(format!(" {} ", self.binary_op_str(&e.operator))),
+                Doc::text(format!(" {} ", operators::binary_op(&e.operator))),
                 self.expr_to_doc(&e.right),
             ]),
 
             Expr::Unary(e) => match e.operator {
-                UnaryOperator::PostInc => {
+                monkey_c_parser::ast::UnaryOperator::PostInc => {
                     Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("++")])
                 }
-                UnaryOperator::PostDec => {
+                monkey_c_parser::ast::UnaryOperator::PostDec => {
                     Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("--")])
                 }
                 _ => Doc::concat(vec![
-                    Doc::text(self.unary_prefix_op_str(&e.operator)),
+                    Doc::text(operators::unary_prefix_op(&e.operator)),
                     self.expr_to_doc(&e.operand),
                 ]),
             },
 
             Expr::Assign(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.target),
-                Doc::text(format!(" {} ", self.assign_op_str(&e.operator))),
+                Doc::text(format!(" {} ", operators::assign_op(&e.operator))),
                 self.expr_to_doc(&e.value),
             ]),
 
@@ -357,6 +387,7 @@ impl Formatter {
                         }
                     })
                     .collect();
+
                 Doc::concat(vec![
                     self.expr_to_doc(&e.callee),
                     Doc::text("("),
@@ -390,6 +421,7 @@ impl Formatter {
                         }
                     })
                     .collect();
+
                 Doc::concat(vec![
                     Doc::text(format!("new {}(", e.class)),
                     Doc::Concat(args),
@@ -405,6 +437,7 @@ impl Formatter {
 
             Expr::Array(e) => {
                 let items = e.elements.iter().map(|el| self.expr_to_doc(el)).collect();
+
                 self.format_list("[", "]", items, e.trailing_comma)
             }
 
@@ -420,6 +453,7 @@ impl Formatter {
                         ])
                     })
                     .collect();
+
                 self.format_list("{", "}", items, e.trailing_comma)
             }
 
@@ -438,20 +472,15 @@ impl Formatter {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Collection formatting (magic trailing comma)
-    // -----------------------------------------------------------------------
-
-    /// Format `[items]` or `{items}` with the magic trailing comma rule:
-    /// - trailing comma → always multi-line, trailing comma preserved
-    /// - no trailing comma → try flat; break only if too wide
+    /// Format a bracketed list with the magic trailing comma rule:
+    /// - trailing comma → always multi-line, comma preserved after last item
+    /// - no trailing comma → try flat; break only if the line would exceed [`self.line_width`]
     fn format_list(&self, open: &str, close: &str, items: Vec<Doc>, trailing_comma: bool) -> Doc {
         if items.is_empty() {
             return Doc::text(format!("{}{}", open, close));
         }
 
         if trailing_comma {
-            // Always multi-line, trailing comma after last item.
             let mut inner = Vec::new();
             for (i, item) in items.into_iter().enumerate() {
                 if i > 0 {
@@ -462,38 +491,33 @@ impl Formatter {
             }
             inner.push(Doc::text(","));
 
-            Doc::concat(vec![
+            return Doc::concat(vec![
                 Doc::text(open),
                 Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
                 Doc::HardLine,
                 Doc::text(close),
-            ])
-        } else {
-            // Try to fit on one line; break if it doesn't fit.
-            let mut inner = Vec::new();
-            for (i, item) in items.into_iter().enumerate() {
-                if i > 0 {
-                    inner.push(Doc::text(","));
-                    inner.push(Doc::Line);
-                }
-                inner.push(item);
-            }
-
-            Doc::Group(vec![
-                Doc::text(open),
-                Doc::Indent(vec![Doc::SoftLine, Doc::Concat(inner)]),
-                Doc::SoftLine,
-                Doc::text(close),
-            ])
+            ]);
         }
+
+        let mut inner = Vec::new();
+        for (i, item) in items.into_iter().enumerate() {
+            if i > 0 {
+                inner.push(Doc::text(","));
+                inner.push(Doc::Line);
+            }
+            inner.push(item);
+        }
+
+        Doc::Group(vec![
+            Doc::text(open),
+            Doc::Indent(vec![Doc::SoftLine, Doc::Concat(inner)]),
+            Doc::SoftLine,
+            Doc::text(close),
+        ])
     }
 
-    // -----------------------------------------------------------------------
-    // Blank-line helpers
-    // -----------------------------------------------------------------------
-
-    /// Return a separator Doc between two adjacent items based on how many
-    /// blank lines separated them in the original source.
+    /// Return a [`Doc::BlankLine`] if the original source had at least one blank
+    /// line between these two spans, otherwise [`Doc::HardLine`].
     fn gap_between_spans(
         &self,
         prev_span: Option<&monkey_c_parser::ast::Span>,
@@ -510,57 +534,6 @@ impl Formatter {
             Doc::BlankLine
         } else {
             Doc::HardLine
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Operator helpers
-    // -----------------------------------------------------------------------
-
-    fn binary_op_str(&self, op: &BinaryOperator) -> &'static str {
-        match op {
-            BinaryOperator::Add => "+",
-            BinaryOperator::Sub => "-",
-            BinaryOperator::Mul => "*",
-            BinaryOperator::Div => "/",
-            BinaryOperator::Mod => "%",
-            BinaryOperator::Eq => "==",
-            BinaryOperator::NotEq => "!=",
-            BinaryOperator::Lt => "<",
-            BinaryOperator::LtEq => "<=",
-            BinaryOperator::Gt => ">",
-            BinaryOperator::GtEq => ">=",
-            BinaryOperator::InstanceOf => "instanceof",
-            BinaryOperator::And => "&&",
-            BinaryOperator::Or => "||",
-            BinaryOperator::BitAnd => "&",
-            BinaryOperator::BitOr => "|",
-            BinaryOperator::BitXor => "^",
-        }
-    }
-
-    fn unary_prefix_op_str(&self, op: &UnaryOperator) -> &'static str {
-        match op {
-            UnaryOperator::Neg => "-",
-            UnaryOperator::Not => "!",
-            UnaryOperator::BitNot => "~",
-            UnaryOperator::PreInc => "++",
-            UnaryOperator::PreDec => "--",
-            UnaryOperator::PostInc | UnaryOperator::PostDec => unreachable!(),
-        }
-    }
-
-    fn assign_op_str(&self, op: &AssignOperator) -> &'static str {
-        match op {
-            AssignOperator::Assign => "=",
-            AssignOperator::AddAssign => "+=",
-            AssignOperator::SubAssign => "-=",
-            AssignOperator::MulAssign => "*=",
-            AssignOperator::DivAssign => "/=",
-            AssignOperator::ModAssign => "%=",
-            AssignOperator::BitAndAssign => "&=",
-            AssignOperator::BitOrAssign => "|=",
-            AssignOperator::BitXorAssign => "^=",
         }
     }
 }

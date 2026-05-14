@@ -227,7 +227,7 @@ impl Parser<'_> {
         let depth_check = RECURSION_DEPTH.with(|depth| {
             let d = depth.get();
             if d > 1000 {
-                return Err(ParserError::ParseError(
+                return Err(self.parse_error(
                     "Expression too complex".to_string(),
                 ));
             }
@@ -455,7 +455,7 @@ impl Parser<'_> {
                     } else if self.current_token == token::Type::RBracket {
                         break;
                     } else {
-                        return Err(ParserError::ParseError(format!(
+                        return Err(self.parse_error(format!(
                             "Expected ',' or ']', got {:?}",
                             self.current_token
                         )));
@@ -490,7 +490,7 @@ impl Parser<'_> {
                     } else if self.current_token == token::Type::RBrace {
                         break;
                     } else {
-                        return Err(ParserError::ParseError(format!(
+                        return Err(self.parse_error(format!(
                             "Expected ',' or '}}', got {:?}",
                             self.current_token
                         )));
@@ -529,7 +529,7 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
-            _ => Err(ParserError::ParseError(format!(
+            _ => Err(self.parse_error(format!(
                 "Unexpected token in expression: {:?}",
                 token_type
             ))),
@@ -549,7 +549,7 @@ impl Parser<'_> {
         });
 
         if exceeded {
-            return Err(ParserError::ParseError(
+            return Err(self.parse_error(
                 "Recursion limit exceeded in parse_primary_no_postfix".to_string(),
             ));
         }
@@ -569,7 +569,7 @@ impl Parser<'_> {
         });
 
         if exceeded {
-            return Err(ParserError::ParseError(
+            return Err(self.parse_error(
                 "Recursion limit exceeded in parse_expression_no_postfix".to_string(),
             ));
         }
@@ -591,7 +591,7 @@ impl Parser<'_> {
             | token::Type::ModAssign
             | token::Type::BitAndAssign
             | token::Type::BitOrAssign
-            | token::Type::BitXorAssign => Err(ParserError::ParseError(
+            | token::Type::BitXorAssign => Err(self.parse_error(
                 "Assignment not allowed in this context".to_string(),
             )),
             _ => Ok(expr),
@@ -721,7 +721,7 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::{Ast, Expr, Stmt};
+    use crate::ast::{Ast, BinaryExpr, Expr, LitExpr, LiteralValue, Stmt};
     use crate::parser::Parser;
 
     #[test]
@@ -795,6 +795,15 @@ mod tests {
         let input = "x == null";
         let mut parser = Parser::new(input);
         let result = parser.parse_expression();
-        assert!(result.is_ok());
+
+        let Ok(Expr::Binary(BinaryExpr { right, .. })) = result else {
+            panic!("expected binary expression");
+        };
+
+        let Expr::Lit(LitExpr { value, .. }) = *right else {
+            panic!("expected LitExpr");
+        };
+
+        assert_eq!(value, LiteralValue::Null);
     }
 }

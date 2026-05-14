@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!("Error parsing source: {:?}", e);
+            eprintln!("error: {}", e);
             std::process::exit(1);
         }
     }
