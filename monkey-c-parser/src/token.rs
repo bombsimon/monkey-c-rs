@@ -246,6 +246,7 @@ impl std::str::FromStr for Type {
             "import" => Ok(Type::Import),
             "new" => Ok(Type::New),
             "instanceof" => Ok(Type::InstanceOf),
+            "or" => Ok(Type::Or),
             "true" => Ok(Type::Boolean(true)),
             "false" => Ok(Type::Boolean(false)),
             "null" => Ok(Type::Null),

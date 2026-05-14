@@ -16,12 +16,18 @@ pub enum Visibility {
 }
 
 /// A Monkey C type annotation, optionally generic and optionally nullable.
+///
+/// Multiple types joined by `or` (e.g. `Number or Null`) are represented as
+/// a primary type plus one or more `alternatives`. For simple types the
+/// alternatives list is empty.
 #[derive(Debug, PartialEq)]
 pub struct Type {
-    /// The base type name, e.g. `Array` in `Array<Number>?`.
+    /// The primary (or only) type name, e.g. `Array` in `Array<Number>?`.
     pub ident: Ident,
     /// Type parameters, e.g. `[Number]` in `Array<Number>`.
     pub generic_params: Vec<Type>,
+    /// Additional alternatives in a union, e.g. `[Null]` in `Number or Null`.
+    pub alternatives: Vec<Type>,
     /// Whether the type is nullable (`?` suffix).
     pub optional: bool,
 }

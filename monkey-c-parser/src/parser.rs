@@ -147,7 +147,25 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a full type, including `or`-joined union alternatives at the top level.
+    ///
+    /// Use this for variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
+        let mut ty = self.parse_simple_type()?;
+        while self.current_token == token::Type::Or {
+            self.next_token_span(); // consume `or`
+            ty.alternatives.push(self.parse_simple_type()?);
+        }
+
+        Ok(ty)
+    }
+
+    /// Parse a single type name with optional generic params and `?`, but
+    /// without consuming `or` alternatives.
+    ///
+    /// Used for generic parameter lists where `or` is a param separator, not a
+    /// union operator: `Array<Number or Float>` → two params, not one union.
+    fn parse_simple_type(&mut self) -> Result<Type, ParserError> {
         let ident = self.parse_identifier()?;
         if self.current_token != token::Type::Less {
             self.next_token_span();
@@ -158,10 +176,10 @@ impl<'a> Parser<'a> {
             let mut params = Vec::new();
 
             if self.current_token != token::Type::Greater {
-                params.push(self.parse_type()?);
-                while self.current_token == token::Type::Comma {
-                    self.next_token_span(); // consume ,
-                    params.push(self.parse_type()?);
+                params.push(self.parse_simple_type()?);
+                while self.is_type_separator() {
+                    self.next_token_span(); // consume , or `or`
+                    params.push(self.parse_simple_type()?);
                 }
             }
 
@@ -180,8 +198,15 @@ impl<'a> Parser<'a> {
         Ok(Type {
             ident,
             generic_params,
+            alternatives: Vec::new(),
             optional,
         })
+    }
+
+    /// Returns `true` if the current token is a type-separator inside a generic
+    /// parameter list: either `,` or the contextual keyword `or`.
+    fn is_type_separator(&self) -> bool {
+        matches!(self.current_token, token::Type::Comma | token::Type::Or)
     }
 
     fn parse_declaration(&mut self) -> Result<Ast, ParserError> {

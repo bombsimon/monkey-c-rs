@@ -77,10 +77,12 @@ fn test_var_declarations() {
     assert_eq!(v.name, "x");
     assert_eq!(v.type_.unwrap().ident, "Float");
 
-    let v = class_var("class C { var items as Array<Number>; }");
+    let v = class_var("class C { var items as Array<Number or Float>; }");
     let ty = v.type_.unwrap();
     assert_eq!(ty.ident, "Array");
+    assert_eq!(ty.generic_params.len(), 2);
     assert_eq!(ty.generic_params[0].ident, "Number");
+    assert_eq!(ty.generic_params[1].ident, "Float");
 
     let v = class_var("class C { var x = 42; }");
     assert!(v.initializer.is_some());

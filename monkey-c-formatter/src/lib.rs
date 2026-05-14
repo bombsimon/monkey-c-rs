@@ -219,31 +219,41 @@ impl Formatter {
     }
 
     fn type_to_doc(&self, ty: &Type) -> Doc {
-        if ty.generic_params.is_empty() {
+        let base = if ty.generic_params.is_empty() {
             let suffix = if ty.optional { "?" } else { "" };
+            Doc::text(format!("{}{}", ty.ident, suffix))
+        } else {
+            let params: Vec<Doc> = ty
+                .generic_params
+                .iter()
+                .enumerate()
+                .flat_map(|(i, p)| {
+                    if i > 0 {
+                        vec![Doc::text(" or "), self.type_to_doc(p)]
+                    } else {
+                        vec![self.type_to_doc(p)]
+                    }
+                })
+                .collect();
+            let suffix = if ty.optional { "?" } else { "" };
+            Doc::concat(vec![
+                Doc::text(format!("{}<", ty.ident)),
+                Doc::Concat(params),
+                Doc::text(format!(">{}", suffix)),
+            ])
+        };
 
-            return Doc::text(format!("{}{}", ty.ident, suffix));
+        if ty.alternatives.is_empty() {
+            return base;
         }
 
-        let params: Vec<Doc> = ty
-            .generic_params
-            .iter()
-            .enumerate()
-            .flat_map(|(i, p)| {
-                if i > 0 {
-                    vec![Doc::text(", "), self.type_to_doc(p)]
-                } else {
-                    vec![self.type_to_doc(p)]
-                }
-            })
-            .collect();
-        let suffix = if ty.optional { "?" } else { "" };
+        let mut parts = vec![base];
+        for alt in &ty.alternatives {
+            parts.push(Doc::text(" or "));
+            parts.push(self.type_to_doc(alt));
+        }
 
-        Doc::concat(vec![
-            Doc::text(format!("{}<", ty.ident)),
-            Doc::Concat(params),
-            Doc::text(format!(">{}", suffix)),
-        ])
+        Doc::Concat(parts)
     }
 
     /// Render a block as ` {\n    …\n}` with the opening brace on the same line.
