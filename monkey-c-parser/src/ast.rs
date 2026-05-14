@@ -1,6 +1,9 @@
 /// An identifier — a plain string name.
 pub type Ident = String;
 
+/// A symbol name — the string part of a `:symbolName` literal.
+pub type Symbol = String;
+
 /// Visibility modifier on a declaration.
 ///
 /// `Hidden` is synonymous with `Protected` — both restrict access to the
@@ -117,6 +120,8 @@ pub enum LiteralValue {
     Double(f64),
     String(String),
     Boolean(bool),
+    /// A symbol literal, e.g. `:mySymbol`.
+    Symbol(String),
     Null,
     NaN,
 }
@@ -312,8 +317,8 @@ pub struct VarDecl {
 pub enum Ast {
     /// A line comment (`// …`). The string contains the raw text after `//`.
     Comment(String, Span),
-    /// A `(:AnnotationName)` decorator.
-    Annotation(String, Span),
+    /// A `(:AnnotationName)` decorator. The name is a symbol identifier.
+    Annotation(Symbol, Span),
     /// The root of a parsed file.
     Document(Vec<Ast>),
     Import(ImportDecl),

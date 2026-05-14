@@ -399,6 +399,15 @@ impl Parser<'_> {
                 self.next_token_span();
                 Ok(Expr::Bling(Span { start, end }))
             }
+            token::Type::Symbol(name) => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Lit(LitExpr {
+                    value: LiteralValue::Symbol(name),
+                    span: Span { start, end },
+                }))
+            }
             token::Type::Long(value) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;
@@ -502,7 +511,7 @@ impl Parser<'_> {
                 let mut trailing_comma = false;
                 while self.current_token != token::Type::RBrace {
                     let key = self.parse_primary()?;
-                    self.assert_next_token(&[token::Type::Colon])?;
+                    self.assert_next_token(&[token::Type::FatArrow])?;
                     let value = self.parse_expression()?;
                     pairs.push((key, value));
                     if self.current_token == token::Type::Comma {

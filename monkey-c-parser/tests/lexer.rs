@@ -117,6 +117,24 @@ fn test_annotation() {
 }
 
 #[test]
+fn test_symbol_literal() {
+    assert_eq!(tokens(":mySymbol"), vec![Type::Symbol("mySymbol".into())]);
+    assert_eq!(tokens(":_private"), vec![Type::Symbol("_private".into())]);
+    // plain colon (e.g. dict separator) is NOT a symbol
+    assert_eq!(tokens(":"), vec![Type::Colon]);
+}
+
+#[test]
+fn test_fat_arrow() {
+    assert_eq!(
+        tokens(":key => 1"),
+        vec![Type::Symbol("key".into()), Type::FatArrow, Type::Long(1)]
+    );
+    // = alone is still Assign, == is still EqualEqual
+    assert_eq!(tokens("= =>"), vec![Type::Assign, Type::FatArrow]);
+}
+
+#[test]
 fn test_bling() {
     assert_eq!(
         tokens("$.globalFn()"),

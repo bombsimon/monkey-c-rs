@@ -274,13 +274,13 @@ fn test_array_literals() {
 
 #[test]
 fn test_dict_literals() {
-    let Expr::Dict(e) = parse_expr(r#"{"key": "value"}"#) else {
+    let Expr::Dict(e) = parse_expr(r#"{"key" => "value"}"#) else {
         panic!("expected Dict");
     };
     assert_eq!(e.pairs.len(), 1);
     assert!(!e.trailing_comma, "no trailing comma");
 
-    let Expr::Dict(e) = parse_expr(r#"{"key": "value",}"#) else {
+    let Expr::Dict(e) = parse_expr(r#"{"key" => "value",}"#) else {
         panic!("expected Dict");
     };
     assert!(e.trailing_comma, "trailing comma");
@@ -293,6 +293,28 @@ fn test_null_check() {
     };
     assert_eq!(e.operator, BinaryOperator::Eq);
     assert!(matches!(*e.right, Expr::Lit(ref l) if l.value == LiteralValue::Null));
+}
+
+#[test]
+fn test_symbol_literal() {
+    let Expr::Lit(e) = parse_expr(":mySymbol") else {
+        panic!("expected Lit");
+    };
+    assert_eq!(e.value, LiteralValue::Symbol("mySymbol".into()));
+}
+
+#[test]
+fn test_symbol_dict_keys() {
+    let Expr::Dict(e) = parse_expr(r#"{:title => "George", :name => "Taylor"}"#) else {
+        panic!("expected Dict");
+    };
+    assert_eq!(e.pairs.len(), 2);
+    assert!(
+        matches!(&e.pairs[0].0, Expr::Lit(l) if l.value == LiteralValue::Symbol("title".into()))
+    );
+    assert!(
+        matches!(&e.pairs[1].0, Expr::Lit(l) if l.value == LiteralValue::Symbol("name".into()))
+    );
 }
 
 #[test]

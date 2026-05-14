@@ -472,7 +472,7 @@ impl Formatter {
                     .map(|(k, v)| {
                         Doc::concat(vec![
                             self.expr_to_doc(k),
-                            Doc::text(": "),
+                            Doc::text(" => "),
                             self.expr_to_doc(v),
                         ])
                     })
@@ -486,6 +486,7 @@ impl Formatter {
                 LiteralValue::Double(v) => v.to_string(),
                 LiteralValue::String(v) => format!("\"{}\"", v),
                 LiteralValue::Boolean(v) => v.to_string(),
+                LiteralValue::Symbol(v) => format!(":{v}"),
                 LiteralValue::Null => "null".to_string(),
                 LiteralValue::NaN => "NaN".to_string(),
             }),

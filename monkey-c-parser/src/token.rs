@@ -55,6 +55,8 @@ pub enum Type {
     Self_,
     /// The `$` bling symbol — refers to the global namespace.
     Bling,
+    /// A symbol literal, e.g. `:mySymbol`.
+    Symbol(String),
 
     // Comments and Annotations
     Comment(String),
@@ -102,6 +104,8 @@ pub enum Type {
     Dot,
     Semicolon,
     Colon,
+    /// The `=>` fat-arrow used as a dict key-value separator.
+    FatArrow,
     Question,
 
     // Special
@@ -156,6 +160,7 @@ impl std::fmt::Display for Type {
             Type::Me => write!(f, "me"),
             Type::Self_ => write!(f, "self"),
             Type::Bling => write!(f, "$"),
+            Type::Symbol(s) => write!(f, ":{s}"),
             Type::Comment(s) => write!(f, "//{}", s),
             Type::Annotation(s) => write!(f, "@{}", s),
             Type::Plus => write!(f, "+"),
@@ -197,6 +202,7 @@ impl std::fmt::Display for Type {
             Type::Dot => write!(f, "."),
             Type::Semicolon => write!(f, ";"),
             Type::Colon => write!(f, ":"),
+            Type::FatArrow => write!(f, "=>"),
             Type::Question => write!(f, "?"),
             Type::Newline => writeln!(f),
             Type::Eof => write!(f, "EOF"),

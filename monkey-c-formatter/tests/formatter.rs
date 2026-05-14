@@ -144,7 +144,7 @@ fn test_array_no_trailing_comma_breaks_when_wide() {
 
 #[test]
 fn test_dict_trailing_comma_forces_multiline() {
-    let src = r#"var d = {"key": "value",};"#;
+    let src = r#"var d = {"key" => "value",};"#;
     let out = fmt(src);
     assert!(
         out.contains('\n'),
@@ -154,7 +154,7 @@ fn test_dict_trailing_comma_forces_multiline() {
 
 #[test]
 fn test_dict_no_trailing_comma_fits_inline() {
-    let src = r#"var d = {"k": 1};"#;
+    let src = r#"var d = {"k" => 1};"#;
     let out = fmt(src);
     assert!(!out.contains('\n'), "should stay inline: {out}");
 }
@@ -216,6 +216,24 @@ fn test_operator_spacing() {
         out.contains("a + b * c"),
         "operators should have spaces: {out}"
     );
+}
+
+#[test]
+fn test_symbol_literal() {
+    assert_eq!(fmt("var a = :mySymbol;"), "var a = :mySymbol;");
+}
+
+#[test]
+fn test_symbol_dict_keys() {
+    let out = fmt(r#"var d = {:title => "George", :name => "Taylor"};"#);
+    assert!(out.contains(":title =>"), "got: {out}");
+    assert!(out.contains(":name =>"), "got: {out}");
+}
+
+#[test]
+fn test_annotation_is_symbol() {
+    let out = fmt("(:glance)\nfunction f() {}");
+    assert!(out.contains("(:glance)"), "got: {out}");
 }
 
 #[test]
