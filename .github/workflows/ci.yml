@@ -41,5 +41,10 @@ jobs:
       - name: clippy
         run: cargo clippy --all-features --tests -- -D warnings
 
+      - name: doc
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --all-features --workspace --keep-going
+
       - name: test
         run: cargo test --all-features
