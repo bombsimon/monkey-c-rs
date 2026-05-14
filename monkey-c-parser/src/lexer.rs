@@ -298,4 +298,3 @@ impl<'a> Lexer<'a> {
         (start, token_type, self.position)
     }
 }
-

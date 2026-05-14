@@ -28,7 +28,10 @@ fn test_var_declaration() {
 
 #[test]
 fn test_const_declaration() {
-    assert_eq!(fmt("const RATE as Float = 1.5;"), "const RATE as Float = 1.5;");
+    assert_eq!(
+        fmt("const RATE as Float = 1.5;"),
+        "const RATE as Float = 1.5;"
+    );
 }
 
 #[test]
@@ -121,10 +124,15 @@ fn test_array_no_trailing_comma_fits_inline() {
 #[test]
 fn test_array_trailing_comma_forces_multiline() {
     let out = fmt("var a = [1, 2, 3,];");
-    assert!(out.contains('\n'), "trailing comma should force multiline: {out}");
+    assert!(
+        out.contains('\n'),
+        "trailing comma should force multiline: {out}"
+    );
     assert!(out.contains("1,\n"), "each element on own line: {out}");
-    assert!(out.ends_with(",\n];") || out.trim_end().ends_with(",\n];") || out.contains(",\n]"),
-        "trailing comma preserved: {out}");
+    assert!(
+        out.ends_with(",\n];") || out.trim_end().ends_with(",\n];") || out.contains(",\n]"),
+        "trailing comma preserved: {out}"
+    );
 }
 
 #[test]
@@ -138,7 +146,10 @@ fn test_array_no_trailing_comma_breaks_when_wide() {
 fn test_dict_trailing_comma_forces_multiline() {
     let src = r#"var d = {"key": "value",};"#;
     let out = fmt(src);
-    assert!(out.contains('\n'), "trailing comma dict should be multiline: {out}");
+    assert!(
+        out.contains('\n'),
+        "trailing comma dict should be multiline: {out}"
+    );
 }
 
 #[test]
@@ -152,7 +163,10 @@ fn test_dict_no_trailing_comma_fits_inline() {
 fn test_blank_line_preserved_between_methods() {
     let src = "class C {\n    function a() {}\n\n    function b() {}\n}";
     let out = fmt(src);
-    assert!(out.contains("\n\n"), "blank line between methods should be preserved: {out}");
+    assert!(
+        out.contains("\n\n"),
+        "blank line between methods should be preserved: {out}"
+    );
 }
 
 #[test]
@@ -198,7 +212,10 @@ fn test_me_keyword() {
 #[test]
 fn test_operator_spacing() {
     let out = fmt("function f() { var x = a + b * c; }");
-    assert!(out.contains("a + b * c"), "operators should have spaces: {out}");
+    assert!(
+        out.contains("a + b * c"),
+        "operators should have spaces: {out}"
+    );
 }
 
 #[test]

@@ -57,4 +57,3 @@ impl LineIndex {
         start_line.saturating_sub(end_line + 1)
     }
 }
-

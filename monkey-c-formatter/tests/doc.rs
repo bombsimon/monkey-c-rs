@@ -43,7 +43,10 @@ fn test_group_fits_flat() {
 fn test_group_breaks_when_too_wide() {
     let doc = Doc::group(vec![
         Doc::text("{"),
-        Doc::Indent(vec![Doc::line(), Doc::text("a_very_long_key: a_very_long_value")]),
+        Doc::Indent(vec![
+            Doc::line(),
+            Doc::text("a_very_long_key: a_very_long_value"),
+        ]),
         Doc::line(),
         Doc::text("}"),
     ]);
@@ -61,22 +64,14 @@ fn test_soft_line_empty_when_flat() {
 fn test_soft_line_breaks_when_broken() {
     // Force break by making the content too wide
     let wide = "a".repeat(60);
-    let doc = Doc::group(vec![
-        Doc::text(&wide),
-        Doc::soft_line(),
-        Doc::text(&wide),
-    ]);
+    let doc = Doc::group(vec![Doc::text(&wide), Doc::soft_line(), Doc::text(&wide)]);
     let result = render(&doc, 80);
     assert!(result.contains('\n'));
 }
 
 #[test]
 fn test_blank_line() {
-    let doc = Doc::concat(vec![
-        Doc::text("a"),
-        Doc::blank_line(),
-        Doc::text("b"),
-    ]);
+    let doc = Doc::concat(vec![Doc::text("a"), Doc::blank_line(), Doc::text("b")]);
     assert_eq!(render(&doc, 80), "a\n\nb");
 }
 

@@ -200,7 +200,10 @@ fn test_float_literal() {
 
 #[test]
 fn test_boolean_literals() {
-    assert_eq!(tokens("true false"), vec![Type::Boolean(true), Type::Boolean(false)]);
+    assert_eq!(
+        tokens("true false"),
+        vec![Type::Boolean(true), Type::Boolean(false)]
+    );
 }
 
 #[test]
@@ -210,12 +213,15 @@ fn test_null_nan() {
 
 #[test]
 fn test_increment_decrement() {
-    assert_eq!(tokens("i++ --j"), vec![
-        Type::Identifier("i".into()),
-        Type::PlusPlus,
-        Type::MinusMinus,
-        Type::Identifier("j".into()),
-    ]);
+    assert_eq!(
+        tokens("i++ --j"),
+        vec![
+            Type::Identifier("i".into()),
+            Type::PlusPlus,
+            Type::MinusMinus,
+            Type::Identifier("j".into()),
+        ]
+    );
 }
 
 #[test]

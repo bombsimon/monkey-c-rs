@@ -198,4 +198,3 @@ fn fits_flat(docs: &[Doc], remaining: usize) -> bool {
     }
     true
 }
-
