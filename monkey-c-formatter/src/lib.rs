@@ -47,6 +47,12 @@ impl Formatter {
                     .unwrap_or(Doc::Empty),
                 Doc::text(";"),
             ]),
+            Ast::Module(decl) => Doc::concat(vec![
+                Doc::text(format!("module {} {{", decl.name)),
+                Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
+                Doc::HardLine,
+                Doc::text("}"),
+            ]),
             Ast::Class(decl) => Doc::concat(vec![
                 Doc::text(format!("class {}", decl.name)),
                 decl.extends

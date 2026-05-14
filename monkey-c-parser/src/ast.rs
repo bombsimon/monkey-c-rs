@@ -281,6 +281,7 @@ pub struct VarStmt {
 pub enum Ast {
     Document(Vec<Ast>),
     Import(ImportDecl),
+    Module(ModuleDecl),
     Class(ClassDecl),
     Function(FunctionDecl),
     Variable(VarStmt),
@@ -293,6 +294,13 @@ pub enum Ast {
 pub struct ImportDecl {
     pub name: Ident,
     pub alias: Option<Ident>,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ModuleDecl {
+    pub name: Ident,
+    pub body: Vec<Ast>,
     pub span: Span,
 }
 
@@ -363,6 +371,7 @@ impl Ast {
         match self {
             Ast::Document(_) | Ast::Eof => None,
             Ast::Import(d) => Some(&d.span),
+            Ast::Module(d) => Some(&d.span),
             Ast::Class(d) => Some(&d.span),
             Ast::Function(d) => Some(&d.span),
             Ast::Variable(v) => Some(&v.span),

@@ -1,7 +1,7 @@
 use crate::ast::{
     ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallExpr, DictExpr, Expr,
-    IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr, Span, TypeCastExpr, UnaryExpr,
-    UnaryOperator,
+    IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr, NewExpr, Span, TypeCastExpr,
+    UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -503,6 +503,29 @@ impl Parser<'_> {
                 Ok(Expr::Dict(DictExpr {
                     pairs,
                     trailing_comma,
+                    span: Span { start, end },
+                }))
+            }
+            token::Type::New => {
+                let start = self.current_token_start;
+                self.next_token_span(); // consume `new`
+                let class = self.parse_dotted_identifier()?;
+                self.assert_next_token(&[token::Type::LParen])?;
+                let mut args = Vec::new();
+                if self.current_token != token::Type::RParen {
+                    loop {
+                        args.push(self.parse_expression()?);
+                        if self.current_token == token::Type::RParen {
+                            break;
+                        }
+                        self.assert_next_token(&[token::Type::Comma])?;
+                    }
+                }
+                let end = self.current_token_end;
+                self.assert_next_token(&[token::Type::RParen])?;
+                Ok(Expr::New(NewExpr {
+                    class,
+                    args,
                     span: Span { start, end },
                 }))
             }

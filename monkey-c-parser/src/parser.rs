@@ -1,6 +1,6 @@
 use crate::ast::{
-    Ast, BlockStmt, ClassDecl, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ReturnStmt,
-    Span, Stmt, Type, VarStmt, Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, ClassDecl, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl,
+    ReturnStmt, Span, Stmt, Type, VarStmt, Variable, Visibility, WhileStmt,
 };
 use crate::token;
 
@@ -129,7 +129,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
+    pub(crate) fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
         let mut name = self.parse_identifier()?;
         self.next_token_span();
         while self.current_token == token::Type::Dot {
@@ -261,6 +261,21 @@ impl<'a> Parser<'a> {
                         start,
                         end: rbrace_end,
                     },
+                }))
+            }
+            token::Type::Module => {
+                self.next_token_span(); // consume `module`
+                let name = self.parse_identifier()?;
+                self.next_token_span(); // advance past name
+
+                self.assert_next_token(&[token::Type::LBrace])?;
+                let body = self.parse_class_body()?;
+                let rbrace_end = self.current_token_end;
+                self.assert_next_token(&[token::Type::RBrace])?;
+                Ok(Ast::Module(ModuleDecl {
+                    name,
+                    body,
+                    span: Span { start, end: rbrace_end },
                 }))
             }
             token::Type::Function => {
@@ -1019,7 +1034,48 @@ mod tests {
     }
 
     #[test]
-    fn test_span_comment() {
+    fn test_parse_module() {
+        let input = r#"
+            module MyModule {
+                class Foo { var x; }
+                var moduleVar;
+                module Nested { var y; }
+            }
+        "#;
+        let mut parser = Parser::new(input);
+        let ast = parser.parse().expect("Should parse module");
+        if let Ast::Document(nodes) = ast {
+            if let Ast::Module(m) = &nodes[0] {
+                assert_eq!(m.name, "MyModule");
+                assert_eq!(m.body.len(), 3);
+            } else {
+                panic!("Expected module node");
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_new_expression() {
+        let input = "function f() { var x = new MyModule.Foo(); }";
+        let mut parser = Parser::new(input);
+        let ast = parser.parse().expect("Should parse new expression");
+        if let Ast::Document(nodes) = ast {
+            if let Ast::Function(f) = &nodes[0] {
+                if let Stmt::Var(v) = &f.body.stmts[0] {
+                    if let Some(Expr::New(new_expr)) = v.variable.initializer.as_deref() {
+                        assert_eq!(new_expr.class, "MyModule.Foo");
+                    } else {
+                        panic!("Expected new expression as initializer");
+                    }
+                } else {
+                    panic!("Expected var statement");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_span_comment() {
         let input = "// hello\nvar x = 1;";
         let mut parser = Parser::new(input);
         let ast = parser.parse().expect("Should parse");
