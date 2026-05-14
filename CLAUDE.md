@@ -11,8 +11,6 @@
 - Avoid using import aliases as much as possible
 - Avoid importing ambigous types - keep path if it helps clarity (e.g. don't
   import `token::Type` - always refer to `token::Type` with the `token` part
-- Always run `cargo fmt --all` to format all code
-- Always use `cargo clippy --all-features --tests` and address all warnings
 - Use semantic newlines to make code airy and easy to read
   - `return` statements should preceed with a newline
   - Final statement/returning values should be separated by a newline
@@ -23,6 +21,9 @@ let .. else {}` pattern where sensible
 ## Code
 
 - Prefer easy to read/easy to follow code over pre-mature optimizations
+- Always run `cargo fmt --all` to format all code
+- Always use `cargo clippy --all-features --tests` and address all warnings
+- Always run `cargo doc` to ensure proper documentation.
 
 ## Testing
 
