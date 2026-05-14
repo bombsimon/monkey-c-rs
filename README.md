@@ -1,5 +1,9 @@
 # Monkey C
 
+<p align="center">
+  <img src="./monkey-c-rs-logo.png" alt="monkey-c-rs logo" />
+</p>
+
 ## `monkey-c-parser`
 
 A lexer, parser and ast for [Monkey C]. See [`monkey-c-parser`][parser]
