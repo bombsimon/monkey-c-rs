@@ -1,6 +1,31 @@
 # `monkey-c-formatter`
 
-This is (currently) a proof of concept for a [Monkey C] formatter.
+A formatter for [Monkey C] that will write a consistent formatted output of the
+source code. It supports wrapping and unwrapping lines as they fit in a
+reasonable width but can, similar to [ruff], allow automatic multiline wrapping
+of arrays and dictionaries by specifying a trailing newline.
+
+```sh
+› echo 'var x=[1,    2,3,];' | cargo run --example format
+var x = [
+    1,
+    2,
+    3,
+];
+```
+
+```sh
+› echo 'var x=[1,    2,3];' | cargo run --example format
+var x = [1, 2, 3];
+```
+
+```sh
+› echo 'static const x = {"foo": "bar", "not_foo": "baz",};' | cargo run --example format
+ static const x = {
+    "foo": "bar",
+    "not_foo": "baz",
+};
+```
 
 It's backed by the [`monkey-c-parser`][parser] to parse the code.
 
