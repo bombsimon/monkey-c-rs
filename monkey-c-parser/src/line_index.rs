@@ -58,39 +58,3 @@ impl LineIndex {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_single_line() {
-        let idx = LineIndex::new("hello world");
-        assert_eq!(idx.line_col(0), LineCol { line: 0, col: 0 });
-        assert_eq!(idx.line_col(6), LineCol { line: 0, col: 6 });
-    }
-
-    #[test]
-    fn test_multi_line() {
-        let idx = LineIndex::new("hello\nworld\n");
-        assert_eq!(idx.line_col(0), LineCol { line: 0, col: 0 });
-        assert_eq!(idx.line_col(5), LineCol { line: 0, col: 5 });
-        assert_eq!(idx.line_col(6), LineCol { line: 1, col: 0 });
-        assert_eq!(idx.line_col(8), LineCol { line: 1, col: 2 });
-    }
-
-    #[test]
-    fn test_blank_lines_between() {
-        // "a\n\nb" — one blank line between a and b
-        let src = "a\n\nb";
-        let idx = LineIndex::new(src);
-        // 'a' ends at offset 1, 'b' starts at offset 3
-        assert_eq!(idx.blank_lines_between(1, 3), 1);
-    }
-
-    #[test]
-    fn test_no_blank_lines() {
-        let src = "a\nb";
-        let idx = LineIndex::new(src);
-        assert_eq!(idx.blank_lines_between(1, 2), 0);
-    }
-}

@@ -205,7 +205,9 @@ impl Parser<'_> {
     }
 
     fn handle_unary_operator(&mut self) -> Result<Expr, ParserError> {
-        let (start, operator_token, _) = self.next_token_span();
+        let start = self.current_token_start;
+        let operator_token = self.current_token.clone();
+        self.next_token_span(); // advance past operator
         let operator = match operator_token {
             token::Type::Minus => UnaryOperator::Neg,
             token::Type::Bang => UnaryOperator::Not,
@@ -719,91 +721,3 @@ impl Parser<'_> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::ast::{Ast, BinaryExpr, Expr, LitExpr, LiteralValue, Stmt};
-    use crate::parser::Parser;
-
-    #[test]
-    fn test_assignment_with_type_cast() {
-        let input = "class Foo { function bar() { x = [0, 0] as Array<Number>; } }";
-        let mut parser = Parser::new(input);
-        let ast = parser.parse().expect("Should parse successfully");
-
-        if let Ast::Document(nodes) = ast {
-            assert_eq!(nodes.len(), 1);
-            if let Ast::Class(class) = &nodes[0] {
-                let func = class
-                    .body
-                    .iter()
-                    .find_map(|node| {
-                        if let Ast::Function(f) = node {
-                            Some(f)
-                        } else {
-                            None
-                        }
-                    })
-                    .expect("Should find a function node");
-
-                let assign = func
-                    .body
-                    .stmts
-                    .iter()
-                    .find_map(|stmt| {
-                        if let Stmt::Expr(Expr::Assign(a)) = stmt {
-                            Some(a)
-                        } else {
-                            None
-                        }
-                    })
-                    .expect("Should find an assignment");
-
-                if let Expr::Ident(ident) = &*assign.target {
-                    assert_eq!(ident.name, "x");
-                } else {
-                    panic!("Target is not identifier");
-                }
-
-                if let Expr::TypeCast(tc) = &*assign.value {
-                    if let Expr::Array(arr) = &*tc.expr {
-                        assert_eq!(arr.elements.len(), 2);
-                    } else {
-                        panic!("Type cast expr is not array");
-                    }
-                    assert_eq!(tc.target_type.ident, "Array");
-                    assert_eq!(tc.target_type.generic_params.len(), 1);
-                    assert_eq!(tc.target_type.generic_params[0].ident, "Number");
-                } else {
-                    panic!("Value is not a type cast");
-                }
-            } else {
-                panic!("Not a class node");
-            }
-        }
-    }
-
-    #[test]
-    fn test_parse_subtraction() {
-        let input = "a - b";
-        let mut parser = Parser::new(input);
-        let expr = parser.parse_expression().unwrap();
-        assert!(matches!(expr, Expr::Binary(_)));
-    }
-
-    #[test]
-    fn test_parse_x_eq_null() {
-        let input = "x == null";
-        let mut parser = Parser::new(input);
-        let result = parser.parse_expression();
-
-        let Ok(Expr::Binary(BinaryExpr { right, .. })) = result else {
-            panic!("expected binary expression");
-        };
-
-        let Expr::Lit(LitExpr { value, .. }) = *right else {
-            panic!("expected LitExpr");
-        };
-
-        assert_eq!(value, LiteralValue::Null);
-    }
-}

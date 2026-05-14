@@ -62,23 +62,37 @@ impl Formatter {
                     .unwrap_or(Doc::Empty),
                 Doc::text(";"),
             ]),
-            Ast::Module(decl) => Doc::concat(vec![
-                Doc::text(format!("module {} {{", decl.name)),
-                Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
-                Doc::HardLine,
-                Doc::text("}"),
-            ]),
-            Ast::Class(decl) => Doc::concat(vec![
-                Doc::text(format!("class {}", decl.name)),
-                decl.extends
-                    .as_ref()
-                    .map(|e| Doc::text(format!(" extends {}", e)))
-                    .unwrap_or(Doc::Empty),
-                Doc::text(" {"),
-                Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
-                Doc::HardLine,
-                Doc::text("}"),
-            ]),
+            Ast::Module(decl) => {
+                let header = Doc::text(format!("module {} {{", decl.name));
+                if decl.body.is_empty() {
+                    return Doc::concat(vec![header, Doc::text("}")]);
+                }
+                Doc::concat(vec![
+                    header,
+                    Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
+                    Doc::HardLine,
+                    Doc::text("}"),
+                ])
+            }
+            Ast::Class(decl) => {
+                let header = Doc::concat(vec![
+                    Doc::text(format!("class {}", decl.name)),
+                    decl.extends
+                        .as_ref()
+                        .map(|e| Doc::text(format!(" extends {}", e)))
+                        .unwrap_or(Doc::Empty),
+                ]);
+                if decl.body.is_empty() {
+                    return Doc::concat(vec![header, Doc::text(" {}")]);
+                }
+                Doc::concat(vec![
+                    header,
+                    Doc::text(" {"),
+                    Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
+                    Doc::HardLine,
+                    Doc::text("}"),
+                ])
+            }
             Ast::Function(decl) => self.function_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
