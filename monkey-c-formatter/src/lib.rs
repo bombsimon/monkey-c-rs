@@ -10,8 +10,8 @@ use monkey_c_parser::line_index::LineIndex;
 
 /// Formats a Monkey C AST back into source text.
 ///
-/// Construct with [`Formatter::new`], optionally configure with
-/// [`Formatter::with_line_width`], then call [`Formatter::format`].
+/// Construct with [`Formatter::new`], optionally configure with builder
+/// methods, then call [`Formatter::format`].
 ///
 /// The formatter uses the Wadler-Lindig algorithm (see [`doc`]) to make
 /// line-breaking decisions globally rather than per-node, so a dict or array
@@ -20,6 +20,9 @@ pub struct Formatter {
     line_index: LineIndex,
     /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
+    /// When `true`, dict key-value pairs are rendered multi-line with their
+    /// `=>` operators column-aligned.
+    align_dict_pairs: bool,
 }
 
 impl Formatter {
@@ -33,13 +36,22 @@ impl Formatter {
         Self {
             line_index: LineIndex::new(source),
             line_width: 100,
+            align_dict_pairs: false,
         }
     }
 
     /// Override the target line width (default: 100).
     pub fn with_line_width(mut self, width: usize) -> Self {
         self.line_width = width;
+        self
+    }
 
+    /// Enable column-aligned `=>` in dict literals (opt-in).
+    ///
+    /// When set, all non-empty dicts are rendered multi-line with their keys
+    /// padded so the `=>` operators form a vertical column.
+    pub fn with_aligned_dict_pairs(mut self) -> Self {
+        self.align_dict_pairs = true;
         self
     }
 
@@ -466,6 +478,10 @@ impl Formatter {
             }
 
             Expr::Dict(e) => {
+                if self.align_dict_pairs && !e.pairs.is_empty() {
+                    return self.format_dict_aligned(e);
+                }
+
                 let items = e
                     .pairs
                     .iter()
@@ -539,6 +555,76 @@ impl Formatter {
             Doc::Indent(vec![Doc::SoftLine, Doc::Concat(inner)]),
             Doc::SoftLine,
             Doc::text(close),
+        ])
+    }
+
+    /// Format a dict with column-aligned `=>` operators.
+    ///
+    /// If the dict fits on one line it is rendered inline without padding
+    /// (alignment is only meaningful across multiple lines). If it breaks —
+    /// either because it is too wide or has a trailing comma — keys are
+    /// padded so all `=>` operators line up.
+    fn format_dict_aligned(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
+        let flat_items: Vec<Doc> = e
+            .pairs
+            .iter()
+            .map(|(k, v)| {
+                Doc::concat(vec![
+                    self.expr_to_doc(k),
+                    Doc::text(" => "),
+                    self.expr_to_doc(v),
+                ])
+            })
+            .collect();
+
+        let aligned_items = doc::align_pairs(
+            e.pairs
+                .iter()
+                .map(|(k, v)| (self.expr_to_doc(k), self.expr_to_doc(v)))
+                .collect(),
+            " => ",
+        );
+
+        // Flat content: comma-space separated, no padding needed
+        let mut flat_inner = Vec::new();
+        for (i, item) in flat_items.into_iter().enumerate() {
+            if i > 0 {
+                flat_inner.push(Doc::text(", "));
+            }
+
+            flat_inner.push(item);
+        }
+
+        // Break content: one aligned pair per line with trailing comma
+        let mut break_inner = Vec::new();
+        for (i, item) in aligned_items.into_iter().enumerate() {
+            if i > 0 {
+                break_inner.push(Doc::text(","));
+                break_inner.push(Doc::HardLine);
+            }
+
+            break_inner.push(item);
+        }
+
+        break_inner.push(Doc::text(","));
+
+        if e.trailing_comma {
+            return Doc::concat(vec![
+                Doc::text("{"),
+                Doc::Indent(vec![Doc::HardLine, Doc::Concat(break_inner)]),
+                Doc::HardLine,
+                Doc::text("}"),
+            ]);
+        }
+
+        Doc::Group(vec![
+            Doc::text("{"),
+            Doc::Indent(vec![Doc::flat_or_break(
+                Doc::Concat(flat_inner),
+                Doc::concat(vec![Doc::HardLine, Doc::Concat(break_inner)]),
+            )]),
+            Doc::flat_or_break(Doc::Empty, Doc::HardLine),
+            Doc::text("}"),
         ])
     }
 

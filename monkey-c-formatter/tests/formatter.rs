@@ -11,6 +11,19 @@ fn fmt_width(src: &str, width: usize) -> String {
     Formatter::new(src).with_line_width(width).format(&ast)
 }
 
+fn fmt_aligned(src: &str) -> String {
+    let ast = Parser::new(src).parse().expect("should parse");
+    Formatter::new(src).with_aligned_dict_pairs().format(&ast)
+}
+
+fn fmt_aligned_width(src: &str, width: usize) -> String {
+    let ast = Parser::new(src).parse().expect("should parse");
+    Formatter::new(src)
+        .with_aligned_dict_pairs()
+        .with_line_width(width)
+        .format(&ast)
+}
+
 #[test]
 fn test_empty_class() {
     assert_eq!(fmt("class Foo {}"), "class Foo {}");
@@ -228,6 +241,64 @@ fn test_symbol_dict_keys() {
     let out = fmt(r#"var d = {:title => "George", :name => "Taylor"};"#);
     assert!(out.contains(":title =>"), "got: {out}");
     assert!(out.contains(":name =>"), "got: {out}");
+}
+
+#[test]
+fn test_aligned_dict_fits_stays_inline() {
+    // Small dict fits on one line — stays inline, no padding
+    let out = fmt_aligned(r#"var d = {:foo => "bar", :not_foo => "baz"};"#);
+    assert!(!out.contains('\n'), "small dict should stay inline: {out}");
+}
+
+#[test]
+fn test_aligned_dict_breaks_when_wide() {
+    // Narrow width forces break; aligned mode pads keys to column-align =>
+    let out = fmt_aligned_width(r#"var d = {:foo => "bar", :not_foo => "baz"};"#, 30);
+    assert!(out.contains('\n'), "wide dict should be multiline: {out}");
+    assert!(
+        out.contains(":foo     =>"),
+        "short key should be padded: {out}"
+    );
+    assert!(
+        out.contains(":not_foo =>"),
+        "long key should be unpadded: {out}"
+    );
+}
+
+#[test]
+fn test_aligned_dict_trailing_comma_forces_multiline() {
+    // Trailing comma forces multiline with alignment regardless of width
+    let src = "var d = {\n    :foo => \"bar\",\n    :not_foo => \"baz\",\n};";
+    let out = fmt_aligned(src);
+    assert!(
+        out.contains('\n'),
+        "trailing comma dict should be multiline: {out}"
+    );
+    assert!(
+        out.contains(":foo     =>"),
+        "short key should be padded: {out}"
+    );
+    assert!(
+        out.contains(":not_foo =>"),
+        "long key should be unpadded: {out}"
+    );
+}
+
+#[test]
+fn test_aligned_dict_round_trip() {
+    let src = r#"var d = {:foo => "a_longer_value", :not_foo => "another_longer_value"};"#;
+    let out = fmt_aligned(src);
+    assert!(
+        Parser::new(&out).parse().is_ok(),
+        "aligned output should be valid: {out}"
+    );
+}
+
+#[test]
+fn test_aligned_dict_unaffected_without_flag() {
+    // Without the flag, normal inline dict stays inline
+    let out = fmt(r#"var d = {:foo => "bar", :not_foo => "baz"};"#);
+    assert!(!out.contains('\n'), "normal fmt should stay inline: {out}");
 }
 
 #[test]

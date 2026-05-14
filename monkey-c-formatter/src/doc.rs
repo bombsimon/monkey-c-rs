@@ -40,6 +40,11 @@ pub enum Doc {
     /// An empty line: emits `\n\n` followed by current indentation.
     /// Used to preserve a single blank line between declarations or statements.
     BlankLine,
+    /// Renders the first child in flat mode, the second in break mode.
+    ///
+    /// Width is measured from the flat child so enclosing [`Doc::Group`]s make
+    /// the correct fit decision.
+    FlatOrBreak(Box<Doc>, Box<Doc>),
 }
 
 impl Doc {
@@ -73,6 +78,10 @@ impl Doc {
 
     pub fn blank_line() -> Self {
         Doc::BlankLine
+    }
+
+    pub(crate) fn flat_or_break(flat: Doc, break_: Doc) -> Self {
+        Doc::FlatOrBreak(Box::new(flat), Box::new(break_))
     }
 }
 
@@ -160,7 +169,38 @@ fn render_doc(
             out.push_str(&" ".repeat(indent));
             *col = indent;
         }
+
+        Doc::FlatOrBreak(flat, break_) => {
+            let child = if mode == Mode::Flat { flat } else { break_ };
+            render_doc(child, width, indent, mode, out, col);
+        }
     }
+}
+
+/// Align a list of `(left, right)` pairs so their separators line up.
+///
+/// Each `left` Doc is measured in flat mode and padded to the width of the
+/// widest left column before the separator is appended. If a left Doc is not
+/// flat-renderable (contains a `HardLine`), it is emitted without extra padding.
+///
+/// Generic over any two-column layout — dicts, function parameter lists, etc.
+pub(crate) fn align_pairs(pairs: Vec<(Doc, Doc)>, separator: &str) -> Vec<Doc> {
+    let max_width = pairs
+        .iter()
+        .filter_map(|(k, _)| flat_width(k))
+        .max()
+        .unwrap_or(0);
+
+    pairs
+        .into_iter()
+        .map(|(key, val)| {
+            let padding = flat_width(&key)
+                .map(|w| " ".repeat(max_width - w))
+                .unwrap_or_default();
+
+            Doc::concat(vec![key, Doc::Text(padding), Doc::text(separator), val])
+        })
+        .collect()
 }
 
 /// Returns the flat (single-line) character width of `doc`, or `None` if it
@@ -179,12 +219,14 @@ fn flat_width(doc: &Doc) -> Option<usize> {
             }
             Some(total)
         }
+        Doc::FlatOrBreak(flat, _) => flat_width(flat),
     }
 }
 
 /// Returns `true` if rendering `docs` in flat mode would fit within `remaining` columns.
 fn fits_flat(docs: &[Doc], remaining: usize) -> bool {
     let mut total = 0usize;
+
     for d in docs {
         match flat_width(d) {
             None => return false,
@@ -196,5 +238,6 @@ fn fits_flat(docs: &[Doc], remaining: usize) -> bool {
             }
         }
     }
+
     true
 }

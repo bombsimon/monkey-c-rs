@@ -20,7 +20,10 @@ fn main() -> io::Result<()> {
     let mut parser = monkey_c_parser::parser::Parser::new(&source);
     match parser.parse() {
         Ok(ast) => {
-            let formatter = Formatter::new(&source);
+            let formatter = Formatter::new(&source)
+                .with_line_width(80)
+                .with_aligned_dict_pairs();
+
             print!("{}", formatter.format(&ast));
             Ok(())
         }
