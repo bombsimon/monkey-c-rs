@@ -397,6 +397,7 @@ pub enum Ast {
     Document(Vec<Ast>),
     Import(ImportDecl),
     Using(UsingDecl),
+    Typedef(TypedefDecl),
     Module(ModuleDecl),
     Class(ClassDecl),
     Function(FunctionDecl),
@@ -421,6 +422,16 @@ pub struct ImportDecl {
 pub struct UsingDecl {
     pub name: Ident,
     pub alias: Option<Ident>,
+    pub span: Span,
+}
+
+/// A `typedef Name as Type;` declaration. The right-hand side is a regular
+/// type, so union types via `or` are supported (e.g.
+/// `typedef Numeric as Number or Float or Long or Double;`).
+#[derive(Debug, PartialEq)]
+pub struct TypedefDecl {
+    pub name: Ident,
+    pub type_: Type,
     pub span: Span,
 }
 
@@ -522,6 +533,7 @@ impl Ast {
             Ast::Document(_) | Ast::Eof => None,
             Ast::Import(d) => Some(&d.span),
             Ast::Using(d) => Some(&d.span),
+            Ast::Typedef(d) => Some(&d.span),
             Ast::Module(d) => Some(&d.span),
             Ast::Class(d) => Some(&d.span),
             Ast::Function(d) => Some(&d.span),

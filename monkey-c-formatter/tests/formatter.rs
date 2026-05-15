@@ -91,6 +91,19 @@ fn test_using() {
 }
 
 #[test]
+fn test_typedef() {
+    assert_eq!(
+        fmt("typedef Numeric as Number or Float or Long or Double;"),
+        "typedef Numeric as Number or Float or Long or Double;"
+    );
+}
+
+#[test]
+fn test_typedef_simple() {
+    assert_eq!(fmt("typedef MyInt as Number;"), "typedef MyInt as Number;");
+}
+
+#[test]
 fn test_using_with_alias() {
     assert_eq!(
         fmt("using Toybox.Lang as Lng;"),

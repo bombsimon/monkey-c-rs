@@ -177,6 +177,17 @@ fn test_import_rejects_alias() {
 }
 
 #[test]
+fn test_typedef() {
+    let nodes = document_nodes("typedef Numeric as Number or Float or Long or Double;");
+    let Ast::Typedef(d) = &nodes[0] else {
+        panic!("expected typedef");
+    };
+    assert_eq!(d.name, "Numeric");
+    assert_eq!(d.type_.ident, "Number");
+    assert_eq!(d.type_.alternatives.len(), 3);
+}
+
+#[test]
 fn test_using() {
     let nodes = document_nodes("using Toybox.Lang;");
     let Ast::Using(d) = &nodes[0] else {

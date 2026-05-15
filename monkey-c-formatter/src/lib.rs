@@ -106,6 +106,11 @@ impl Formatter {
                     .unwrap_or(Doc::Empty),
                 Doc::text(";"),
             ]),
+            Ast::Typedef(decl) => Doc::concat(vec![
+                Doc::text(format!("typedef {} as ", decl.name)),
+                Self::type_to_doc(&decl.type_),
+                Doc::text(";"),
+            ]),
             Ast::Module(decl) => {
                 let header = Doc::text(format!("module {} {{", decl.name));
                 if decl.body.is_empty() {

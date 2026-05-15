@@ -33,6 +33,7 @@ pub enum Type {
     As,
     Extends,
     Import,
+    Typedef,
     New,
     InstanceOf,
 
@@ -152,6 +153,7 @@ impl std::fmt::Display for Type {
             Type::As => write!(f, "as"),
             Type::Extends => write!(f, "extends"),
             Type::Import => write!(f, "import"),
+            Type::Typedef => write!(f, "typedef"),
             Type::New => write!(f, "new"),
             Type::InstanceOf => write!(f, "instanceof"),
             Type::Long(n) => write!(f, "{}", n),
@@ -256,6 +258,7 @@ impl std::str::FromStr for Type {
             "as" => Ok(Type::As),
             "extends" => Ok(Type::Extends),
             "import" => Ok(Type::Import),
+            "typedef" => Ok(Type::Typedef),
             "new" => Ok(Type::New),
             "instanceof" => Ok(Type::InstanceOf),
             "or" => Ok(Type::Or),
