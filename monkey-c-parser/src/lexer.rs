@@ -160,14 +160,6 @@ impl<'a> Lexer<'a> {
         self.input[position..self.position].to_string()
     }
 
-    fn read_annotation(&mut self) -> token::Type {
-        self.read_n_chars(2); // consume '(:'
-        let annotation = self.read_identifier();
-        self.read_char(); // consume ')'
-
-        token::Type::Annotation(annotation)
-    }
-
     pub fn peek_token(&self) -> (usize, token::Type, usize) {
         Self {
             input: self.input,
@@ -300,13 +292,7 @@ impl<'a> Lexer<'a> {
             b';' => (token::Type::Semicolon, 1),
             b',' => (token::Type::Comma, 1),
             b'.' => (token::Type::Dot, 1),
-            b'(' => {
-                if self.peek_char() == b':' {
-                    (self.read_annotation(), 0)
-                } else {
-                    (token::Type::LParen, 1)
-                }
-            }
+            b'(' => (token::Type::LParen, 1),
             b')' => (token::Type::RParen, 1),
             b'{' => (token::Type::LBrace, 1),
             b'}' => (token::Type::RBrace, 1),

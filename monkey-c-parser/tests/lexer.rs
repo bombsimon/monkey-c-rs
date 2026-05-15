@@ -122,6 +122,31 @@ fn test_block_comment_multi_line() {
 }
 
 #[test]
+fn test_symbol_after_call_paren_is_not_annotation() {
+    // `method(:foo)` must lex as Identifier, LParen, Symbol, RParen — not as
+    // Identifier + Annotation.
+    assert_eq!(
+        tokens("method(:foo)"),
+        vec![
+            Type::Identifier("method".into()),
+            Type::LParen,
+            Type::Symbol("foo".into()),
+            Type::RParen,
+        ]
+    );
+}
+
+#[test]
+fn test_annotation_bytes_are_paren_symbol_paren() {
+    // The lexer is context-free — `(:test)` is just three tokens. The parser
+    // reconstructs an annotation at declaration position.
+    assert_eq!(
+        tokens("(:test)"),
+        vec![Type::LParen, Type::Symbol("test".into()), Type::RParen]
+    );
+}
+
+#[test]
 fn test_hex_literal() {
     assert_eq!(
         tokens("0xffcc00 0xFFCC00 0xFfCc00"),
@@ -138,7 +163,9 @@ fn test_annotation() {
     assert_eq!(
         tokens("(:test)\nfunction foo() {}"),
         vec![
-            Type::Annotation("test".into()),
+            Type::LParen,
+            Type::Symbol("test".into()),
+            Type::RParen,
             Type::Function,
             Type::Identifier("foo".into()),
             Type::LParen,

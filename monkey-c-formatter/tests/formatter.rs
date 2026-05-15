@@ -132,6 +132,27 @@ fn test_ternary_wraps_when_too_long() {
 }
 
 #[test]
+fn test_method_symbol_call() {
+    assert_eq!(
+        fmt("function f() { var cb = method(:onReceive); }"),
+        "function f() {\n    var cb = method(:onReceive);\n}"
+    );
+}
+
+#[test]
+fn test_member_method_symbol_call() {
+    let out = fmt("function f() { obj.method(:onTap); }");
+    assert!(out.contains("obj.method(:onTap);"));
+}
+
+#[test]
+fn test_top_level_annotation_preserved() {
+    let out = fmt("(:test)\nfunction foo() {}");
+    assert!(out.contains("(:test)"));
+    assert!(out.contains("function foo()"));
+}
+
+#[test]
 fn test_ternary_stays_flat_when_short() {
     let out = fmt("function f() { var x = a ? b : c; }");
     assert!(out.contains("var x = a ? b : c;"));

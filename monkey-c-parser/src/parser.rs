@@ -255,7 +255,11 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_token.clone() {
-            token::Type::Annotation(content) => self.parse_annotation_decl(start, content),
+            token::Type::LParen
+                if matches!(self.lexer.peek_token().1, token::Type::Symbol(_)) =>
+            {
+                self.parse_annotation_decl(start)
+            }
             token::Type::Class => self.parse_class_decl(start),
             token::Type::Comment(content) => self.parse_comment_decl(start, content),
             token::Type::BlockComment(content) => self.parse_block_comment_decl(start, content),
@@ -274,11 +278,26 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_annotation_decl(&mut self, start: usize, content: String) -> Result<Ast, ParserError> {
+    /// Parse a `(:Name)` annotation at a declaration position. The lexer
+    /// emits the surface bytes as `LParen`, `Symbol`, `RParen`; the parser
+    /// stitches them back together when seen at decl scope. In expression
+    /// scope the same bytes are a parenthesised symbol expression.
+    fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+        self.assert_next_token(&[token::Type::LParen])?;
+        let name = match self.current_token.clone() {
+            token::Type::Symbol(name) => name,
+            _ => {
+                return Err(self.parse_error(format!(
+                    "Expected `:Name` inside annotation, got {:?}",
+                    self.current_token
+                )));
+            }
+        };
+        self.next_token_span(); // consume the symbol
         let end = self.current_token_end;
-        self.next_token_span();
+        self.assert_next_token(&[token::Type::RParen])?;
 
-        Ok(Ast::Annotation(content, Span { start, end }))
+        Ok(Ast::Annotation(name, Span { start, end }))
     }
 
     fn parse_class_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
