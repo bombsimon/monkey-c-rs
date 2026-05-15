@@ -1,5 +1,5 @@
 use monkey_c_parser::ast::{
-    Ast, ClassDecl, ConstDecl, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
+    Ast, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -226,7 +226,82 @@ fn test_if_else() {
     let Stmt::If(s) = &f.body.stmts[0] else {
         panic!("expected if");
     };
-    assert!(s.else_branch.is_some());
+    assert!(matches!(s.else_branch, Some(ElseBranch::Block(_))));
+}
+
+#[test]
+fn test_else_if_chain() {
+    let f = first_function(
+        "function f() { if (a) { return 1; } else if (b) { return 2; } else { return 3; } }",
+    );
+    let Stmt::If(outer) = &f.body.stmts[0] else {
+        panic!("expected if");
+    };
+    let Some(ElseBranch::If(middle)) = &outer.else_branch else {
+        panic!("expected else-if");
+    };
+    assert!(matches!(middle.else_branch, Some(ElseBranch::Block(_))));
+}
+
+#[test]
+fn test_if_condition_with_member_access() {
+    let f = first_function("function f() { if (obj.flag) { return 1; } }");
+    let Stmt::If(s) = &f.body.stmts[0] else {
+        panic!("expected if");
+    };
+    assert!(matches!(s.condition, Expr::Member(_)));
+}
+
+#[test]
+fn test_dict_entry_trailing_comments_parse() {
+    let f = first_function("function f() { var x = {:a => 1, :b => 2, // note\n}; }");
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let Some(init) = &v.initializer else {
+        panic!("expected initializer");
+    };
+    let Expr::Dict(d) = init.as_ref() else {
+        panic!("expected dict");
+    };
+    assert_eq!(d.entries.len(), 2);
+    assert!(d.entries[0].trailing_comments.is_empty());
+    assert_eq!(d.entries[1].trailing_comments.len(), 1);
+    assert!(d.tail_comments.is_empty());
+}
+
+#[test]
+fn test_empty_dict_with_tail_comment_parse() {
+    let f = first_function("function f() { var x = {/* tail */}; }");
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let Some(init) = &v.initializer else {
+        panic!("expected initializer");
+    };
+    let Expr::Dict(d) = init.as_ref() else {
+        panic!("expected dict");
+    };
+    assert!(d.entries.is_empty());
+    assert_eq!(d.tail_comments.len(), 1);
+}
+
+#[test]
+fn test_if_else_with_trailing_comments() {
+    let src = "function f() {\n\
+                  if (a) { return 1; } // first\n\
+                  else if (b) { return 2; } // second\n\
+                  else { return 3; }\n\
+              }";
+    let f = first_function(src);
+    let Stmt::If(outer) = &f.body.stmts[0] else {
+        panic!("expected if");
+    };
+    assert_eq!(outer.trailing_comments.len(), 1);
+    let Some(ElseBranch::If(middle)) = &outer.else_branch else {
+        panic!("expected else-if");
+    };
+    assert_eq!(middle.trailing_comments.len(), 1);
 }
 
 #[test]

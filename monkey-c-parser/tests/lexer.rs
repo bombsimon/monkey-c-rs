@@ -101,6 +101,39 @@ fn test_comment() {
 }
 
 #[test]
+fn test_block_comment() {
+    assert_eq!(
+        tokens("/* block */ var x;"),
+        vec![
+            Type::BlockComment(" block ".into()),
+            Type::Var,
+            Type::Identifier("x".into()),
+            Type::Semicolon,
+        ]
+    );
+}
+
+#[test]
+fn test_block_comment_multi_line() {
+    assert_eq!(
+        tokens("/* line 1\n   line 2 */"),
+        vec![Type::BlockComment(" line 1\n   line 2 ".into())]
+    );
+}
+
+#[test]
+fn test_hex_literal() {
+    assert_eq!(
+        tokens("0xffcc00 0xFFCC00 0xFfCc00"),
+        vec![
+            Type::Hex("ffcc00".into()),
+            Type::Hex("FFCC00".into()),
+            Type::Hex("FfCc00".into()),
+        ]
+    );
+}
+
+#[test]
 fn test_annotation() {
     assert_eq!(
         tokens("(:test)\nfunction foo() {}"),

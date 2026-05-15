@@ -63,6 +63,9 @@ pub struct Variable {
     /// Default value (`= expr`), if present.
     pub initializer: Option<Box<Expr>>,
     pub is_static: bool,
+    /// Comments trailing this parameter in a function decl, between the value
+    /// and the next `,` / closing `)`. Empty for non-parameter uses.
+    pub trailing_comments: Vec<Stmt>,
 }
 
 /// A binary (two-operand) operator.
@@ -117,6 +120,9 @@ pub enum AssignOperator {
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
     Long(i64),
+    /// A hex-formatted integer literal (`0x…`). Stores the raw digits so the
+    /// formatter can preserve the original casing.
+    Hex(String),
     Double(f64),
     String(String),
     Boolean(bool),
@@ -141,12 +147,21 @@ pub enum Expr {
     Dict(DictExpr),
     Lit(LitExpr),
     Ident(IdentExpr),
+    /// A parenthesised sub-expression. Preserved from source so the formatter
+    /// can re-emit user-written grouping verbatim.
+    Paren(ParenExpr),
     /// The `me` keyword — reference to the current instance.
     Me(Span),
     /// The `self` keyword — reference to the current class.
     Self_(Span),
     /// The `$` bling symbol — reference to the global namespace.
     Bling(Span),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ParenExpr {
+    pub inner: Box<Expr>,
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
@@ -175,8 +190,19 @@ pub struct AssignExpr {
 #[derive(Debug, PartialEq)]
 pub struct CallExpr {
     pub callee: Box<Expr>,
-    pub args: Vec<Expr>,
+    pub args: Vec<CallArg>,
+    /// Comments inside the call parens that aren't attached to any argument
+    /// (only populated when `args` is empty).
+    pub tail_comments: Vec<Stmt>,
     pub span: Span,
+}
+
+/// A single argument inside a call or `new` expression, plus any comments that
+/// trail it (between the value and the next `,` / closing `)`).
+#[derive(Debug, PartialEq)]
+pub struct CallArg {
+    pub value: Expr,
+    pub trailing_comments: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -198,7 +224,8 @@ pub struct IndexExpr {
 pub struct NewExpr {
     /// Fully qualified class name, e.g. `MyModule.Foo`.
     pub class: Ident,
-    pub args: Vec<Expr>,
+    pub args: Vec<CallArg>,
+    pub tail_comments: Vec<Stmt>,
     pub span: Span,
 }
 
@@ -211,7 +238,10 @@ pub struct TypeCastExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
-    pub elements: Vec<Expr>,
+    pub entries: Vec<ArrayEntry>,
+    /// Comments inside the brackets that aren't attached to any entry (only
+    /// populated when `entries` is empty).
+    pub tail_comments: Vec<Stmt>,
     /// Whether the source had a trailing comma — drives the magic trailing comma
     /// formatting rule (trailing comma → always multi-line).
     pub trailing_comma: bool,
@@ -219,12 +249,28 @@ pub struct ArrayExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct ArrayEntry {
+    pub value: Expr,
+    pub trailing_comments: Vec<Stmt>,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct DictExpr {
-    pub pairs: Vec<(Expr, Expr)>,
-    /// Whether the source had a trailing comma after the last pair.
+    pub entries: Vec<DictEntry>,
+    /// Comments inside the braces that aren't attached to any entry (only
+    /// populated when `entries` is empty).
+    pub tail_comments: Vec<Stmt>,
+    /// Whether the source had a trailing comma after the last entry.
     /// See [`ArrayExpr::trailing_comma`].
     pub trailing_comma: bool,
     pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DictEntry {
+    pub key: Expr,
+    pub value: Expr,
+    pub trailing_comments: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -244,6 +290,9 @@ pub struct IdentExpr {
 pub enum Stmt {
     /// A line comment (`// …`). The string contains the raw text after `//`.
     Comment(String, Span),
+    /// A block comment (`/* … */`). The string contains the raw text between
+    /// the delimiters.
+    BlockComment(String, Span),
     Break(Span),
     Continue(Span),
     Block(BlockStmt),
@@ -266,8 +315,30 @@ pub struct BlockStmt {
 pub struct IfStmt {
     pub condition: Expr,
     pub then_branch: BlockStmt,
-    pub else_branch: Option<BlockStmt>,
+    /// Comments that appear immediately after the `}` of `then_branch`. When
+    /// `else_branch` is `Some` they sit between the closing `}` and `else`;
+    /// otherwise they trail the whole if statement. Only ever line or block
+    /// comments.
+    pub trailing_comments: Vec<Stmt>,
+    pub else_branch: Option<ElseBranch>,
     pub span: Span,
+}
+
+/// The branch following an `else` keyword — either a plain block or another
+/// `if` statement (i.e. `else if`).
+#[derive(Debug, PartialEq)]
+pub enum ElseBranch {
+    Block(BlockStmt),
+    If(Box<IfStmt>),
+}
+
+impl ElseBranch {
+    pub fn span(&self) -> &Span {
+        match self {
+            ElseBranch::Block(b) => &b.span,
+            ElseBranch::If(s) => &s.span,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -317,6 +388,9 @@ pub struct VarDecl {
 pub enum Ast {
     /// A line comment (`// …`). The string contains the raw text after `//`.
     Comment(String, Span),
+    /// A block comment (`/* … */`). The string contains the raw text between
+    /// the delimiters.
+    BlockComment(String, Span),
     /// A `(:AnnotationName)` decorator. The name is a symbol identifier.
     Annotation(Symbol, Span),
     /// The root of a parsed file.
@@ -359,6 +433,9 @@ pub struct ClassDecl {
 pub struct FunctionDecl {
     pub name: Ident,
     pub args: Vec<Variable>,
+    /// Comments inside the parameter list parens that aren't attached to any
+    /// parameter (only populated when `args` is empty).
+    pub args_tail_comments: Vec<Stmt>,
     /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
     pub body: BlockStmt,
@@ -402,6 +479,7 @@ impl Expr {
             Expr::Dict(e) => &e.span,
             Expr::Lit(e) => &e.span,
             Expr::Ident(e) => &e.span,
+            Expr::Paren(e) => &e.span,
             Expr::Me(s) | Expr::Self_(s) | Expr::Bling(s) => s,
         }
     }
@@ -418,7 +496,7 @@ impl Stmt {
             Stmt::Return(s) => &s.span,
             Stmt::Break(s) | Stmt::Continue(s) => s,
             Stmt::Var(s) => &s.span,
-            Stmt::Comment(_, s) => s,
+            Stmt::Comment(_, s) | Stmt::BlockComment(_, s) => s,
             Stmt::Expr(e) => e.span(),
         }
     }
@@ -437,7 +515,7 @@ impl Ast {
             Ast::Function(d) => Some(&d.span),
             Ast::Variable(v) => Some(&v.span),
             Ast::Const(c) => Some(&c.span),
-            Ast::Comment(_, s) | Ast::Annotation(_, s) => Some(s),
+            Ast::Comment(_, s) | Ast::BlockComment(_, s) | Ast::Annotation(_, s) => Some(s),
         }
     }
 }

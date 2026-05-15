@@ -1,7 +1,7 @@
 use crate::ast::{
-    ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallExpr, DictExpr, Expr,
-    IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr, NewExpr, Span, TypeCastExpr,
-    UnaryExpr, UnaryOperator,
+    ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
+    CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
+    NewExpr, ParenExpr, Span, Stmt, TypeCastExpr, UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -305,20 +305,12 @@ impl Parser<'_> {
 
             if self.current_token == token::Type::LParen {
                 self.next_token_span(); // consume (
-                let mut args = Vec::new();
-                if self.current_token != token::Type::RParen {
-                    loop {
-                        args.push(self.parse_expression()?);
-                        if self.current_token == token::Type::RParen {
-                            break;
-                        }
-                        self.assert_next_token(&[token::Type::Comma])?;
-                    }
-                }
+                let (args, tail_comments) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end; // end of )
                 expr = Expr::Call(CallExpr {
                     callee: Box::new(expr),
                     args,
+                    tail_comments,
                     span: Span { start, end },
                 });
                 self.assert_next_token(&[token::Type::RParen])?;
@@ -367,10 +359,16 @@ impl Parser<'_> {
     fn handle_primary_expression(&mut self, token_type: token::Type) -> Result<Expr, ParserError> {
         match token_type {
             token::Type::LParen => {
+                let start = self.current_token_start;
                 self.next_token_span();
-                let expr = self.parse_expression()?;
+                let inner = self.parse_expression()?;
+                let end = self.current_token_end;
                 self.assert_next_token(&[token::Type::RParen])?;
-                Ok(expr)
+
+                Ok(Expr::Paren(ParenExpr {
+                    inner: Box::new(inner),
+                    span: Span { start, end },
+                }))
             }
             token::Type::Identifier(name) => {
                 let start = self.current_token_start;
@@ -414,6 +412,15 @@ impl Parser<'_> {
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Long(value),
+                    span: Span { start, end },
+                }))
+            }
+            token::Type::Hex(digits) => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Lit(LitExpr {
+                    value: LiteralValue::Hex(digits),
                     span: Span { start, end },
                 }))
             }
@@ -475,17 +482,49 @@ impl Parser<'_> {
             token::Type::LBracket => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume [
-                let mut elements = Vec::new();
+                let mut entries: Vec<ArrayEntry> = Vec::new();
+                let mut tail_comments: Vec<Stmt> = Vec::new();
                 let mut trailing_comma = false;
-                while self.current_token != token::Type::RBracket {
-                    elements.push(self.parse_expression()?);
+
+                loop {
+                    let pending = self.consume_trailing_comments();
+
+                    if self.current_token == token::Type::RBracket {
+                        if let Some(last) = entries.last_mut() {
+                            last.trailing_comments.extend(pending);
+                        } else {
+                            tail_comments = pending;
+                        }
+                        break;
+                    }
+
+                    if let Some(last) = entries.last_mut() {
+                        last.trailing_comments.extend(pending);
+                    } else if !pending.is_empty() {
+                        tail_comments.extend(pending);
+                    }
+
+                    let value = self.parse_expression()?;
+                    let mut entry = ArrayEntry {
+                        value,
+                        trailing_comments: Vec::new(),
+                    };
+                    entry
+                        .trailing_comments
+                        .extend(self.consume_trailing_comments());
+
                     if self.current_token == token::Type::Comma {
                         self.next_token_span(); // consume ,
+                        entry
+                            .trailing_comments
+                            .extend(self.consume_trailing_comments());
+                        entries.push(entry);
                         if self.current_token == token::Type::RBracket {
                             trailing_comma = true;
                             break;
                         }
                     } else if self.current_token == token::Type::RBracket {
+                        entries.push(entry);
                         break;
                     } else {
                         return Err(self.parse_error(format!(
@@ -499,7 +538,8 @@ impl Parser<'_> {
                 self.next_token_span(); // consume ]
 
                 Ok(Expr::Array(ArrayExpr {
-                    elements,
+                    entries,
+                    tail_comments,
                     trailing_comma,
                     span: Span { start, end },
                 }))
@@ -507,20 +547,52 @@ impl Parser<'_> {
             token::Type::LBrace => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume {
-                let mut pairs = Vec::new();
+                let mut entries: Vec<DictEntry> = Vec::new();
+                let mut tail_comments: Vec<Stmt> = Vec::new();
                 let mut trailing_comma = false;
-                while self.current_token != token::Type::RBrace {
+
+                loop {
+                    let pending = self.consume_trailing_comments();
+
+                    if self.current_token == token::Type::RBrace {
+                        if let Some(last) = entries.last_mut() {
+                            last.trailing_comments.extend(pending);
+                        } else {
+                            tail_comments = pending;
+                        }
+                        break;
+                    }
+
+                    if let Some(last) = entries.last_mut() {
+                        last.trailing_comments.extend(pending);
+                    } else if !pending.is_empty() {
+                        tail_comments.extend(pending);
+                    }
+
                     let key = self.parse_primary()?;
                     self.assert_next_token(&[token::Type::FatArrow])?;
                     let value = self.parse_expression()?;
-                    pairs.push((key, value));
+                    let mut entry = DictEntry {
+                        key,
+                        value,
+                        trailing_comments: Vec::new(),
+                    };
+                    entry
+                        .trailing_comments
+                        .extend(self.consume_trailing_comments());
+
                     if self.current_token == token::Type::Comma {
                         self.next_token_span(); // consume ,
+                        entry
+                            .trailing_comments
+                            .extend(self.consume_trailing_comments());
+                        entries.push(entry);
                         if self.current_token == token::Type::RBrace {
                             trailing_comma = true;
                             break;
                         }
                     } else if self.current_token == token::Type::RBrace {
+                        entries.push(entry);
                         break;
                     } else {
                         return Err(self.parse_error(format!(
@@ -534,7 +606,8 @@ impl Parser<'_> {
                 self.next_token_span(); // consume }
 
                 Ok(Expr::Dict(DictExpr {
-                    pairs,
+                    entries,
+                    tail_comments,
                     trailing_comma,
                     span: Span { start, end },
                 }))
@@ -544,21 +617,13 @@ impl Parser<'_> {
                 self.next_token_span(); // consume `new`
                 let class = self.parse_dotted_identifier()?;
                 self.assert_next_token(&[token::Type::LParen])?;
-                let mut args = Vec::new();
-                if self.current_token != token::Type::RParen {
-                    loop {
-                        args.push(self.parse_expression()?);
-                        if self.current_token == token::Type::RParen {
-                            break;
-                        }
-                        self.assert_next_token(&[token::Type::Comma])?;
-                    }
-                }
+                let (args, tail_comments) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end;
                 self.assert_next_token(&[token::Type::RParen])?;
                 Ok(Expr::New(NewExpr {
                     class,
                     args,
+                    tail_comments,
                     span: Span { start, end },
                 }))
             }
@@ -566,199 +631,67 @@ impl Parser<'_> {
         }
     }
 
+    /// Parse a comma-separated list of call arguments, including trailing
+    /// comments after each value. Returns `(args, tail_comments)` where
+    /// `tail_comments` is non-empty only when `args` is empty. Does not
+    /// consume the closing delimiter.
+    pub(crate) fn parse_call_args(
+        &mut self,
+        close: token::Type,
+    ) -> Result<(Vec<CallArg>, Vec<Stmt>), ParserError> {
+        let mut args: Vec<CallArg> = Vec::new();
+        let mut tail_comments: Vec<Stmt> = Vec::new();
+
+        loop {
+            let pending = self.consume_trailing_comments();
+
+            if self.current_token == close {
+                if let Some(last) = args.last_mut() {
+                    last.trailing_comments.extend(pending);
+                } else {
+                    tail_comments = pending;
+                }
+                break;
+            }
+
+            if let Some(last) = args.last_mut() {
+                last.trailing_comments.extend(pending);
+            } else if !pending.is_empty() {
+                tail_comments.extend(pending);
+            }
+
+            let value = self.parse_expression()?;
+            let mut arg = CallArg {
+                value,
+                trailing_comments: Vec::new(),
+            };
+            arg.trailing_comments
+                .extend(self.consume_trailing_comments());
+
+            if self.current_token == token::Type::Comma {
+                self.next_token_span();
+                arg.trailing_comments
+                    .extend(self.consume_trailing_comments());
+                args.push(arg);
+                if self.current_token == close {
+                    break;
+                }
+            } else if self.current_token == close {
+                args.push(arg);
+                break;
+            } else {
+                return Err(self.parse_error(format!(
+                    "Expected ',' or '{}', got {:?}",
+                    close, self.current_token
+                )));
+            }
+        }
+
+        Ok((args, tail_comments))
+    }
+
     pub(crate) fn parse_primary(&mut self) -> Result<Expr, ParserError> {
         let token_type = self.current_token.clone();
         self.handle_primary_expression(token_type)
-    }
-
-    fn parse_primary_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let exceeded = RECURSION_DEPTH.with(|depth| {
-            let d = depth.get();
-            depth.set(d + 1);
-            d > 128
-        });
-
-        if exceeded {
-            return Err(self
-                .parse_error("Recursion limit exceeded in parse_primary_no_postfix".to_string()));
-        }
-
-        let token_type = self.current_token.clone();
-        let result = self.handle_primary_expression(token_type);
-        RECURSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
-
-        result
-    }
-
-    pub(crate) fn parse_expression_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let exceeded = RECURSION_DEPTH.with(|depth| {
-            let d = depth.get();
-            depth.set(d + 1);
-            d > 128
-        });
-
-        if exceeded {
-            return Err(self.parse_error(
-                "Recursion limit exceeded in parse_expression_no_postfix".to_string(),
-            ));
-        }
-
-        let result = self.parse_assignment_no_postfix();
-        RECURSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
-
-        result
-    }
-
-    fn parse_assignment_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_logical_or_no_postfix()?;
-        match self.current_token {
-            token::Type::Assign
-            | token::Type::AddAssign
-            | token::Type::SubAssign
-            | token::Type::MulAssign
-            | token::Type::DivAssign
-            | token::Type::ModAssign
-            | token::Type::BitAndAssign
-            | token::Type::BitOrAssign
-            | token::Type::BitXorAssign => {
-                Err(self.parse_error("Assignment not allowed in this context".to_string()))
-            }
-            _ => Ok(expr),
-        }
-    }
-
-    fn parse_logical_or_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_logical_and_no_postfix()?;
-        while self.next_token_of_type(&[token::Type::Or]) {
-            let (start, _, _) = self.next_token_span();
-            let right = self.parse_logical_and_no_postfix()?;
-            let (_, _, end) = self.lexer.peek_token();
-            expr = Expr::Binary(BinaryExpr {
-                left: Box::new(expr),
-                operator: BinaryOperator::Or,
-                right: Box::new(right),
-                span: Span { start, end },
-            });
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_logical_and_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_bitwise_or_no_postfix()?;
-        while self.next_token_of_type(&[token::Type::And]) {
-            let (start, _, _) = self.next_token_span();
-            let right = self.parse_equality_no_postfix()?;
-            let (_, _, end) = self.lexer.peek_token();
-            expr = Expr::Binary(BinaryExpr {
-                left: Box::new(expr),
-                operator: BinaryOperator::And,
-                right: Box::new(right),
-                span: Span { start, end },
-            });
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_bitwise_or_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_bitwise_xor_no_postfix()?;
-        self.handle_binary_operator(expr, &[token::Type::BitOr])
-    }
-
-    fn parse_bitwise_xor_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_bitwise_and_no_postfix()?;
-        self.handle_binary_operator(expr, &[token::Type::BitXor])
-    }
-
-    fn parse_bitwise_and_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_equality_no_postfix()?;
-        self.handle_binary_operator(expr, &[token::Type::BitAnd])
-    }
-
-    fn parse_equality_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_comparison_no_postfix()?;
-        while matches!(
-            self.current_token,
-            token::Type::EqualEqual | token::Type::BangEqual
-        ) {
-            let operator_token = self.current_token.clone();
-            let (start, _, _) = self.next_token_span();
-            let operator = match operator_token {
-                token::Type::EqualEqual => BinaryOperator::Eq,
-                token::Type::BangEqual => BinaryOperator::NotEq,
-                _ => unreachable!(),
-            };
-            let right = self.parse_comparison_no_postfix()?;
-            let (_, _, end) = self.lexer.peek_token();
-            expr = Expr::Binary(BinaryExpr {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-                span: Span { start, end },
-            });
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_comparison_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_term_no_postfix()?;
-        while matches!(
-            self.current_token,
-            token::Type::Less
-                | token::Type::LessEqual
-                | token::Type::Greater
-                | token::Type::GreaterEqual
-                | token::Type::InstanceOf
-        ) {
-            let operator_token = self.current_token.clone();
-            let (start, _, _) = self.next_token_span();
-            let operator = match operator_token {
-                token::Type::Less => BinaryOperator::Lt,
-                token::Type::LessEqual => BinaryOperator::LtEq,
-                token::Type::Greater => BinaryOperator::Gt,
-                token::Type::GreaterEqual => BinaryOperator::GtEq,
-                token::Type::InstanceOf => BinaryOperator::InstanceOf,
-                _ => unreachable!(),
-            };
-            let right = self.parse_term_no_postfix()?;
-            let (_, _, end) = self.lexer.peek_token();
-            expr = Expr::Binary(BinaryExpr {
-                left: Box::new(expr),
-                operator,
-                right: Box::new(right),
-                span: Span { start, end },
-            });
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_term_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_factor_no_postfix()?;
-        self.handle_binary_operator(expr, &[token::Type::Plus, token::Type::Minus])
-    }
-
-    fn parse_factor_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_unary_no_postfix()?;
-        self.handle_binary_operator(
-            expr,
-            &[token::Type::Star, token::Type::Slash, token::Type::Percent],
-        )
-    }
-
-    fn parse_unary_no_postfix(&mut self) -> Result<Expr, ParserError> {
-        if self.next_token_of_type(&[
-            token::Type::Minus,
-            token::Type::Bang,
-            token::Type::Tilde,
-            token::Type::PlusPlus,
-            token::Type::MinusMinus,
-        ]) {
-            self.handle_unary_operator()
-        } else {
-            self.parse_primary_no_postfix()
-        }
     }
 }

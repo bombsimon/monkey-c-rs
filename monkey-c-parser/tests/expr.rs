@@ -257,19 +257,19 @@ fn test_array_literals() {
     let Expr::Array(e) = parse_expr("[1, 2, 3]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.elements.len(), 3);
+    assert_eq!(e.entries.len(), 3);
     assert!(!e.trailing_comma, "no trailing comma");
 
     let Expr::Array(e) = parse_expr("[1, 2, 3,]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.elements.len(), 3);
+    assert_eq!(e.entries.len(), 3);
     assert!(e.trailing_comma, "trailing comma");
 
     let Expr::Array(e) = parse_expr("[]") else {
         panic!("expected Array");
     };
-    assert!(e.elements.is_empty());
+    assert!(e.entries.is_empty());
 }
 
 #[test]
@@ -277,7 +277,7 @@ fn test_dict_literals() {
     let Expr::Dict(e) = parse_expr(r#"{"key" => "value"}"#) else {
         panic!("expected Dict");
     };
-    assert_eq!(e.pairs.len(), 1);
+    assert_eq!(e.entries.len(), 1);
     assert!(!e.trailing_comma, "no trailing comma");
 
     let Expr::Dict(e) = parse_expr(r#"{"key" => "value",}"#) else {
@@ -308,12 +308,12 @@ fn test_symbol_dict_keys() {
     let Expr::Dict(e) = parse_expr(r#"{:title => "George", :name => "Taylor"}"#) else {
         panic!("expected Dict");
     };
-    assert_eq!(e.pairs.len(), 2);
+    assert_eq!(e.entries.len(), 2);
     assert!(
-        matches!(&e.pairs[0].0, Expr::Lit(l) if l.value == LiteralValue::Symbol("title".into()))
+        matches!(&e.entries[0].key, Expr::Lit(l) if l.value == LiteralValue::Symbol("title".into()))
     );
     assert!(
-        matches!(&e.pairs[1].0, Expr::Lit(l) if l.value == LiteralValue::Symbol("name".into()))
+        matches!(&e.entries[1].key, Expr::Lit(l) if l.value == LiteralValue::Symbol("name".into()))
     );
 }
 

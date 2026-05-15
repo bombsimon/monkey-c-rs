@@ -1,5 +1,11 @@
 use crate::token;
 
+enum NumberLiteral {
+    Long(String),
+    Double(String),
+    Hex(String),
+}
+
 pub struct Lexer<'a> {
     input: &'a str,
     position: usize,
@@ -69,22 +75,33 @@ impl<'a> Lexer<'a> {
         self.input[position..self.position].to_string()
     }
 
-    fn read_number(&mut self) -> (String, bool) {
+    fn read_number(&mut self) -> NumberLiteral {
         let start_position = self.position;
-        let mut is_float = false;
 
+        if self.ch == b'0' && matches!(self.peek_char(), b'x' | b'X') {
+            self.read_n_chars(2); // consume `0x`
+            let digits_start = self.position;
+            while self.ch.is_ascii_hexdigit() {
+                self.read_char();
+            }
+
+            return NumberLiteral::Hex(self.input[digits_start..self.position].to_string());
+        }
+
+        let mut is_float = false;
         while self.ch.is_ascii_digit() || self.ch == b'.' {
             if self.ch == b'.' {
                 is_float = true;
             }
-
             self.read_char();
         }
 
-        (
-            self.input[start_position..self.position].to_string(),
-            is_float,
-        )
+        let text = self.input[start_position..self.position].to_string();
+        if is_float {
+            NumberLiteral::Double(text)
+        } else {
+            NumberLiteral::Long(text)
+        }
     }
 
     fn read_string(&mut self) -> String {
@@ -121,6 +138,22 @@ impl<'a> Lexer<'a> {
         let position = self.position;
 
         while !self.is_newline_or_end() {
+            self.read_char();
+        }
+
+        self.input[position..self.position].to_string()
+    }
+
+    fn read_block_comment(&mut self) -> String {
+        let position = self.position;
+
+        while self.ch != 0 {
+            if self.ch == b'*' && self.peek_char() == b'/' {
+                let content = self.input[position..self.position].to_string();
+                self.read_n_chars(2); // consume `*/`
+
+                return content;
+            }
             self.read_char();
         }
 
@@ -191,6 +224,10 @@ impl<'a> Lexer<'a> {
                     self.read_n_chars(2);
                     let content = self.read_comment();
                     return (start, token::Type::Comment(content), self.position);
+                } else if self.peek_char() == b'*' {
+                    self.read_n_chars(2); // consume `/*`
+                    let content = self.read_block_comment();
+                    return (start, token::Type::BlockComment(content), self.position);
                 } else {
                     (token::Type::Slash, 1)
                 }
@@ -292,12 +329,12 @@ impl<'a> Lexer<'a> {
                         (token::Type::Identifier(ident), 0)
                     }
                 } else if self.ch.is_ascii_digit() {
-                    let (num, is_float) = self.read_number();
-                    if is_float {
-                        (token::Type::Double(num.parse().unwrap_or(0.0)), 0)
-                    } else {
-                        (token::Type::Long(num.parse().unwrap_or(0)), 0)
-                    }
+                    let token_type = match self.read_number() {
+                        NumberLiteral::Long(s) => token::Type::Long(s.parse().unwrap_or(0)),
+                        NumberLiteral::Double(s) => token::Type::Double(s.parse().unwrap_or(0.0)),
+                        NumberLiteral::Hex(s) => token::Type::Hex(s),
+                    };
+                    (token_type, 0)
                 } else {
                     (token::Type::Illegal, 0)
                 }

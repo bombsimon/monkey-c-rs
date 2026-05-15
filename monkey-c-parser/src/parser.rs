@@ -1,6 +1,6 @@
 use crate::ast::{
-    Ast, BlockStmt, ClassDecl, ConstDecl, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl,
-    ModuleDecl, ReturnStmt, Span, Stmt, Type, VarDecl, Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, ClassDecl, ConstDecl, ElseBranch, ForInit, ForStmt, FunctionDecl, IfStmt,
+    ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, Type, VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -92,15 +92,28 @@ impl<'a> Parser<'a> {
         expect.contains(&self.current_token)
     }
 
-    pub(crate) fn next_token_of_type(&mut self, expect: &[token::Type]) -> bool {
-        let (_, tkn, _) = self.lexer.peek_token();
-        for expected in expect {
-            if tkn == *expected {
-                return true;
-            }
+    /// Consume any line/block comment tokens at the current position and
+    /// return them as `Stmt::Comment` / `Stmt::BlockComment`. Stops at the
+    /// first non-comment token. Used to absorb trailing comments inside
+    /// delimited lists (dicts, arrays, args).
+    pub(crate) fn consume_trailing_comments(&mut self) -> Vec<Stmt> {
+        let mut comments = Vec::new();
+        loop {
+            let start = self.current_token_start;
+            let end = self.current_token_end;
+            let stmt = match self.current_token.clone() {
+                token::Type::Comment(content) => {
+                    self.next_token_span();
+                    Stmt::Comment(content, Span { start, end })
+                }
+                token::Type::BlockComment(content) => {
+                    self.next_token_span();
+                    Stmt::BlockComment(content, Span { start, end })
+                }
+                _ => return comments,
+            };
+            comments.push(stmt);
         }
-
-        false
     }
 
     pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
@@ -244,6 +257,7 @@ impl<'a> Parser<'a> {
             token::Type::Annotation(content) => self.parse_annotation_decl(start, content),
             token::Type::Class => self.parse_class_decl(start),
             token::Type::Comment(content) => self.parse_comment_decl(start, content),
+            token::Type::BlockComment(content) => self.parse_block_comment_decl(start, content),
             token::Type::Const => self.parse_const_decl(start, visibility, is_static),
             token::Type::Function => self.parse_function_decl(start, visibility, is_static),
             token::Type::Import => self.parse_import_decl(start),
@@ -271,8 +285,7 @@ impl<'a> Parser<'a> {
 
         let extends = if self.current_token == token::Type::Extends {
             self.next_token_span();
-            let n = self.parse_identifier()?;
-            self.next_token_span();
+            let n = self.parse_dotted_identifier()?;
 
             Some(n)
         } else {
@@ -310,6 +323,17 @@ impl<'a> Parser<'a> {
         self.next_token_span();
 
         Ok(Ast::Comment(content, Span { start, end }))
+    }
+
+    fn parse_block_comment_decl(
+        &mut self,
+        start: usize,
+        content: String,
+    ) -> Result<Ast, ParserError> {
+        let end = self.current_token_end;
+        self.next_token_span();
+
+        Ok(Ast::BlockComment(content, Span { start, end }))
     }
 
     fn parse_const_decl(
@@ -356,7 +380,7 @@ impl<'a> Parser<'a> {
         self.next_token_span();
         let name = self.parse_identifier()?;
         self.next_token_span();
-        let args = self.parse_function_args()?;
+        let (args, args_tail_comments) = self.parse_function_args()?;
 
         let returns = if self.current_token == token::Type::As {
             self.next_token_span();
@@ -373,6 +397,7 @@ impl<'a> Parser<'a> {
         Ok(Ast::Function(FunctionDecl {
             name,
             args,
+            args_tail_comments,
             returns,
             body,
             visibility,
@@ -443,11 +468,29 @@ impl<'a> Parser<'a> {
         Ok(Ast::Variable(var_decl))
     }
 
-    fn parse_function_args(&mut self) -> Result<Vec<Variable>, ParserError> {
+    fn parse_function_args(&mut self) -> Result<(Vec<Variable>, Vec<Stmt>), ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
-        let mut args = Vec::new();
+        let mut args: Vec<Variable> = Vec::new();
+        let mut tail_comments: Vec<Stmt> = Vec::new();
 
-        while self.current_token != token::Type::RParen {
+        loop {
+            let pending = self.consume_trailing_comments();
+
+            if self.current_token == token::Type::RParen {
+                if let Some(last) = args.last_mut() {
+                    last.trailing_comments.extend(pending);
+                } else {
+                    tail_comments = pending;
+                }
+                break;
+            }
+
+            if let Some(last) = args.last_mut() {
+                last.trailing_comments.extend(pending);
+            } else if !pending.is_empty() {
+                tail_comments.extend(pending);
+            }
+
             let name = self.parse_identifier()?;
             self.next_token_span();
 
@@ -458,17 +501,29 @@ impl<'a> Parser<'a> {
                 None
             };
 
-            args.push(Variable {
+            let mut arg = Variable {
                 name,
                 type_,
                 visibility: None,
                 initializer: None,
                 is_static: false,
-            });
+                trailing_comments: Vec::new(),
+            };
+            arg.trailing_comments
+                .extend(self.consume_trailing_comments());
 
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
-            } else if self.current_token != token::Type::RParen {
+                arg.trailing_comments
+                    .extend(self.consume_trailing_comments());
+                args.push(arg);
+                if self.current_token == token::Type::RParen {
+                    break;
+                }
+            } else if self.current_token == token::Type::RParen {
+                args.push(arg);
+                break;
+            } else {
                 return Err(self.parse_error(format!(
                     "Expected ',' or ')' in function arguments, got {:?}",
                     self.current_token
@@ -478,7 +533,7 @@ impl<'a> Parser<'a> {
 
         self.next_token_span(); // consume RParen
 
-        Ok(args)
+        Ok((args, tail_comments))
     }
 
     /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.
@@ -538,6 +593,7 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         match self.current_token.clone() {
             token::Type::Comment(content) => self.parse_comment_stmt(content),
+            token::Type::BlockComment(content) => self.parse_block_comment_stmt(content),
             token::Type::Break => self.parse_break_stmt(),
             token::Type::Continue => self.parse_continue_stmt(),
             token::Type::Var => self.parse_var_stmt(),
@@ -576,6 +632,14 @@ impl<'a> Parser<'a> {
         self.next_token_span();
 
         Ok(Stmt::Comment(content, Span { start, end }))
+    }
+
+    fn parse_block_comment_stmt(&mut self, content: String) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        let end = self.current_token_end;
+        self.next_token_span();
+
+        Ok(Stmt::BlockComment(content, Span { start, end }))
     }
 
     fn parse_continue_stmt(&mut self) -> Result<Stmt, ParserError> {
@@ -655,36 +719,56 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let inner = self.parse_if_inner()?;
+
+        Ok(Stmt::If(inner))
+    }
+
+    fn parse_if_inner(&mut self) -> Result<IfStmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span();
         self.assert_next_token(&[token::Type::LParen])?;
-        let condition = self.parse_expression_no_postfix()?;
+        let condition = self.parse_expression()?;
         self.assert_next_token(&[token::Type::RParen])?;
 
         let then_brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
         let then_branch = self.parse_block(then_brace_start)?;
 
+        let mut trailing_comments = Vec::new();
+        while matches!(
+            self.current_token,
+            token::Type::Comment(_) | token::Type::BlockComment(_)
+        ) {
+            trailing_comments.push(self.parse_statement()?);
+        }
+
         let else_branch = if self.current_token == token::Type::Else {
             self.next_token_span(); // consume `else`
-            let else_brace_start = self.current_token_start;
-            self.next_token_span(); // consume `{`
-            Some(self.parse_block(else_brace_start)?)
+            if self.current_token == token::Type::If {
+                Some(ElseBranch::If(Box::new(self.parse_if_inner()?)))
+            } else {
+                let else_brace_start = self.current_token_start;
+                self.assert_next_token(&[token::Type::LBrace])?;
+                Some(ElseBranch::Block(self.parse_block(else_brace_start)?))
+            }
         } else {
             None
         };
 
         let end = else_branch
             .as_ref()
-            .map(|b| b.span.end)
+            .map(|b| b.span().end)
+            .or_else(|| trailing_comments.last().map(|s| s.span().end))
             .unwrap_or(then_branch.span.end);
 
-        Ok(Stmt::If(IfStmt {
+        Ok(IfStmt {
             condition,
             then_branch,
+            trailing_comments,
             else_branch,
             span: Span { start, end },
-        }))
+        })
     }
 
     fn parse_return_stmt(&mut self) -> Result<Stmt, ParserError> {
@@ -723,8 +807,10 @@ impl<'a> Parser<'a> {
 
     fn parse_while_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
-        self.next_token_span();
+        self.next_token_span(); // consume `while`
+        self.assert_next_token(&[token::Type::LParen])?;
         let condition = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::RParen])?;
 
         let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;

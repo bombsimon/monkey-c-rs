@@ -109,6 +109,21 @@ fn test_if_else() {
 }
 
 #[test]
+fn test_else_if_chain() {
+    let src = "function f() { if (a) { return 1; } else if (b) { return 2; } else { return 3; } }";
+    let out = fmt(src);
+    assert!(out.contains("} else if (b) {"));
+    assert!(out.contains("} else {"));
+}
+
+#[test]
+fn test_if_condition_with_member_access() {
+    let src = "function f() { if (obj.flag) { return 1; } }";
+    let out = fmt(src);
+    assert!(out.contains("if (obj.flag)"));
+}
+
+#[test]
 fn test_for_loop() {
     let src = "function f() { for (var i = 0; i < 10; i++) { x = x + 1; } }";
     let out = fmt(src);
@@ -126,6 +141,164 @@ fn test_while_loop() {
 fn test_comment_preserved() {
     let out = fmt("// a comment\nvar x = 1;");
     assert!(out.contains("// a comment"));
+}
+
+#[test]
+fn test_block_comment_preserved() {
+    let out = fmt("/* header */\nvar x = 1;");
+    assert!(out.contains("/* header */"));
+}
+
+#[test]
+fn test_block_comment_in_function_body() {
+    let out = fmt("function f() { /* note */ var x = 1; }");
+    assert!(out.contains("/* note */"));
+}
+
+#[test]
+fn test_multiline_block_comment_aligns_close() {
+    let src = "function f() {\n    /* line 1\n       line 2 */\n    var x = 1;\n}\n";
+    let out = fmt(src);
+    // `*/` should be on its own line at the function-body indent.
+    assert!(out.contains("\n    */\n"));
+    // Should not leave `*/` dangling after content.
+    assert!(!out.contains("line 2 */"));
+}
+
+#[test]
+fn test_multiline_block_comment_at_top_level() {
+    let src = "/* header\n   text */\nfunction f() {}\n";
+    let out = fmt(src);
+    assert!(out.contains("\n*/\n"));
+}
+
+#[test]
+fn test_multiline_block_comment_nested() {
+    let src = "function f() {\n    if (x) {\n        /* a\n           b */\n        var y = 1;\n    }\n}\n";
+    let out = fmt(src);
+    // `*/` at the if-body indent (8 spaces).
+    assert!(out.contains("\n        */\n"));
+}
+
+#[test]
+fn test_hex_literal_preserves_casing() {
+    let out = fmt("var a = 0xFFCC00; var b = 0xffcc00; var c = 0xAbCdEf;");
+    assert!(out.contains("0xFFCC00"));
+    assert!(out.contains("0xffcc00"));
+    assert!(out.contains("0xAbCdEf"));
+}
+
+#[test]
+fn test_if_else_with_trailing_comments() {
+    let src = "function f() {\n\
+                  if (a) { return 1; } // first\n\
+                  else if (b) { return 2; } // second\n\
+                  else { return 3; }\n\
+              }";
+    let out = fmt(src);
+    assert!(out.contains("} // first"));
+    assert!(out.contains("} // second"));
+    assert!(out.contains("else if (b)"));
+}
+
+#[test]
+fn test_if_trailing_comment_no_else() {
+    let out = fmt("function f() { if (a) { return 1; } // tail\n}");
+    assert!(out.contains("} // tail"));
+}
+
+#[test]
+fn test_dict_entry_trailing_comment() {
+    let out = fmt("function f() { var x = {:a => 1, :b => 2, // note\n}; }");
+    assert!(out.contains(":b => 2, // note"));
+}
+
+#[test]
+fn test_array_entry_trailing_comment() {
+    let out = fmt("function f() { var x = [1, 2, // mid\n3]; }");
+    assert!(out.contains("2, // mid"));
+}
+
+#[test]
+fn test_call_arg_trailing_comment() {
+    let out = fmt("function f() { foo(1, // first\n2); }");
+    assert!(out.contains("1, // first"));
+}
+
+#[test]
+fn test_new_arg_trailing_comment() {
+    let out = fmt("function f() { var x = new Foo(1, // first\n2); }");
+    assert!(out.contains("1, // first"));
+}
+
+#[test]
+fn test_function_param_trailing_comment() {
+    let out = fmt("function foo(a, // first\nb) {}");
+    assert!(out.contains("a, // first"));
+}
+
+#[test]
+fn test_empty_dict_with_tail_comment() {
+    let out = fmt("function f() { var x = {/* nothing */}; }");
+    assert!(out.contains("/* nothing */"));
+}
+
+#[test]
+fn test_if_condition_wraps_at_logical_ops() {
+    let src = "function fn() { if (somethingVeryLong > 1 \
+               || somethingEvenLongerThisTime > 1 \
+               || somethingLongSoWeshouldBreak > 1) { var x = 1; } }";
+    let out = fmt(src);
+    // Operators lead the next line at extra indent.
+    assert!(out.contains("|| somethingEvenLongerThisTime > 1"));
+    assert!(out.contains("|| somethingLongSoWeshouldBreak > 1)"));
+    // `{` migrates to its own line when the condition wraps.
+    assert!(out.contains(")\n    {"));
+}
+
+#[test]
+fn test_if_condition_stays_flat_when_short() {
+    let out = fmt("function f() { if (a || b) { return 1; } }");
+    assert!(out.contains("if (a || b) {"));
+    // No newline before `{`.
+    assert!(!out.contains(")\n    {"));
+}
+
+#[test]
+fn test_parens_preserved_for_required_grouping() {
+    // (a + b) * c must keep parens — different value otherwise.
+    let out = fmt("function f() { var x = (a + b) * c; }");
+    assert!(out.contains("(a + b) * c"));
+}
+
+#[test]
+fn test_parens_preserved_when_redundant() {
+    // We preserve user intent rather than stripping.
+    let out = fmt("function f() { var x = (a - b) - c; }");
+    assert!(out.contains("(a - b) - c"));
+}
+
+#[test]
+fn test_nested_parens_preserved() {
+    let out = fmt("function f() { var x = (((a.b) * 91 / 360) * c); }");
+    assert!(out.contains("(((a.b) * 91 / 360) * c)"));
+}
+
+#[test]
+fn test_while_condition_no_double_parens() {
+    let out = fmt("function f() { while (x > 0) { x = x - 1; } }");
+    assert!(out.contains("while (x > 0)"));
+    assert!(!out.contains("while ((x > 0))"));
+}
+
+#[test]
+fn test_if_condition_wraps_on_and_chain() {
+    let src = "function f() { if (longConditionOne > 1 \
+               && longConditionTwo > 1 \
+               && longConditionThree > 1) { return 1; } }";
+    let out = fmt(src);
+    assert!(out.contains("&& longConditionTwo > 1"));
+    assert!(out.contains("&& longConditionThree > 1)"));
 }
 
 #[test]

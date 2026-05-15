@@ -43,6 +43,9 @@ pub enum Type {
 
     // Literals
     Long(i64),
+    /// A hex integer literal — stores the raw digits between `0x` and the end
+    /// of the token (case preserved).
+    Hex(String),
     Double(f64),
     String(String),
     Boolean(bool),
@@ -60,6 +63,7 @@ pub enum Type {
 
     // Comments and Annotations
     Comment(String),
+    BlockComment(String),
     Annotation(String),
 
     // Operators
@@ -151,6 +155,7 @@ impl std::fmt::Display for Type {
             Type::New => write!(f, "new"),
             Type::InstanceOf => write!(f, "instanceof"),
             Type::Long(n) => write!(f, "{}", n),
+            Type::Hex(s) => write!(f, "0x{}", s),
             Type::Double(n) => write!(f, "{}", n),
             Type::String(s) => write!(f, "{}", s),
             Type::Boolean(b) => write!(f, "{}", b),
@@ -162,6 +167,7 @@ impl std::fmt::Display for Type {
             Type::Bling => write!(f, "$"),
             Type::Symbol(s) => write!(f, ":{s}"),
             Type::Comment(s) => write!(f, "//{}", s),
+            Type::BlockComment(s) => write!(f, "/*{}*/", s),
             Type::Annotation(s) => write!(f, "@{}", s),
             Type::Plus => write!(f, "+"),
             Type::Minus => write!(f, "-"),
