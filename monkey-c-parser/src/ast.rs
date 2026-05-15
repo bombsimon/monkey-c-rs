@@ -85,7 +85,9 @@ pub enum BinaryOperator {
     InstanceOf, // instanceof
     Has,        // has
     And,        // &&
+    AndKeyword, // and
     Or,         // ||
+    OrKeyword,  // or
     BitAnd,     // &
     BitOr,      // |
     BitXor,     // ^

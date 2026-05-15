@@ -150,6 +150,17 @@ fn test_new_array_size_expression() {
 }
 
 #[test]
+fn test_and_or_keywords_preserve_source_form() {
+    // Source form is preserved: `and`/`or` stay as keywords, `&&`/`||` stay
+    // as symbols.
+    let kw = fmt("function f() { if (a and b or c) { x; } }");
+    assert!(kw.contains("a and b or c"));
+
+    let sym = fmt("function f() { if (a && b || c) { x; } }");
+    assert!(sym.contains("a && b || c"));
+}
+
+#[test]
 fn test_has_operator() {
     let out = fmt("function f() { if (WatchUI has :WatchFaceDelegate) { foo(); } }");
     assert!(out.contains("if (WatchUI has :WatchFaceDelegate)"));

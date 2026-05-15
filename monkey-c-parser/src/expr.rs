@@ -88,7 +88,9 @@ impl Parser<'_> {
         let (start, _, _) = self.next_token_span();
         let operator = match operator_token {
             token::Type::Or => BinaryOperator::Or,
+            token::Type::OrKeyword => BinaryOperator::OrKeyword,
             token::Type::And => BinaryOperator::And,
+            token::Type::AndKeyword => BinaryOperator::AndKeyword,
             _ => unreachable!(),
         };
         let right = self.parse_logical_and()?;
@@ -103,8 +105,9 @@ impl Parser<'_> {
 
     fn parse_logical_or(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_logical_and()?;
-        while self.current_token == token::Type::Or {
-            expr = self.handle_logical_operator(expr, token::Type::Or)?;
+        while matches!(self.current_token, token::Type::Or | token::Type::OrKeyword) {
+            let tok = self.current_token.clone();
+            expr = self.handle_logical_operator(expr, tok)?;
         }
 
         Ok(expr)
@@ -112,8 +115,12 @@ impl Parser<'_> {
 
     fn parse_logical_and(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.parse_bitwise_or()?;
-        while self.current_token == token::Type::And {
-            expr = self.handle_logical_operator(expr, token::Type::And)?;
+        while matches!(
+            self.current_token,
+            token::Type::And | token::Type::AndKeyword
+        ) {
+            let tok = self.current_token.clone();
+            expr = self.handle_logical_operator(expr, tok)?;
         }
 
         Ok(expr)
@@ -776,8 +783,10 @@ impl Parser<'_> {
         let mut params = Vec::new();
         if self.current_token != token::Type::Greater {
             params.push(self.parse_simple_type()?);
-            while self.current_token == token::Type::Comma || self.current_token == token::Type::Or
-            {
+            while matches!(
+                self.current_token,
+                token::Type::Comma | token::Type::OrKeyword
+            ) {
                 self.next_token_span();
                 params.push(self.parse_simple_type()?);
             }

@@ -367,7 +367,13 @@ impl Formatter {
     /// chain at line width. Other expressions delegate to `expr_to_doc`.
     fn condition_to_doc(&self, expr: &Expr) -> Doc {
         if let Expr::Binary(e) = expr {
-            if matches!(e.operator, BinaryOperator::Or | BinaryOperator::And) {
+            if matches!(
+                e.operator,
+                BinaryOperator::Or
+                    | BinaryOperator::OrKeyword
+                    | BinaryOperator::And
+                    | BinaryOperator::AndKeyword
+            ) {
                 let op_str = format!("{} ", operators::binary_op(&e.operator));
                 let mut operands: Vec<&Expr> = Vec::new();
                 collect_logical_chain(expr, &e.operator, &mut operands);

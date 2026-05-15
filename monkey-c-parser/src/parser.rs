@@ -166,7 +166,7 @@ impl<'a> Parser<'a> {
     /// Use this for variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type()?;
-        while self.current_token == token::Type::Or {
+        while self.current_token == token::Type::OrKeyword {
             self.next_token_span(); // consume `or`
             ty.alternatives.push(self.parse_simple_type()?);
         }
@@ -220,7 +220,10 @@ impl<'a> Parser<'a> {
     /// Returns `true` if the current token is a type-separator inside a generic
     /// parameter list: either `,` or the contextual keyword `or`.
     fn is_type_separator(&self) -> bool {
-        matches!(self.current_token, token::Type::Comma | token::Type::Or)
+        matches!(
+            self.current_token,
+            token::Type::Comma | token::Type::OrKeyword
+        )
     }
 
     fn parse_declaration(&mut self) -> Result<Ast, ParserError> {
