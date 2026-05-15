@@ -95,6 +95,11 @@ impl Formatter {
             Ast::Import(decl) => Doc::concat(vec![
                 Doc::text("import "),
                 Doc::text(&decl.name),
+                Doc::text(";"),
+            ]),
+            Ast::Using(decl) => Doc::concat(vec![
+                Doc::text("using "),
+                Doc::text(&decl.name),
                 decl.alias
                     .as_ref()
                     .map(|a| Doc::concat(vec![Doc::text(" as "), Doc::text(a)]))

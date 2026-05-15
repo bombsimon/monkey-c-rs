@@ -396,6 +396,7 @@ pub enum Ast {
     /// The root of a parsed file.
     Document(Vec<Ast>),
     Import(ImportDecl),
+    Using(UsingDecl),
     Module(ModuleDecl),
     Class(ClassDecl),
     Function(FunctionDecl),
@@ -404,11 +405,21 @@ pub enum Ast {
     Eof,
 }
 
+/// An `import Toybox.Lang;` declaration. `import` brings a module suffix and
+/// all of its classes into the type namespace; it does not support aliasing.
 #[derive(Debug, PartialEq)]
 pub struct ImportDecl {
     /// Fully qualified import path, e.g. `Toybox.WatchUi`.
     pub name: Ident,
-    /// Optional `as Alias`.
+    pub span: Span,
+}
+
+/// A `using Toybox.Lang;` or `using Toybox.Lang as Lng;` declaration.
+/// `using` brings the module suffix into the file's namespace, optionally
+/// under an alias.
+#[derive(Debug, PartialEq)]
+pub struct UsingDecl {
+    pub name: Ident,
     pub alias: Option<Ident>,
     pub span: Span,
 }
@@ -510,6 +521,7 @@ impl Ast {
         match self {
             Ast::Document(_) | Ast::Eof => None,
             Ast::Import(d) => Some(&d.span),
+            Ast::Using(d) => Some(&d.span),
             Ast::Module(d) => Some(&d.span),
             Ast::Class(d) => Some(&d.span),
             Ast::Function(d) => Some(&d.span),

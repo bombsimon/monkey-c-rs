@@ -86,10 +86,15 @@ fn test_import() {
 }
 
 #[test]
-fn test_import_with_alias() {
+fn test_using() {
+    assert_eq!(fmt("using Toybox.Lang;"), "using Toybox.Lang;");
+}
+
+#[test]
+fn test_using_with_alias() {
     assert_eq!(
-        fmt("import Toybox.WatchUi as WatchUi;"),
-        "import Toybox.WatchUi as WatchUi;"
+        fmt("using Toybox.Lang as Lng;"),
+        "using Toybox.Lang as Lng;"
     );
 }
 

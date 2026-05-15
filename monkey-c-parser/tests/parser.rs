@@ -161,13 +161,36 @@ fn test_imports() {
         panic!("expected import");
     };
     assert_eq!(d.name, "Toybox.WatchUi");
+}
+
+#[test]
+fn test_import_rejects_alias() {
+    // `import` doesn't support aliasing — only `using` does.
+    let err = Parser::new("import Toybox.WatchUi as WatchUi;")
+        .parse()
+        .expect_err("should fail");
+    assert!(
+        err.message.contains("Semicolon") || err.message.to_lowercase().contains("as"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_using() {
+    let nodes = document_nodes("using Toybox.Lang;");
+    let Ast::Using(d) = &nodes[0] else {
+        panic!("expected using");
+    };
+    assert_eq!(d.name, "Toybox.Lang");
     assert!(d.alias.is_none());
 
-    let nodes = document_nodes("import Toybox.WatchUi as WatchUi;");
-    let Ast::Import(d) = &nodes[0] else {
-        panic!("expected import");
+    let nodes = document_nodes("using Toybox.Lang as Lng;");
+    let Ast::Using(d) = &nodes[0] else {
+        panic!("expected using");
     };
-    assert_eq!(d.alias.as_deref(), Some("WatchUi"));
+    assert_eq!(d.name, "Toybox.Lang");
+    assert_eq!(d.alias.as_deref(), Some("Lng"));
 }
 
 #[test]

@@ -1,6 +1,7 @@
 use crate::ast::{
     Ast, BlockStmt, ClassDecl, ConstDecl, ElseBranch, ForInit, ForStmt, FunctionDecl, IfStmt,
-    ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, Type, VarDecl, Variable, Visibility, WhileStmt,
+    ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, Type, UsingDecl, VarDecl, Variable, Visibility,
+    WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -261,6 +262,7 @@ impl<'a> Parser<'a> {
             token::Type::Const => self.parse_const_decl(start, visibility, is_static),
             token::Type::Function => self.parse_function_decl(start, visibility, is_static),
             token::Type::Import => self.parse_import_decl(start),
+            token::Type::Using => self.parse_using_decl(start),
             token::Type::Module => self.parse_module_decl(start),
             token::Type::Var => self.parse_var_decl(start, visibility, is_static),
             token::Type::Eof => Ok(Ast::Eof),
@@ -407,7 +409,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_import_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
-        self.next_token_span();
+        self.next_token_span(); // consume `import`
+        let name = self.parse_dotted_identifier()?;
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Ast::Import(ImportDecl {
+            name,
+            span: Span {
+                start,
+                end: semi_end,
+            },
+        }))
+    }
+
+    fn parse_using_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+        self.next_token_span(); // consume `using`
         let name = self.parse_dotted_identifier()?;
         let alias = if self.current_token == token::Type::As {
             self.next_token_span(); // consume `as`
@@ -420,7 +437,7 @@ impl<'a> Parser<'a> {
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
-        Ok(Ast::Import(ImportDecl {
+        Ok(Ast::Using(UsingDecl {
             name,
             alias,
             span: Span {
