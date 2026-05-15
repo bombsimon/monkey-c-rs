@@ -170,6 +170,14 @@ fn test_operator_precedence() {
 }
 
 #[test]
+fn test_has_operator() {
+    let Expr::Binary(e) = parse_expr("WatchUI has :WatchFaceDelegate") else {
+        panic!("expected Binary");
+    };
+    assert_eq!(e.operator, BinaryOperator::Has);
+}
+
+#[test]
 fn test_precedence_parens_override() {
     // (1 + 2) * 3 → Mul((1+2), 3)
     let Expr::Binary(e) = parse_expr("(1 + 2) * 3") else {

@@ -83,6 +83,7 @@ pub enum BinaryOperator {
     Gt,         // >
     GtEq,       // >=
     InstanceOf, // instanceof
+    Has,        // has
     And,        // &&
     Or,         // ||
     BitAnd,     // &

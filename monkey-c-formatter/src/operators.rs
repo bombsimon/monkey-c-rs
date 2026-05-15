@@ -18,6 +18,7 @@ pub(crate) fn binary_op(op: &BinaryOperator) -> &'static str {
         BinaryOperator::Gt => ">",
         BinaryOperator::GtEq => ">=",
         BinaryOperator::InstanceOf => "instanceof",
+        BinaryOperator::Has => "has",
         BinaryOperator::And => "&&",
         BinaryOperator::Or => "||",
         BinaryOperator::BitAnd => "&",

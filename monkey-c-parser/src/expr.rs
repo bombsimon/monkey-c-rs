@@ -176,6 +176,7 @@ impl Parser<'_> {
                 | token::Type::Greater
                 | token::Type::GreaterEqual
                 | token::Type::InstanceOf
+                | token::Type::Has
         ) {
             let operator_token = self.current_token.clone();
             let (start, _, _) = self.next_token_span();
@@ -185,6 +186,7 @@ impl Parser<'_> {
                 token::Type::Greater => BinaryOperator::Gt,
                 token::Type::GreaterEqual => BinaryOperator::GtEq,
                 token::Type::InstanceOf => BinaryOperator::InstanceOf,
+                token::Type::Has => BinaryOperator::Has,
                 _ => unreachable!(),
             };
             let right = self.parse_term()?;

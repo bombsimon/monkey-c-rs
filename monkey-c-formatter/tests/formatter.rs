@@ -132,6 +132,12 @@ fn test_ternary_wraps_when_too_long() {
 }
 
 #[test]
+fn test_has_operator() {
+    let out = fmt("function f() { if (WatchUI has :WatchFaceDelegate) { foo(); } }");
+    assert!(out.contains("if (WatchUI has :WatchFaceDelegate)"));
+}
+
+#[test]
 fn test_try_catch_basic() {
     let out = fmt("function f() { try { foo(); } catch (e) { log(e); } }");
     assert!(out.contains("try {"));
