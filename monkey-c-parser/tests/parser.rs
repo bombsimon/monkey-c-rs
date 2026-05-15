@@ -177,6 +177,58 @@ fn test_import_rejects_alias() {
 }
 
 #[test]
+fn test_try_catch() {
+    let f = first_function("function f() { try { foo(); } catch (e) { log(e); } }");
+    let Stmt::Try(t) = &f.body.stmts[0] else {
+        panic!("expected try");
+    };
+    assert_eq!(t.catches.len(), 1);
+    assert_eq!(t.catches[0].binding, "e");
+    assert!(t.catches[0].type_filter.is_none());
+    assert!(t.finally.is_none());
+}
+
+#[test]
+fn test_try_catch_typed_and_finally() {
+    let src = "function f() { \
+                  try { foo(); } \
+                  catch (e instanceof MyException) { log(e); } \
+                  catch (e) { other(e); } \
+                  finally { cleanup(); } \
+              }";
+    let f = first_function(src);
+    let Stmt::Try(t) = &f.body.stmts[0] else {
+        panic!("expected try");
+    };
+    assert_eq!(t.catches.len(), 2);
+    let filter = t.catches[0]
+        .type_filter
+        .as_ref()
+        .expect("first catch should be typed");
+    assert_eq!(filter.ident, "MyException");
+    assert!(t.catches[1].type_filter.is_none());
+    assert!(t.finally.is_some());
+}
+
+#[test]
+fn test_try_without_catch_or_finally_fails() {
+    let err = Parser::new("function f() { try { foo(); } }")
+        .parse()
+        .expect_err("should fail");
+    assert!(
+        err.message.contains("catch") || err.message.contains("finally"),
+        "unexpected error: {}",
+        err.message
+    );
+}
+
+#[test]
+fn test_throw() {
+    let f = first_function("function f() { throw new Lang.Exception(); }");
+    assert!(matches!(&f.body.stmts[0], Stmt::Throw(_)));
+}
+
+#[test]
 fn test_ternary() {
     let f = first_function("function f() { var x = true ? 1 : 2; }");
     let Stmt::Var(v) = &f.body.stmts[0] else {

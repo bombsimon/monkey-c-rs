@@ -132,6 +132,33 @@ fn test_ternary_wraps_when_too_long() {
 }
 
 #[test]
+fn test_try_catch_basic() {
+    let out = fmt("function f() { try { foo(); } catch (e) { log(e); } }");
+    assert!(out.contains("try {"));
+    assert!(out.contains("} catch (e) {"));
+}
+
+#[test]
+fn test_try_catch_typed_and_finally() {
+    let src = "function f() { \
+                  try { foo(); } \
+                  catch (e instanceof MyException) { log(e); } \
+                  catch (e) { other(e); } \
+                  finally { cleanup(); } \
+              }";
+    let out = fmt(src);
+    assert!(out.contains("} catch (e instanceof MyException) {"));
+    assert!(out.contains("} catch (e) {"));
+    assert!(out.contains("} finally {"));
+}
+
+#[test]
+fn test_throw() {
+    let out = fmt("function f() { throw new Lang.Exception(); }");
+    assert!(out.contains("throw new Lang.Exception();"));
+}
+
+#[test]
 fn test_method_symbol_call() {
     assert_eq!(
         fmt("function f() { var cb = method(:onReceive); }"),

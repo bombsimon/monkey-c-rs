@@ -4,7 +4,7 @@ mod operators;
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
     ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, ConstDecl, DictEntry, ElseBranch, Expr,
-    ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt, Type, VarDecl, Visibility,
+    ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt, TryStmt, Type, VarDecl, Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
@@ -409,6 +409,28 @@ impl Formatter {
         ])
     }
 
+    fn try_stmt_to_doc(&self, s: &TryStmt) -> Doc {
+        let mut parts = vec![Doc::text("try"), self.block_to_doc(&s.body)];
+
+        for catch in &s.catches {
+            let mut header = vec![Doc::text(" catch ("), Doc::text(&catch.binding)];
+            if let Some(ty) = &catch.type_filter {
+                header.push(Doc::text(" instanceof "));
+                header.push(Self::type_to_doc(ty));
+            }
+            header.push(Doc::text(")"));
+            parts.push(Doc::Concat(header));
+            parts.push(self.block_to_doc(&catch.body));
+        }
+
+        if let Some(f) = &s.finally {
+            parts.push(Doc::text(" finally"));
+            parts.push(self.block_to_doc(f));
+        }
+
+        Doc::Concat(parts)
+    }
+
     fn block_body_to_doc(&self, block: &BlockStmt) -> Doc {
         if block.stmts.is_empty() {
             return Doc::text("{}");
@@ -505,6 +527,12 @@ impl Formatter {
 
             Stmt::Break(_) => Doc::text("break;"),
             Stmt::Continue(_) => Doc::text("continue;"),
+            Stmt::Throw(s) => Doc::concat(vec![
+                Doc::text("throw "),
+                self.expr_to_doc(&s.value),
+                Doc::text(";"),
+            ]),
+            Stmt::Try(s) => self.try_stmt_to_doc(s),
             Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Stmt::Comment(text, _) => Doc::text(format!("//{}", text)),
             Stmt::BlockComment(text, _) => self.block_comment_to_doc(text),

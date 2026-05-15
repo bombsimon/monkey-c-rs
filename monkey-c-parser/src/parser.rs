@@ -1,7 +1,7 @@
 use crate::ast::{
-    Ast, BlockStmt, ClassDecl, ConstDecl, ElseBranch, ForInit, ForStmt, FunctionDecl, IfStmt,
-    ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, Type, TypedefDecl, UsingDecl, VarDecl,
-    Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, CatchClause, ClassDecl, ConstDecl, ElseBranch, ForInit, ForStmt, FunctionDecl,
+    IfStmt, ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, ThrowStmt, TryStmt, Type, TypedefDecl,
+    UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -255,9 +255,7 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_token.clone() {
-            token::Type::LParen
-                if matches!(self.lexer.peek_token().1, token::Type::Symbol(_)) =>
-            {
+            token::Type::LParen if matches!(self.lexer.peek_token().1, token::Type::Symbol(_)) => {
                 self.parse_annotation_decl(start)
             }
             token::Type::Class => self.parse_class_decl(start),
@@ -657,6 +655,8 @@ impl<'a> Parser<'a> {
             token::Type::If => self.parse_if_stmt(),
             token::Type::While => self.parse_while_stmt(),
             token::Type::For => self.parse_for_stmt(),
+            token::Type::Try => self.parse_try_stmt(),
+            token::Type::Throw => self.parse_throw_stmt(),
             token::Type::LBrace => self.parse_block_stmt(),
             _ => self.parse_expr_stmt(),
         }
@@ -845,6 +845,90 @@ impl<'a> Parser<'a> {
                 end: semi_end,
             },
         }))
+    }
+
+    fn parse_throw_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span(); // consume `throw`
+        let value = self.parse_expression()?;
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Stmt::Throw(ThrowStmt {
+            value,
+            span: Span {
+                start,
+                end: semi_end,
+            },
+        }))
+    }
+
+    fn parse_try_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span(); // consume `try`
+
+        let body_brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_block(body_brace_start)?;
+
+        let mut catches = Vec::new();
+        while self.current_token == token::Type::Catch {
+            catches.push(self.parse_catch_clause()?);
+        }
+
+        let finally = if self.current_token == token::Type::Finally {
+            self.next_token_span(); // consume `finally`
+            let brace_start = self.current_token_start;
+            self.assert_next_token(&[token::Type::LBrace])?;
+            Some(self.parse_block(brace_start)?)
+        } else {
+            None
+        };
+
+        if catches.is_empty() && finally.is_none() {
+            return Err(self.parse_error(
+                "`try` block must be followed by at least one `catch` or `finally`".to_string(),
+            ));
+        }
+
+        let end = finally
+            .as_ref()
+            .map(|b| b.span.end)
+            .or_else(|| catches.last().map(|c| c.span.end))
+            .unwrap_or(body.span.end);
+
+        Ok(Stmt::Try(TryStmt {
+            body,
+            catches,
+            finally,
+            span: Span { start, end },
+        }))
+    }
+
+    fn parse_catch_clause(&mut self) -> Result<CatchClause, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span(); // consume `catch`
+        self.assert_next_token(&[token::Type::LParen])?;
+        let binding = self.parse_identifier()?;
+        self.next_token_span(); // advance past identifier
+        let type_filter = if self.current_token == token::Type::InstanceOf {
+            self.next_token_span(); // consume `instanceof`
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        self.assert_next_token(&[token::Type::RParen])?;
+        let brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_block(brace_start)?;
+        let end = body.span.end;
+
+        Ok(CatchClause {
+            binding,
+            type_filter,
+            body,
+            span: Span { start, end },
+        })
     }
 
     fn parse_var_stmt(&mut self) -> Result<Stmt, ParserError> {

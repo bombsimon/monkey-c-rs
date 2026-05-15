@@ -311,6 +311,8 @@ pub enum Stmt {
     While(WhileStmt),
     For(ForStmt),
     Return(ReturnStmt),
+    Try(TryStmt),
+    Throw(ThrowStmt),
     Var(VarDecl),
     /// A bare expression used as a statement (e.g. an assignment or call).
     Expr(Expr),
@@ -378,6 +380,32 @@ pub struct ForStmt {
 #[derive(Debug, PartialEq)]
 pub struct ReturnStmt {
     pub value: Option<Expr>,
+    pub span: Span,
+}
+
+/// A `try` statement: `try { … } catch (…) { … }` with optional `finally`.
+#[derive(Debug, PartialEq)]
+pub struct TryStmt {
+    pub body: BlockStmt,
+    pub catches: Vec<CatchClause>,
+    pub finally: Option<BlockStmt>,
+    pub span: Span,
+}
+
+/// A single `catch (binding [instanceof Type]) { … }` arm of a try statement.
+#[derive(Debug, PartialEq)]
+pub struct CatchClause {
+    pub binding: Ident,
+    /// Type filter from `catch (e instanceof Type)`; `None` means catch-all.
+    pub type_filter: Option<Type>,
+    pub body: BlockStmt,
+    pub span: Span,
+}
+
+/// A `throw <expr>;` statement.
+#[derive(Debug, PartialEq)]
+pub struct ThrowStmt {
+    pub value: Expr,
     pub span: Span,
 }
 
@@ -528,6 +556,8 @@ impl Stmt {
             Stmt::While(s) => &s.span,
             Stmt::For(s) => &s.span,
             Stmt::Return(s) => &s.span,
+            Stmt::Try(s) => &s.span,
+            Stmt::Throw(s) => &s.span,
             Stmt::Break(s) | Stmt::Continue(s) => s,
             Stmt::Var(s) => &s.span,
             Stmt::Comment(_, s) | Stmt::BlockComment(_, s) => s,
