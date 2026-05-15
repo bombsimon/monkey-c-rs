@@ -626,6 +626,21 @@ impl Formatter {
                 ),
             ]),
 
+            Expr::NewArray(e) => {
+                let mut parts = vec![Doc::text("new")];
+                if let Some(ty) = &e.element_type {
+                    parts.push(Doc::text(" "));
+                    parts.push(Self::type_to_doc(ty));
+                } else {
+                    parts.push(Doc::text(" "));
+                }
+                parts.push(Doc::text("["));
+                parts.push(self.expr_to_doc(&e.size));
+                parts.push(Doc::text("]"));
+
+                Doc::Concat(parts)
+            }
+
             Expr::TypeCast(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.expr),
                 Doc::text(" as "),

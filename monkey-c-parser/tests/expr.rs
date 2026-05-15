@@ -170,6 +170,33 @@ fn test_operator_precedence() {
 }
 
 #[test]
+fn test_new_array_untyped() {
+    let Expr::NewArray(e) = parse_expr("new [size]") else {
+        panic!("expected NewArray");
+    };
+    assert!(e.element_type.is_none());
+}
+
+#[test]
+fn test_new_array_typed() {
+    let Expr::NewArray(e) = parse_expr("new Array<Number>[size]") else {
+        panic!("expected NewArray");
+    };
+    let ty = e.element_type.expect("typed array");
+    assert_eq!(ty.ident, "Array");
+    assert_eq!(ty.generic_params.len(), 1);
+    assert_eq!(ty.generic_params[0].ident, "Number");
+}
+
+#[test]
+fn test_new_array_size_is_expression() {
+    let Expr::NewArray(e) = parse_expr("new [20 + 30]") else {
+        panic!("expected NewArray");
+    };
+    assert!(matches!(*e.size, Expr::Binary(_)));
+}
+
+#[test]
 fn test_has_operator() {
     let Expr::Binary(e) = parse_expr("WatchUI has :WatchFaceDelegate") else {
         panic!("expected Binary");

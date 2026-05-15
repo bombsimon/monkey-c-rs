@@ -179,7 +179,7 @@ impl<'a> Parser<'a> {
     ///
     /// Used for generic parameter lists where `or` is a param separator, not a
     /// union operator: `Array<Number or Float>` → two params, not one union.
-    fn parse_simple_type(&mut self) -> Result<Type, ParserError> {
+    pub(crate) fn parse_simple_type(&mut self) -> Result<Type, ParserError> {
         let ident = self.parse_identifier()?;
         if self.current_token != token::Type::Less {
             self.next_token_span();

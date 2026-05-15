@@ -132,6 +132,24 @@ fn test_ternary_wraps_when_too_long() {
 }
 
 #[test]
+fn test_new_array_untyped() {
+    let out = fmt("function f() { var a = new [size]; }");
+    assert!(out.contains("var a = new [size];"));
+}
+
+#[test]
+fn test_new_array_typed() {
+    let out = fmt("function f() { var a = new Array<Number>[size]; }");
+    assert!(out.contains("var a = new Array<Number>[size];"));
+}
+
+#[test]
+fn test_new_array_size_expression() {
+    let out = fmt("function f() { var a = new [20 + 30]; }");
+    assert!(out.contains("var a = new [20 + 30];"));
+}
+
+#[test]
 fn test_has_operator() {
     let out = fmt("function f() { if (WatchUI has :WatchFaceDelegate) { foo(); } }");
     assert!(out.contains("if (WatchUI has :WatchFaceDelegate)"));

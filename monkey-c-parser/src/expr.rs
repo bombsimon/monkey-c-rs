@@ -1,7 +1,8 @@
 use crate::ast::{
     ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
     CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
-    NewExpr, ParenExpr, Span, Stmt, TernaryExpr, TypeCastExpr, UnaryExpr, UnaryOperator,
+    NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type, TypeCastExpr, UnaryExpr,
+    UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -641,11 +642,44 @@ impl Parser<'_> {
             token::Type::New => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume `new`
+
+                // `new [size]` — untyped array allocation.
+                if self.current_token == token::Type::LBracket {
+                    return self.parse_new_array(start, None);
+                }
+
+                // Type follows. Could be `new Foo.Bar(...)` or `new Array<T>[size]`.
                 let class = self.parse_dotted_identifier()?;
+                let generic_params = if self.current_token == token::Type::Less {
+                    self.parse_generic_params()?
+                } else {
+                    Vec::new()
+                };
+
+                // `new Type<T>[size]` — typed array allocation.
+                if self.current_token == token::Type::LBracket {
+                    let element_type = Type {
+                        ident: class,
+                        generic_params,
+                        alternatives: Vec::new(),
+                        optional: false,
+                    };
+
+                    return self.parse_new_array(start, Some(element_type));
+                }
+
+                if !generic_params.is_empty() {
+                    return Err(self.parse_error(
+                        "Generic parameters on `new` are only valid for array allocation"
+                            .to_string(),
+                    ));
+                }
+
                 self.assert_next_token(&[token::Type::LParen])?;
                 let (args, tail_comments) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end;
                 self.assert_next_token(&[token::Type::RParen])?;
+
                 Ok(Expr::New(NewExpr {
                     class,
                     args,
@@ -714,6 +748,43 @@ impl Parser<'_> {
         }
 
         Ok((args, tail_comments))
+    }
+
+    /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new`
+    /// (and optional type) has already been consumed by the caller.
+    fn parse_new_array(
+        &mut self,
+        start: usize,
+        element_type: Option<Type>,
+    ) -> Result<Expr, ParserError> {
+        self.assert_next_token(&[token::Type::LBracket])?;
+        let size = self.parse_expression()?;
+        let end = self.current_token_end;
+        self.assert_next_token(&[token::Type::RBracket])?;
+
+        Ok(Expr::NewArray(NewArrayExpr {
+            element_type,
+            size: Box::new(size),
+            span: Span { start, end },
+        }))
+    }
+
+    /// Parse a generic parameter list `<T, U, ...>` and return the params.
+    /// The leading `<` is the current token on entry.
+    fn parse_generic_params(&mut self) -> Result<Vec<Type>, ParserError> {
+        self.next_token_span(); // consume `<`
+        let mut params = Vec::new();
+        if self.current_token != token::Type::Greater {
+            params.push(self.parse_simple_type()?);
+            while self.current_token == token::Type::Comma || self.current_token == token::Type::Or
+            {
+                self.next_token_span();
+                params.push(self.parse_simple_type()?);
+            }
+        }
+        self.assert_next_token(&[token::Type::Greater])?;
+
+        Ok(params)
     }
 
     pub(crate) fn parse_primary(&mut self) -> Result<Expr, ParserError> {

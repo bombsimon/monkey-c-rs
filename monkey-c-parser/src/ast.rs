@@ -144,6 +144,7 @@ pub enum Expr {
     Member(MemberExpr),
     Index(IndexExpr),
     New(NewExpr),
+    NewArray(NewArrayExpr),
     TypeCast(TypeCastExpr),
     Array(ArrayExpr),
     Dict(DictExpr),
@@ -238,6 +239,15 @@ pub struct NewExpr {
     pub class: Ident,
     pub args: Vec<CallArg>,
     pub tail_comments: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// A `new [size]` or `new Array<Number>[size]` allocation. `element_type`
+/// is `None` for the bare form (typeless array of the given size).
+#[derive(Debug, PartialEq)]
+pub struct NewArrayExpr {
+    pub element_type: Option<Type>,
+    pub size: Box<Expr>,
     pub span: Span,
 }
 
@@ -537,6 +547,7 @@ impl Expr {
             Expr::Member(e) => &e.span,
             Expr::Index(e) => &e.span,
             Expr::New(e) => &e.span,
+            Expr::NewArray(e) => &e.span,
             Expr::TypeCast(e) => &e.span,
             Expr::Array(e) => &e.span,
             Expr::Dict(e) => &e.span,
