@@ -104,6 +104,41 @@ fn test_typedef_simple() {
 }
 
 #[test]
+fn test_ternary_simple() {
+    let out = fmt("function f() { var x = true ? 1 : 2; }");
+    assert!(out.contains("var x = true ? 1 : 2;"));
+}
+
+#[test]
+fn test_ternary_nested() {
+    let out = fmt("function f() { var x = a ? b : c ? d : e; }");
+    assert!(out.contains("var x = a ? b : c ? d : e;"));
+}
+
+#[test]
+fn test_ternary_inside_dict() {
+    let src = r#"function f() { var x = { "k" => (a == null) ? "default" : a }; }"#;
+    let out = fmt(src);
+    assert!(out.contains("(a == null) ? \"default\" : a"));
+}
+
+#[test]
+fn test_ternary_wraps_when_too_long() {
+    let src = "var x = superLongCondition ? caseIfTrue : caseIfFalse;";
+    let out = fmt_width(src, 40);
+    // `?` and `:` lead the next lines at extra indent.
+    assert!(out.contains("\n    ? caseIfTrue"));
+    assert!(out.contains("\n    : caseIfFalse"));
+}
+
+#[test]
+fn test_ternary_stays_flat_when_short() {
+    let out = fmt("function f() { var x = a ? b : c; }");
+    assert!(out.contains("var x = a ? b : c;"));
+    assert!(!out.contains("\n    ?"));
+}
+
+#[test]
 fn test_using_with_alias() {
     assert_eq!(
         fmt("using Toybox.Lang as Lng;"),

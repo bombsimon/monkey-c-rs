@@ -177,6 +177,34 @@ fn test_import_rejects_alias() {
 }
 
 #[test]
+fn test_ternary() {
+    let f = first_function("function f() { var x = true ? 1 : 2; }");
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let Some(init) = &v.initializer else {
+        panic!("expected initializer");
+    };
+    assert!(matches!(init.as_ref(), Expr::Ternary(_)));
+}
+
+#[test]
+fn test_ternary_right_associative() {
+    let f = first_function("function f() { var x = a ? b : c ? d : e; }");
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let Some(init) = &v.initializer else {
+        panic!("expected initializer");
+    };
+    let Expr::Ternary(outer) = init.as_ref() else {
+        panic!("expected outer ternary");
+    };
+    // Right-associative: else branch is itself a ternary.
+    assert!(matches!(outer.else_expr.as_ref(), Expr::Ternary(_)));
+}
+
+#[test]
 fn test_typedef() {
     let nodes = document_nodes("typedef Numeric as Number or Float or Long or Double;");
     let Ast::Typedef(d) = &nodes[0] else {

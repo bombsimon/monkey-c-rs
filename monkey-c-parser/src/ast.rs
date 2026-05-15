@@ -137,6 +137,7 @@ pub enum LiteralValue {
 pub enum Expr {
     Binary(BinaryExpr),
     Unary(UnaryExpr),
+    Ternary(TernaryExpr),
     Assign(AssignExpr),
     Call(CallExpr),
     Member(MemberExpr),
@@ -176,6 +177,16 @@ pub struct BinaryExpr {
 pub struct UnaryExpr {
     pub operator: UnaryOperator,
     pub operand: Box<Expr>,
+    pub span: Span,
+}
+
+/// A ternary conditional `cond ? then : else`. Right-associative — chains
+/// like `a ? b : c ? d : e` parse as `a ? b : (c ? d : e)`.
+#[derive(Debug, PartialEq)]
+pub struct TernaryExpr {
+    pub cond: Box<Expr>,
+    pub then_expr: Box<Expr>,
+    pub else_expr: Box<Expr>,
     pub span: Span,
 }
 
@@ -491,6 +502,7 @@ impl Expr {
         match self {
             Expr::Binary(e) => &e.span,
             Expr::Unary(e) => &e.span,
+            Expr::Ternary(e) => &e.span,
             Expr::Assign(e) => &e.span,
             Expr::Call(e) => &e.span,
             Expr::Member(e) => &e.span,

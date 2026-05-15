@@ -1,7 +1,7 @@
 use crate::ast::{
     ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
     CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
-    NewExpr, ParenExpr, Span, Stmt, TypeCastExpr, UnaryExpr, UnaryOperator,
+    NewExpr, ParenExpr, Span, Stmt, TernaryExpr, TypeCastExpr, UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -17,7 +17,7 @@ impl Parser<'_> {
     }
 
     fn parse_assignment(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_logical_or()?;
+        let expr = self.parse_ternary()?;
         match self.current_token {
             token::Type::Assign
             | token::Type::AddAssign
@@ -53,6 +53,30 @@ impl Parser<'_> {
             }
             _ => Ok(expr),
         }
+    }
+
+    /// Parse a ternary `cond ? then : else`. Right-associative: the `else`
+    /// branch is itself a ternary so `a ? b : c ? d : e` becomes
+    /// `a ? b : (c ? d : e)`.
+    fn parse_ternary(&mut self) -> Result<Expr, ParserError> {
+        let cond = self.parse_logical_or()?;
+        if self.current_token != token::Type::Question {
+            return Ok(cond);
+        }
+
+        let start = cond.span().start;
+        self.next_token_span(); // consume `?`
+        let then_expr = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::Colon])?;
+        let else_expr = self.parse_ternary()?;
+        let end = else_expr.span().end;
+
+        Ok(Expr::Ternary(TernaryExpr {
+            cond: Box::new(cond),
+            then_expr: Box::new(then_expr),
+            else_expr: Box::new(else_expr),
+            span: Span { start, end },
+        }))
     }
 
     fn handle_logical_operator(

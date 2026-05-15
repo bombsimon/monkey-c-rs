@@ -546,6 +546,18 @@ impl Formatter {
                 ]),
             },
 
+            Expr::Ternary(e) => Doc::Group(vec![
+                self.expr_to_doc(&e.cond),
+                Doc::Indent(vec![
+                    Doc::Line,
+                    Doc::text("? "),
+                    self.expr_to_doc(&e.then_expr),
+                    Doc::Line,
+                    Doc::text(": "),
+                    self.expr_to_doc(&e.else_expr),
+                ]),
+            ]),
+
             Expr::Assign(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.target),
                 Doc::text(format!(" {} ", operators::assign_op(&e.operator))),
