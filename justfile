@@ -1,9 +1,11 @@
 crates := "monkey-c-formatter monkey-c-parser"
 
-default:
+_default:
   @just --list
 
 clippy: (_cmd 'cargo clippy --all-features --tests')
+
+doc: (_cmd 'RUSTDOCFLAGS="-D warnings" cargo doc --all-features --workspace --keep-going')
 
 format: (_cmd 'cargo fmt --all')
 
