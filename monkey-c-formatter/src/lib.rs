@@ -288,7 +288,7 @@ impl Formatter {
                 .enumerate()
                 .flat_map(|(i, p)| {
                     if i > 0 {
-                        vec![Doc::text(" or "), Self::type_to_doc(p)]
+                        vec![Doc::text(", "), Self::type_to_doc(p)]
                     } else {
                         vec![Self::type_to_doc(p)]
                     }

@@ -177,8 +177,9 @@ impl<'a> Parser<'a> {
     /// Parse a single type name with optional generic params and `?`, but
     /// without consuming `or` alternatives.
     ///
-    /// Used for generic parameter lists where `or` is a param separator, not a
-    /// union operator: `Array<Number or Float>` → two params, not one union.
+    /// Generic params are separated by `,` only. `or` inside `<…>` belongs
+    /// to a single param's union (`Array<Number or Null>` → one param whose
+    /// `alternatives` is `[Null]`), not to the param list itself.
     pub(crate) fn parse_simple_type(&mut self) -> Result<Type, ParserError> {
         let ident = self.parse_identifier()?;
         if self.current_token != token::Type::Less {
@@ -190,10 +191,10 @@ impl<'a> Parser<'a> {
             let mut params = Vec::new();
 
             if self.current_token != token::Type::Greater {
-                params.push(self.parse_simple_type()?);
-                while self.is_type_separator() {
-                    self.next_token_span(); // consume , or `or`
-                    params.push(self.parse_simple_type()?);
+                params.push(self.parse_type()?);
+                while self.current_token == token::Type::Comma {
+                    self.next_token_span(); // consume ,
+                    params.push(self.parse_type()?);
                 }
             }
 
@@ -215,15 +216,6 @@ impl<'a> Parser<'a> {
             alternatives: Vec::new(),
             optional,
         })
-    }
-
-    /// Returns `true` if the current token is a type-separator inside a generic
-    /// parameter list: either `,` or the contextual keyword `or`.
-    fn is_type_separator(&self) -> bool {
-        matches!(
-            self.current_token,
-            token::Type::Comma | token::Type::OrKeyword
-        )
     }
 
     fn parse_declaration(&mut self) -> Result<Ast, ParserError> {

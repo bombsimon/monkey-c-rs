@@ -150,6 +150,21 @@ fn test_new_array_size_expression() {
 }
 
 #[test]
+fn test_generic_params_distinguish_comma_and_or() {
+    // Comma-separated multi-param generic stays comma-separated.
+    let comma = fmt("function f() { var d as Dictionary<String, Number> = 1; }");
+    assert!(comma.contains("Dictionary<String, Number>"));
+
+    // `or` inside a single param stays a union, not a second param.
+    let union = fmt("function f() { var a as Array<Number or Null> = 1; }");
+    assert!(union.contains("Array<Number or Null>"));
+
+    // Nested: dict with union-typed value.
+    let nested = fmt("function f() { var w as Dictionary<String, Array<Number or Null>> = 1; }");
+    assert!(nested.contains("Dictionary<String, Array<Number or Null>>"));
+}
+
+#[test]
 fn test_and_or_keywords_preserve_source_form() {
     // Source form is preserved: `and`/`or` stay as keywords, `&&`/`||` stay
     // as symbols.

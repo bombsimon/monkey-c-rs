@@ -77,12 +77,25 @@ fn test_var_declarations() {
     assert_eq!(v.name, "x");
     assert_eq!(v.type_.unwrap().ident, "Float");
 
+    // `Array<Number or Float>` is one generic param whose type is a union,
+    // not two comma-separated params. Confirm the corrected shape.
     let v = class_var("class C { var items as Array<Number or Float>; }");
     let ty = v.type_.unwrap();
     assert_eq!(ty.ident, "Array");
+    assert_eq!(ty.generic_params.len(), 1);
+    let param = &ty.generic_params[0];
+    assert_eq!(param.ident, "Number");
+    assert_eq!(param.alternatives.len(), 1);
+    assert_eq!(param.alternatives[0].ident, "Float");
+
+    // `Dictionary<String, Number>` is two distinct generic params, comma-
+    // separated. The old code conflated this with the union shape above.
+    let v = class_var("class C { var d as Dictionary<String, Number>; }");
+    let ty = v.type_.unwrap();
     assert_eq!(ty.generic_params.len(), 2);
-    assert_eq!(ty.generic_params[0].ident, "Number");
-    assert_eq!(ty.generic_params[1].ident, "Float");
+    assert_eq!(ty.generic_params[0].ident, "String");
+    assert_eq!(ty.generic_params[1].ident, "Number");
+    assert!(ty.generic_params[0].alternatives.is_empty());
 
     let v = class_var("class C { var x = 42; }");
     assert!(v.initializer.is_some());

@@ -777,18 +777,17 @@ impl Parser<'_> {
     }
 
     /// Parse a generic parameter list `<T, U, ...>` and return the params.
-    /// The leading `<` is the current token on entry.
+    /// The leading `<` is the current token on entry. Each param may be a
+    /// union (`A or B`), in which case the union lives in that param's
+    /// `alternatives` field — `or` is not a param separator.
     fn parse_generic_params(&mut self) -> Result<Vec<Type>, ParserError> {
         self.next_token_span(); // consume `<`
         let mut params = Vec::new();
         if self.current_token != token::Type::Greater {
-            params.push(self.parse_simple_type()?);
-            while matches!(
-                self.current_token,
-                token::Type::Comma | token::Type::OrKeyword
-            ) {
+            params.push(self.parse_type()?);
+            while self.current_token == token::Type::Comma {
                 self.next_token_span();
-                params.push(self.parse_simple_type()?);
+                params.push(self.parse_type()?);
             }
         }
         self.assert_next_token(&[token::Type::Greater])?;
