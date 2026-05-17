@@ -746,8 +746,8 @@ impl Formatter {
             Stmt::Switch(s) => self.switch_stmt_to_doc(s),
             Stmt::Try(s) => self.try_stmt_to_doc(s),
             Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
-            Stmt::Comment(text, _) => Doc::text(format!("//{}", text)),
-            Stmt::BlockComment(text, _) => self.block_comment_to_doc(text),
+            Stmt::Comment(c) if c.is_block => self.block_comment_to_doc(&c.text),
+            Stmt::Comment(c) => Doc::text(format!("//{}", c.text)),
             Stmt::Expr(e) => Doc::concat(vec![self.expr_to_doc(e), Doc::text(";")]),
         }
     }
@@ -957,7 +957,11 @@ impl Formatter {
                         });
                     }
                     pending_blank = false;
-                    inner.push(self.stmt_to_doc(c));
+                    inner.push(if c.is_block {
+                        self.block_comment_to_doc(&c.text)
+                    } else {
+                        Doc::text(format!("//{}", c.text))
+                    });
                     first = false;
                 }
                 ArrayMember::Entry(entry) => {
@@ -1184,7 +1188,11 @@ impl Formatter {
                         });
                     }
                     pending_blank = false;
-                    inner.push(self.stmt_to_doc(c));
+                    inner.push(if c.is_block {
+                        self.block_comment_to_doc(&c.text)
+                    } else {
+                        Doc::text(format!("//{}", c.text))
+                    });
                     first = false;
                 }
                 DictMember::Entry(entry) => {

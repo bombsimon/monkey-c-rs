@@ -1,8 +1,8 @@
 use crate::ast::{
-    Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, ConstDecl, DictTypeEntry, DictTypeKey,
-    DoWhileStmt, ElseBranch, EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl, IfStmt,
-    ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt,
-    Type, TypeKind, TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, ConstDecl, DictTypeEntry,
+    DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl,
+    IfStmt, ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt,
+    TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -95,22 +95,31 @@ impl<'a> Parser<'a> {
     }
 
     /// Consume any line/block comment tokens at the current position and
-    /// return them as `Stmt::Comment` / `Stmt::BlockComment`. Stops at the
-    /// first non-comment token. Used to absorb trailing comments inside
-    /// delimited lists (dicts, arrays, args).
+    /// return them as `Stmt::Comment`. Stops at the first non-comment token.
+    /// Used to absorb trailing comments inside delimited lists (dicts, arrays,
+    /// args).
     pub(crate) fn consume_trailing_comments(&mut self) -> Vec<Stmt> {
         let mut comments = Vec::new();
         loop {
             let start = self.current_token_start;
             let end = self.current_token_end;
+            let span = Span { start, end };
             let stmt = match self.current_token.clone() {
-                token::Type::Comment(content) => {
+                token::Type::Comment(text) => {
                     self.next_token_span();
-                    Stmt::Comment(content, Span { start, end })
+                    Stmt::Comment(CommentStmt {
+                        text,
+                        is_block: false,
+                        span,
+                    })
                 }
-                token::Type::BlockComment(content) => {
+                token::Type::BlockComment(text) => {
                     self.next_token_span();
-                    Stmt::BlockComment(content, Span { start, end })
+                    Stmt::Comment(CommentStmt {
+                        text,
+                        is_block: true,
+                        span,
+                    })
                 }
                 _ => return comments,
             };
@@ -820,20 +829,28 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_comment_stmt(&mut self, content: String) -> Result<Stmt, ParserError> {
+    fn parse_comment_stmt(&mut self, text: String) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         let end = self.current_token_end;
         self.next_token_span();
 
-        Ok(Stmt::Comment(content, Span { start, end }))
+        Ok(Stmt::Comment(CommentStmt {
+            text,
+            is_block: false,
+            span: Span { start, end },
+        }))
     }
 
-    fn parse_block_comment_stmt(&mut self, content: String) -> Result<Stmt, ParserError> {
+    fn parse_block_comment_stmt(&mut self, text: String) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         let end = self.current_token_end;
         self.next_token_span();
 
-        Ok(Stmt::BlockComment(content, Span { start, end }))
+        Ok(Stmt::Comment(CommentStmt {
+            text,
+            is_block: true,
+            span: Span { start, end },
+        }))
     }
 
     fn parse_continue_stmt(&mut self) -> Result<Stmt, ParserError> {

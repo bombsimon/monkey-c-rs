@@ -1,8 +1,8 @@
 use crate::ast::{
     ArrayEntry, ArrayExpr, ArrayMember, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator,
-    CallArg, CallExpr, DictEntry, DictExpr, DictMember, Expr, IdentExpr, IndexExpr, LitExpr,
-    LiteralValue, MemberExpr, NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type,
-    TypeCastExpr, TypeKind, UnaryExpr, UnaryOperator,
+    CallArg, CallExpr, CommentStmt, DictEntry, DictExpr, DictMember, Expr, IdentExpr, IndexExpr,
+    LitExpr, LiteralValue, MemberExpr, NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr,
+    Type, TypeCastExpr, TypeKind, UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -698,14 +698,23 @@ impl Parser<'_> {
             ) {
                 let start = self.current_token_start;
                 let end = self.current_token_end;
-                let stmt = match self.current_token.clone() {
-                    token::Type::Comment(c) => Stmt::Comment(c, Span { start, end }),
-                    token::Type::BlockComment(c) => Stmt::BlockComment(c, Span { start, end }),
+                let span = Span { start, end };
+                let member = match self.current_token.clone() {
+                    token::Type::Comment(text) => ArrayMember::Comment(CommentStmt {
+                        text,
+                        is_block: false,
+                        span,
+                    }),
+                    token::Type::BlockComment(text) => ArrayMember::Comment(CommentStmt {
+                        text,
+                        is_block: true,
+                        span,
+                    }),
                     _ => unreachable!(),
                 };
                 self.next_token_span();
                 last_end = end;
-                members.push(ArrayMember::Comment(stmt));
+                members.push(member);
                 continue;
             }
 
@@ -786,14 +795,23 @@ impl Parser<'_> {
             ) {
                 let start = self.current_token_start;
                 let end = self.current_token_end;
-                let stmt = match self.current_token.clone() {
-                    token::Type::Comment(c) => Stmt::Comment(c, Span { start, end }),
-                    token::Type::BlockComment(c) => Stmt::BlockComment(c, Span { start, end }),
+                let span = Span { start, end };
+                let member = match self.current_token.clone() {
+                    token::Type::Comment(text) => DictMember::Comment(CommentStmt {
+                        text,
+                        is_block: false,
+                        span,
+                    }),
+                    token::Type::BlockComment(text) => DictMember::Comment(CommentStmt {
+                        text,
+                        is_block: true,
+                        span,
+                    }),
                     _ => unreachable!(),
                 };
                 self.next_token_span();
                 last_end = end;
-                members.push(DictMember::Comment(stmt));
+                members.push(member);
                 continue;
             }
 
@@ -871,9 +889,18 @@ impl Parser<'_> {
             }
             let start = self.current_token_start;
             let end = self.current_token_end;
+            let span = Span { start, end };
             let stmt = match self.current_token.clone() {
-                token::Type::Comment(c) => Stmt::Comment(c, Span { start, end }),
-                token::Type::BlockComment(c) => Stmt::BlockComment(c, Span { start, end }),
+                token::Type::Comment(text) => Stmt::Comment(CommentStmt {
+                    text,
+                    is_block: false,
+                    span,
+                }),
+                token::Type::BlockComment(text) => Stmt::Comment(CommentStmt {
+                    text,
+                    is_block: true,
+                    span,
+                }),
                 _ => unreachable!(),
             };
             self.next_token_span();

@@ -341,7 +341,7 @@ pub struct ArrayExpr {
 #[derive(Debug, PartialEq)]
 pub enum ArrayMember {
     Entry(ArrayEntry),
-    Comment(Stmt),
+    Comment(CommentStmt),
     BlankLine,
 }
 
@@ -381,9 +381,9 @@ pub struct DictExpr {
 pub enum DictMember {
     /// A `key => value` pair, optionally with same-line trailing comment(s).
     Entry(DictEntry),
-    /// A standalone comment that sits on its own line between entries (or
-    /// before the first / after the last).
-    Comment(Stmt),
+    /// A standalone comment on its own line between entries (or before the
+    /// first / after the last).
+    Comment(CommentStmt),
     /// One or more blank source lines between the previous member and the
     /// next. Always a single `BlankLine` regardless of how many blank lines
     /// actually appeared.
@@ -422,14 +422,20 @@ pub struct IdentExpr {
     pub span: Span,
 }
 
+/// A source comment, either a `// …` line comment or a `/* … */` block
+/// comment. `is_block` is the distinction; the stored `text` is the raw
+/// content between the comment delimiters.
+#[derive(Debug, PartialEq)]
+pub struct CommentStmt {
+    pub text: String,
+    pub is_block: bool,
+    pub span: Span,
+}
+
 /// A statement node.
 #[derive(Debug, PartialEq)]
 pub enum Stmt {
-    /// A line comment (`// …`). The string contains the raw text after `//`.
-    Comment(String, Span),
-    /// A block comment (`/* … */`). The string contains the raw text between
-    /// the delimiters.
-    BlockComment(String, Span),
+    Comment(CommentStmt),
     Break(Span),
     Continue(Span),
     Block(BlockStmt),
@@ -758,7 +764,7 @@ impl Stmt {
             Stmt::Throw(s) => &s.span,
             Stmt::Break(s) | Stmt::Continue(s) => s,
             Stmt::Var(s) => &s.span,
-            Stmt::Comment(_, s) | Stmt::BlockComment(_, s) => s,
+            Stmt::Comment(c) => &c.span,
             Stmt::Expr(e) => e.span(),
         }
     }
