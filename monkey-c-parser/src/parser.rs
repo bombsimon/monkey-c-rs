@@ -1,8 +1,8 @@
 use crate::ast::{
-    Ast, BlockStmt, CatchClause, ClassDecl, ConstDecl, DictTypeEntry, DictTypeKey, ElseBranch,
-    EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl,
-    ReturnStmt, Span, Stmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl,
-    Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, ConstDecl, DictTypeEntry, DictTypeKey,
+    ElseBranch, EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl,
+    ModuleDecl, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind,
+    TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -782,6 +782,7 @@ impl<'a> Parser<'a> {
             token::Type::If => self.parse_if_stmt(),
             token::Type::While => self.parse_while_stmt(),
             token::Type::For => self.parse_for_stmt(),
+            token::Type::Switch => self.parse_switch_stmt(),
             token::Type::Try => self.parse_try_stmt(),
             token::Type::Throw => self.parse_throw_stmt(),
             token::Type::LBrace => self.parse_block_stmt(),
@@ -988,6 +989,101 @@ impl<'a> Parser<'a> {
                 end: semi_end,
             },
         }))
+    }
+
+    fn parse_switch_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span(); // consume `switch`
+        self.assert_next_token(&[token::Type::LParen])?;
+        let discriminant = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::RParen])?;
+        self.assert_next_token(&[token::Type::LBrace])?;
+
+        let mut cases = Vec::new();
+        let tail_comments = loop {
+            let leading = self.consume_trailing_comments();
+            if self.current_token == token::Type::RBrace {
+                break leading;
+            }
+            let mut case = self.parse_switch_case()?;
+            case.leading_comments = leading;
+            cases.push(case);
+        };
+
+        let end = self.current_token_end;
+        self.assert_next_token(&[token::Type::RBrace])?;
+
+        Ok(Stmt::Switch(SwitchStmt {
+            discriminant,
+            cases,
+            tail_comments,
+            span: Span { start, end },
+        }))
+    }
+
+    /// Parse one `case <…>:` or `default:` arm and the statements that
+    /// follow, up to the next case/default or the closing `}`. Leading
+    /// comments are filled in by [`Parser::parse_switch_stmt`].
+    fn parse_switch_case(&mut self) -> Result<SwitchCase, ParserError> {
+        let start = self.current_token_start;
+        let label = match self.current_token.clone() {
+            token::Type::Case => {
+                self.next_token_span(); // consume `case`
+                if self.current_token == token::Type::InstanceOf {
+                    self.next_token_span(); // consume `instanceof`
+                    CaseLabel::InstanceOf(self.parse_type()?)
+                } else {
+                    CaseLabel::Value(self.parse_expression()?)
+                }
+            }
+            token::Type::Default => {
+                self.next_token_span(); // consume `default`
+                CaseLabel::Default
+            }
+            _ => {
+                return Err(self.parse_error(format!(
+                    "Expected `case` or `default` in switch body, got {:?}",
+                    self.current_token
+                )));
+            }
+        };
+        self.assert_next_token(&[token::Type::Colon])?;
+
+        let mut stmts = Vec::new();
+        while !matches!(
+            self.current_token,
+            token::Type::Case | token::Type::Default | token::Type::RBrace
+        ) {
+            // A comment immediately followed by `case` / `default` / `}` is
+            // a leading comment for the next arm, not a statement of this
+            // one — bail out and let the outer loop pick it up.
+            if matches!(
+                self.current_token,
+                token::Type::Comment(_) | token::Type::BlockComment(_)
+            ) {
+                let (_, next, _) = self.lexer.peek_token();
+                if matches!(
+                    next,
+                    token::Type::Case | token::Type::Default | token::Type::RBrace
+                ) {
+                    break;
+                }
+            }
+
+            stmts.push(self.parse_statement()?);
+        }
+
+        let end = stmts
+            .last()
+            .map(|s| s.span().end)
+            .unwrap_or(self.current_token_end);
+
+        Ok(SwitchCase {
+            leading_comments: Vec::new(),
+            label,
+            stmts,
+            span: Span { start, end },
+        })
     }
 
     fn parse_try_stmt(&mut self) -> Result<Stmt, ParserError> {

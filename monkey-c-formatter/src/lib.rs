@@ -3,9 +3,9 @@ mod operators;
 
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, ConstDecl, DictEntry, DictTypeEntry,
-    DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt,
-    TryStmt, Type, TypeKind, VarDecl, Visibility,
+    ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, ConstDecl, DictEntry,
+    DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl, IfStmt,
+    LiteralValue, Stmt, SwitchStmt, TryStmt, Type, TypeKind, VarDecl, Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
@@ -523,6 +523,61 @@ impl Formatter {
         ])
     }
 
+    /// Render a `switch (…) { … }`. Each `case`/`default` arm lives at one
+    /// indent inside the switch body; the statements that follow are
+    /// indented one further. Leading comments are emitted before the arm's
+    /// `case`/`default` keyword.
+    fn switch_stmt_to_doc(&self, s: &SwitchStmt) -> Doc {
+        let mut body = Vec::new();
+        for (i, case) in s.cases.iter().enumerate() {
+            if i > 0 {
+                body.push(Doc::HardLine);
+            }
+
+            for c in &case.leading_comments {
+                body.push(self.stmt_to_doc(c));
+                body.push(Doc::HardLine);
+            }
+
+            let mut header = vec![Doc::text("case ")];
+            match &case.label {
+                CaseLabel::Value(e) => {
+                    header.push(self.expr_to_doc(e));
+                }
+                CaseLabel::InstanceOf(ty) => {
+                    header.push(Doc::text("instanceof "));
+                    header.push(Self::type_to_doc(ty));
+                }
+                CaseLabel::Default => {
+                    header = vec![Doc::text("default")];
+                }
+            }
+            header.push(Doc::text(":"));
+            body.push(Doc::Concat(header));
+
+            if !case.stmts.is_empty() {
+                body.push(Doc::Indent(vec![
+                    Doc::HardLine,
+                    self.stmts_to_doc(&case.stmts),
+                ]));
+            }
+        }
+
+        for c in &s.tail_comments {
+            body.push(Doc::HardLine);
+            body.push(self.stmt_to_doc(c));
+        }
+
+        Doc::concat(vec![
+            Doc::text("switch ("),
+            self.expr_to_doc(&s.discriminant),
+            Doc::text(") {"),
+            Doc::Indent(vec![Doc::HardLine, Doc::Concat(body)]),
+            Doc::HardLine,
+            Doc::text("}"),
+        ])
+    }
+
     fn try_stmt_to_doc(&self, s: &TryStmt) -> Doc {
         let mut parts = vec![Doc::text("try"), self.block_to_doc(&s.body)];
 
@@ -646,6 +701,7 @@ impl Formatter {
                 self.expr_to_doc(&s.value),
                 Doc::text(";"),
             ]),
+            Stmt::Switch(s) => self.switch_stmt_to_doc(s),
             Stmt::Try(s) => self.try_stmt_to_doc(s),
             Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Stmt::Comment(text, _) => Doc::text(format!("//{}", text)),

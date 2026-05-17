@@ -256,6 +256,54 @@ fn test_has_operator() {
 }
 
 #[test]
+fn test_switch_basic() {
+    let src = "function f() { switch (x) { case 1: foo(); break; case 2: bar(); break; default: baz(); } }";
+    let out = fmt(src);
+    assert!(out.contains("switch (x) {"));
+    assert!(out.contains("        case 1:"));
+    assert!(out.contains("            foo();"));
+    assert!(out.contains("        default:"));
+    assert!(out.contains("            baz();"));
+}
+
+#[test]
+fn test_switch_instanceof_case() {
+    let src =
+        "function f() { switch (p) { case instanceof Number: ok(); break; default: bad(); } }";
+    let out = fmt(src);
+    assert!(out.contains("case instanceof Number:"));
+}
+
+#[test]
+fn test_switch_leading_comment_on_case() {
+    let src = "function f() {\n\
+                  switch (x) {\n\
+                      // first\n\
+                      case 1:\n\
+                          a();\n\
+                          break;\n\
+                      // fallback\n\
+                      default:\n\
+                          b();\n\
+                  }\n\
+              }";
+    let out = fmt(src);
+    // Leading comments live at the case-header indent, not nested inside
+    // the previous case's body.
+    assert!(out.contains("        // first\n        case 1:"));
+    assert!(out.contains("        // fallback\n        default:"));
+}
+
+#[test]
+fn test_switch_fall_through() {
+    let src = "function f() { switch (x) { case 1: foo(); case 2: bar(); break; } }";
+    let out = fmt(src);
+    // First case has no break — falls through. No `break;` should appear
+    // between the two `System.println` equivalents.
+    assert!(out.contains("        case 1:\n            foo();\n        case 2:"));
+}
+
+#[test]
 fn test_try_catch_basic() {
     let out = fmt("function f() { try { foo(); } catch (e) { log(e); } }");
     assert!(out.contains("try {"));

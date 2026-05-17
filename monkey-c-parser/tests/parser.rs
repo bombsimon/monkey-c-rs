@@ -1,5 +1,5 @@
 use monkey_c_parser::ast::{
-    Ast, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
+    Ast, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -187,6 +187,47 @@ fn test_import_rejects_alias() {
         "unexpected error: {}",
         err.message
     );
+}
+
+#[test]
+fn test_switch_basic() {
+    let f = first_function(
+        "function f() { switch (x) { case 1: foo(); break; case 2: bar(); break; default: baz(); } }",
+    );
+    let Stmt::Switch(s) = &f.body.stmts[0] else {
+        panic!("expected switch");
+    };
+    assert_eq!(s.cases.len(), 3);
+    assert!(matches!(s.cases[0].label, CaseLabel::Value(_)));
+    assert!(matches!(s.cases[2].label, CaseLabel::Default));
+}
+
+#[test]
+fn test_switch_instanceof() {
+    let f = first_function(
+        "function f() { switch (p) { case instanceof Number: ok(); break; default: bad(); } }",
+    );
+    let Stmt::Switch(s) = &f.body.stmts[0] else {
+        panic!("expected switch");
+    };
+    let CaseLabel::InstanceOf(ty) = &s.cases[0].label else {
+        panic!("expected instanceof label");
+    };
+    assert_eq!(ty.ident(), Some("Number"));
+}
+
+#[test]
+fn test_switch_fall_through() {
+    // First case has no break, falls through to the second.
+    let f = first_function("function f() { switch (x) { case 1: foo(); case 2: bar(); break; } }");
+    let Stmt::Switch(s) = &f.body.stmts[0] else {
+        panic!("expected switch");
+    };
+    assert_eq!(s.cases.len(), 2);
+    // First case has one stmt (foo()), no break.
+    assert_eq!(s.cases[0].stmts.len(), 1);
+    // Second case has two stmts (bar(), break).
+    assert_eq!(s.cases[1].stmts.len(), 2);
 }
 
 #[test]

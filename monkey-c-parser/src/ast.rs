@@ -382,6 +382,7 @@ pub enum Stmt {
     While(WhileStmt),
     For(ForStmt),
     Return(ReturnStmt),
+    Switch(SwitchStmt),
     Try(TryStmt),
     Throw(ThrowStmt),
     Var(VarDecl),
@@ -452,6 +453,41 @@ pub struct ForStmt {
 pub struct ReturnStmt {
     pub value: Option<Expr>,
     pub span: Span,
+}
+
+/// A `switch (discriminant) { … }` statement. `cases` preserves source order,
+/// including any `default` arm.
+#[derive(Debug, PartialEq)]
+pub struct SwitchStmt {
+    pub discriminant: Expr,
+    pub cases: Vec<SwitchCase>,
+    /// Comments after the last case but before the closing `}` of the switch
+    /// body. Only populated when no case follows them.
+    pub tail_comments: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// A single arm inside a `switch` body.
+#[derive(Debug, PartialEq)]
+pub struct SwitchCase {
+    /// Comments appearing immediately before the `case` / `default` keyword.
+    pub leading_comments: Vec<Stmt>,
+    pub label: CaseLabel,
+    /// Statements until the next `case`/`default` or the closing `}`.
+    /// Empty when the case immediately falls through to the next.
+    pub stmts: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// What a `case` (or `default`) arm matches against.
+#[derive(Debug, PartialEq)]
+pub enum CaseLabel {
+    /// `case <expr>:` — equality match against the discriminant.
+    Value(Expr),
+    /// `case instanceof <Type>:` — type match.
+    InstanceOf(Type),
+    /// `default:` — fall-through fallback.
+    Default,
 }
 
 /// A `try` statement: `try { … } catch (…) { … }` with optional `finally`.
@@ -651,6 +687,7 @@ impl Stmt {
             Stmt::While(s) => &s.span,
             Stmt::For(s) => &s.span,
             Stmt::Return(s) => &s.span,
+            Stmt::Switch(s) => &s.span,
             Stmt::Try(s) => &s.span,
             Stmt::Throw(s) => &s.span,
             Stmt::Break(s) | Stmt::Continue(s) => s,
