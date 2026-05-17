@@ -3,9 +3,10 @@ mod operators;
 
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, ConstDecl, DictEntry,
-    DictMember, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl,
-    IfStmt, LiteralValue, Stmt, SwitchStmt, TryStmt, Type, TypeKind, VarDecl, Visibility,
+    ArrayEntry, ArrayMember, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, ConstDecl,
+    DictEntry, DictMember, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit,
+    FunctionDecl, IfStmt, LiteralValue, Stmt, SwitchStmt, TryStmt, Type, TypeKind, VarDecl,
+    Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
@@ -832,13 +833,7 @@ impl Formatter {
                 Self::type_to_doc(&e.target_type),
             ]),
 
-            Expr::Array(e) => self.format_list(
-                "[",
-                "]",
-                self.array_entries_to_items(&e.entries),
-                &e.tail_comments,
-                e.trailing_comma,
-            ),
+            Expr::Array(e) => self.format_array(e),
 
             Expr::Dict(e) => self.format_dict(e),
 
@@ -878,18 +873,97 @@ impl Formatter {
             .collect()
     }
 
-    fn array_entries_to_items(&self, entries: &[ArrayEntry]) -> Vec<ListItem> {
-        entries
-            .iter()
-            .map(|e| ListItem {
-                content: self.expr_to_doc(&e.value),
-                trailing_comments: e
-                    .trailing_comments
-                    .iter()
-                    .map(|c| self.stmt_to_doc(c))
-                    .collect(),
-            })
-            .collect()
+    /// Format an array literal. Mirrors [`format_dict`](Self::format_dict):
+    /// walks `members` so free-floating comments and blank lines between
+    /// entries are preserved.
+    fn format_array(&self, e: &monkey_c_parser::ast::ArrayExpr) -> Doc {
+        if e.members.is_empty() {
+            return Doc::text("[]");
+        }
+
+        let only_entries = e.members.iter().all(|m| matches!(m, ArrayMember::Entry(_)));
+        let any_inline_comments = e.members.iter().any(|m| {
+            if let ArrayMember::Entry(entry) = m {
+                !entry.trailing_comments.is_empty()
+            } else {
+                false
+            }
+        });
+
+        if only_entries && !e.trailing_comma && !any_inline_comments {
+            let items: Vec<ListItem> = e
+                .entries()
+                .map(|entry| ListItem {
+                    content: self.expr_to_doc(&entry.value),
+                    trailing_comments: Vec::new(),
+                })
+                .collect();
+            return self.format_list("[", "]", items, &[], false);
+        }
+
+        self.format_array_multiline(e)
+    }
+
+    /// Multi-line array body. Walks `members` interleaving entries, comments,
+    /// and blank lines, the same shape as [`format_dict_multiline`].
+    fn format_array_multiline(&self, e: &monkey_c_parser::ast::ArrayExpr) -> Doc {
+        let entries: Vec<&ArrayEntry> = e.entries().collect();
+        let last_entry_idx = entries.len().saturating_sub(1);
+        let mut entry_seen = 0usize;
+
+        let mut inner: Vec<Doc> = Vec::new();
+        let mut pending_blank = false;
+        let mut first = true;
+
+        for member in &e.members {
+            match member {
+                ArrayMember::BlankLine => {
+                    pending_blank = true;
+                }
+                ArrayMember::Comment(c) => {
+                    if !first {
+                        inner.push(if pending_blank {
+                            Doc::BlankLine
+                        } else {
+                            Doc::HardLine
+                        });
+                    }
+                    pending_blank = false;
+                    inner.push(self.stmt_to_doc(c));
+                    first = false;
+                }
+                ArrayMember::Entry(entry) => {
+                    if !first {
+                        inner.push(if pending_blank {
+                            Doc::BlankLine
+                        } else {
+                            Doc::HardLine
+                        });
+                    }
+                    pending_blank = false;
+
+                    let mut parts = vec![self.expr_to_doc(&entry.value)];
+                    let is_last = entry_seen == last_entry_idx;
+                    if !is_last || e.trailing_comma {
+                        parts.push(Doc::text(","));
+                    }
+                    for c in &entry.trailing_comments {
+                        parts.push(Doc::text(" "));
+                        parts.push(self.stmt_to_doc(c));
+                    }
+                    inner.push(Doc::Concat(parts));
+                    entry_seen += 1;
+                    first = false;
+                }
+            }
+        }
+
+        Doc::concat(vec![
+            Doc::text("["),
+            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+            Doc::HardLine,
+            Doc::text("]"),
+        ])
     }
 
     /// Format a bracketed list with the magic trailing comma rule:

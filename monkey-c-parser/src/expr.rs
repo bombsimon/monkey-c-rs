@@ -1,8 +1,8 @@
 use crate::ast::{
-    ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
-    CallExpr, DictEntry, DictExpr, DictMember, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue,
-    MemberExpr, NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type, TypeCastExpr,
-    TypeKind, UnaryExpr, UnaryOperator,
+    ArrayEntry, ArrayExpr, ArrayMember, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator,
+    CallArg, CallExpr, DictEntry, DictExpr, DictMember, Expr, IdentExpr, IndexExpr, LitExpr,
+    LiteralValue, MemberExpr, NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type,
+    TypeCastExpr, TypeKind, UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -516,64 +516,12 @@ impl Parser<'_> {
             token::Type::LBracket => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume [
-                let mut entries: Vec<ArrayEntry> = Vec::new();
-                let mut tail_comments: Vec<Stmt> = Vec::new();
-                let mut trailing_comma = false;
-
-                loop {
-                    let pending = self.consume_trailing_comments();
-
-                    if self.current_token == token::Type::RBracket {
-                        if let Some(last) = entries.last_mut() {
-                            last.trailing_comments.extend(pending);
-                        } else {
-                            tail_comments = pending;
-                        }
-                        break;
-                    }
-
-                    if let Some(last) = entries.last_mut() {
-                        last.trailing_comments.extend(pending);
-                    } else if !pending.is_empty() {
-                        tail_comments.extend(pending);
-                    }
-
-                    let value = self.parse_expression()?;
-                    let mut entry = ArrayEntry {
-                        value,
-                        trailing_comments: Vec::new(),
-                    };
-                    entry
-                        .trailing_comments
-                        .extend(self.consume_trailing_comments());
-
-                    if self.current_token == token::Type::Comma {
-                        self.next_token_span(); // consume ,
-                        entry
-                            .trailing_comments
-                            .extend(self.consume_trailing_comments());
-                        entries.push(entry);
-                        if self.current_token == token::Type::RBracket {
-                            trailing_comma = true;
-                            break;
-                        }
-                    } else if self.current_token == token::Type::RBracket {
-                        entries.push(entry);
-                        break;
-                    } else {
-                        return Err(self.parse_error(format!(
-                            "Expected ',' or ']', got {:?}",
-                            self.current_token
-                        )));
-                    }
-                }
-
+                let (members, trailing_comma) = self.parse_array_members()?;
                 let end = self.current_token_end; // end of ]
                 self.next_token_span(); // consume ]
 
                 Ok(Expr::Array(ArrayExpr {
-                    entries,
-                    tail_comments,
+                    members,
                     trailing_comma,
                     span: Span { start, end },
                 }))
@@ -702,6 +650,87 @@ impl Parser<'_> {
         }
 
         Ok((args, tail_comments))
+    }
+
+    /// Parse the body of an array literal, producing an interleaved member
+    /// list. Mirrors [`parse_dict_members`](Self::parse_dict_members) — see
+    /// there for the line-awareness rules.
+    fn parse_array_members(&mut self) -> Result<(Vec<ArrayMember>, bool), ParserError> {
+        let mut members: Vec<ArrayMember> = Vec::new();
+        let mut trailing_comma = false;
+        let mut last_end = self.current_token_start;
+
+        loop {
+            if !members.is_empty() {
+                let blanks = self
+                    .line_index
+                    .blank_lines_between(last_end as u32, self.current_token_start as u32);
+                if blanks > 0 && !matches!(members.last(), Some(ArrayMember::BlankLine)) {
+                    members.push(ArrayMember::BlankLine);
+                }
+            }
+
+            if self.current_token == token::Type::RBracket {
+                break;
+            }
+
+            if matches!(
+                self.current_token,
+                token::Type::Comment(_) | token::Type::BlockComment(_)
+            ) {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                let stmt = match self.current_token.clone() {
+                    token::Type::Comment(c) => Stmt::Comment(c, Span { start, end }),
+                    token::Type::BlockComment(c) => Stmt::BlockComment(c, Span { start, end }),
+                    _ => unreachable!(),
+                };
+                self.next_token_span();
+                last_end = end;
+                members.push(ArrayMember::Comment(stmt));
+                continue;
+            }
+
+            let value = self.parse_expression()?;
+            let value_line_end = self.current_token_start;
+
+            let mut entry = ArrayEntry {
+                value,
+                trailing_comments: Vec::new(),
+            };
+
+            self.collect_same_line_comments(value_line_end, &mut entry.trailing_comments);
+
+            let pivot;
+            if self.current_token == token::Type::Comma {
+                let comma_end = self.current_token_end;
+                self.next_token_span();
+                self.collect_same_line_comments(comma_end, &mut entry.trailing_comments);
+                pivot = comma_end;
+                members.push(ArrayMember::Entry(entry));
+                if self.current_token == token::Type::RBracket {
+                    trailing_comma = true;
+                    break;
+                }
+            } else if self.current_token == token::Type::RBracket {
+                members.push(ArrayMember::Entry(entry));
+                break;
+            } else {
+                return Err(
+                    self.parse_error(format!("Expected ',' or ']', got {:?}", self.current_token))
+                );
+            }
+
+            last_end = members
+                .last()
+                .and_then(|m| match m {
+                    ArrayMember::Entry(e) => e.trailing_comments.last().map(|c| c.span().end),
+                    _ => None,
+                })
+                .unwrap_or(pivot);
+        }
+
+        Ok((members, trailing_comma))
     }
 
     /// Parse the body of a dict literal, producing an interleaved member

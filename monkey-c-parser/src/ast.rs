@@ -320,20 +320,42 @@ pub struct TypeCastExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
-    pub entries: Vec<ArrayEntry>,
-    /// Comments inside the brackets that aren't attached to any entry (only
-    /// populated when `entries` is empty).
-    pub tail_comments: Vec<Stmt>,
+    /// Ordered contents of the array. Like [`DictExpr::members`], mixes
+    /// entries with free-floating comments and blank-line markers so source
+    /// layout is preserved.
+    pub members: Vec<ArrayMember>,
     /// Whether the source had a trailing comma — drives the magic trailing comma
     /// formatting rule (trailing comma → always multi-line).
     pub trailing_comma: bool,
     pub span: Span,
 }
 
+/// One item inside an array literal. See [`DictMember`] for the dict
+/// equivalent.
+#[derive(Debug, PartialEq)]
+pub enum ArrayMember {
+    Entry(ArrayEntry),
+    Comment(Stmt),
+    BlankLine,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct ArrayEntry {
     pub value: Expr,
+    /// Comments on the SAME source line as the value or its trailing comma.
+    /// Comments on a separate line become an [`ArrayMember::Comment`].
     pub trailing_comments: Vec<Stmt>,
+}
+
+impl ArrayExpr {
+    /// Iterate the value entries, skipping free-floating comments and blank
+    /// markers.
+    pub fn entries(&self) -> impl Iterator<Item = &ArrayEntry> {
+        self.members.iter().filter_map(|m| match m {
+            ArrayMember::Entry(e) => Some(e),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]

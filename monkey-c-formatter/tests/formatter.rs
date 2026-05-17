@@ -167,6 +167,30 @@ fn test_ternary_wraps_when_too_long() {
 }
 
 #[test]
+fn test_array_standalone_comment_between_entries() {
+    let src = "var x = [\n    1,\n    // Some comment\n    2,\n];";
+    let out = fmt(src);
+    // Comment lives on its own line, not as trailing on `1`.
+    assert!(out.contains("    1,\n    // Some comment\n    2,"));
+    assert!(!out.contains("1, // Some comment"));
+}
+
+#[test]
+fn test_array_blank_line_between_entries_preserved() {
+    let src = "var x = [\n    1,\n\n    2,\n];";
+    let out = fmt(src);
+    assert!(out.contains("    1,\n\n    2,"));
+}
+
+#[test]
+fn test_array_inline_trailing_comment_stays_inline() {
+    // Comment on the same source line as the comma — stays as trailing.
+    let src = "var x = [\n    1, // first\n    2,\n];";
+    let out = fmt(src);
+    assert!(out.contains("    1, // first"));
+}
+
+#[test]
 fn test_new_array_untyped() {
     let out = fmt("function f() { var a = new [size]; }");
     assert!(out.contains("var a = new [size];"));

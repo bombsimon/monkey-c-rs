@@ -292,19 +292,19 @@ fn test_array_literals() {
     let Expr::Array(e) = parse_expr("[1, 2, 3]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.entries.len(), 3);
+    assert_eq!(e.entries().count(), 3);
     assert!(!e.trailing_comma, "no trailing comma");
 
     let Expr::Array(e) = parse_expr("[1, 2, 3,]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.entries.len(), 3);
+    assert_eq!(e.entries().count(), 3);
     assert!(e.trailing_comma, "trailing comma");
 
     let Expr::Array(e) = parse_expr("[]") else {
         panic!("expected Array");
     };
-    assert!(e.entries.is_empty());
+    assert_eq!(e.entries().count(), 0);
 }
 
 #[test]
