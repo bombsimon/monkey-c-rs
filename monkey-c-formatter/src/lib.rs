@@ -672,6 +672,14 @@ impl Formatter {
                 self.block_body_to_doc(&s.body),
             ]),
 
+            Stmt::DoWhile(s) => Doc::concat(vec![
+                Doc::text("do "),
+                self.block_body_to_doc(&s.body),
+                Doc::text(" while ("),
+                self.expr_to_doc(&s.condition),
+                Doc::text(");"),
+            ]),
+
             Stmt::For(s) => {
                 let init_doc = match &s.init {
                     None => Doc::Empty,

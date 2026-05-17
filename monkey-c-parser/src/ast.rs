@@ -429,6 +429,7 @@ pub enum Stmt {
     Block(BlockStmt),
     If(IfStmt),
     While(WhileStmt),
+    DoWhile(DoWhileStmt),
     For(ForStmt),
     Return(ReturnStmt),
     Switch(SwitchStmt),
@@ -479,6 +480,13 @@ impl ElseBranch {
 pub struct WhileStmt {
     pub condition: Expr,
     pub body: BlockStmt,
+    pub span: Span,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DoWhileStmt {
+    pub body: BlockStmt,
+    pub condition: Expr,
     pub span: Span,
 }
 
@@ -734,6 +742,7 @@ impl Stmt {
             Stmt::Block(s) => &s.span,
             Stmt::If(s) => &s.span,
             Stmt::While(s) => &s.span,
+            Stmt::DoWhile(s) => &s.span,
             Stmt::For(s) => &s.span,
             Stmt::Return(s) => &s.span,
             Stmt::Switch(s) => &s.span,

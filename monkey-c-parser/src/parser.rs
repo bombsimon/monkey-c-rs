@@ -1,8 +1,8 @@
 use crate::ast::{
     Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, ConstDecl, DictTypeEntry, DictTypeKey,
-    ElseBranch, EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl,
-    ModuleDecl, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind,
-    TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
+    DoWhileStmt, ElseBranch, EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl, IfStmt,
+    ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt,
+    Type, TypeKind, TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -781,6 +781,7 @@ impl<'a> Parser<'a> {
             token::Type::Return => self.parse_return_stmt(),
             token::Type::If => self.parse_if_stmt(),
             token::Type::While => self.parse_while_stmt(),
+            token::Type::Do => self.parse_do_while_stmt(),
             token::Type::For => self.parse_for_stmt(),
             token::Type::Switch => self.parse_switch_stmt(),
             token::Type::Try => self.parse_try_stmt(),
@@ -1184,6 +1185,31 @@ impl<'a> Parser<'a> {
             condition,
             body,
             span: Span { start, end },
+        }))
+    }
+
+    fn parse_do_while_stmt(&mut self) -> Result<Stmt, ParserError> {
+        let start = self.current_token_start;
+        self.next_token_span(); // consume `do`
+
+        let brace_start = self.current_token_start;
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let body = self.parse_block(brace_start)?;
+
+        self.assert_next_token(&[token::Type::While])?;
+        self.assert_next_token(&[token::Type::LParen])?;
+        let condition = self.parse_expression()?;
+        self.assert_next_token(&[token::Type::RParen])?;
+        let semi_end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(Stmt::DoWhile(DoWhileStmt {
+            body,
+            condition,
+            span: Span {
+                start,
+                end: semi_end,
+            },
         }))
     }
 }
