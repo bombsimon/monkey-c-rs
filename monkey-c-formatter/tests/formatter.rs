@@ -150,6 +150,45 @@ fn test_new_array_size_expression() {
 }
 
 #[test]
+fn test_inline_dict_type_symbol_keys() {
+    let out = fmt("function f(opts as { :flag as Boolean, :n as Number }) {}");
+    assert!(out.contains(":flag as Boolean"));
+    assert!(out.contains(":n as Number"));
+}
+
+#[test]
+fn test_inline_dict_type_string_keys() {
+    let out = fmt(r#"function f(o as { "name" as String, "value" as Number }) {}"#);
+    assert!(out.contains("\"name\" as String"));
+    assert!(out.contains("\"value\" as Number"));
+}
+
+#[test]
+fn test_inline_dict_type_trailing_comma_forces_multiline() {
+    // Magic-trailing-comma rule: same as dict/array literals — a source
+    // trailing comma forces multi-line even when the type would otherwise fit.
+    let src = "function f(o as { :a as Number, :b as String, }) {}";
+    let out = fmt(src);
+    assert!(out.contains(":a as Number,\n"));
+    assert!(out.contains(":b as String,\n"));
+}
+
+#[test]
+fn test_inline_dict_type_no_trailing_comma_fits_inline() {
+    let out = fmt("function f(o as { :a as Number, :b as String }) {}");
+    // No trailing comma + fits → inline.
+    assert!(out.contains(":a as Number, :b as String"));
+    assert!(!out.contains(":a as Number,\n"));
+}
+
+#[test]
+fn test_inline_dict_type_nested() {
+    let out = fmt("function f(o as { :outer as { :inner as Number } }) {}");
+    assert!(out.contains(":inner as Number"));
+    assert!(out.contains(":outer as"));
+}
+
+#[test]
 fn test_generic_params_distinguish_comma_and_or() {
     // Comma-separated multi-param generic stays comma-separated.
     let comma = fmt("function f() { var d as Dictionary<String, Number> = 1; }");

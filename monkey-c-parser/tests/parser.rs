@@ -75,27 +75,27 @@ fn test_class() {
 fn test_var_declarations() {
     let v = class_var("class C { var x as Float; }");
     assert_eq!(v.name, "x");
-    assert_eq!(v.type_.unwrap().ident, "Float");
+    assert_eq!(v.type_.unwrap().ident().unwrap(), "Float");
 
     // `Array<Number or Float>` is one generic param whose type is a union,
     // not two comma-separated params. Confirm the corrected shape.
     let v = class_var("class C { var items as Array<Number or Float>; }");
     let ty = v.type_.unwrap();
-    assert_eq!(ty.ident, "Array");
-    assert_eq!(ty.generic_params.len(), 1);
-    let param = &ty.generic_params[0];
-    assert_eq!(param.ident, "Number");
+    assert_eq!(ty.ident().unwrap(), "Array");
+    assert_eq!(ty.generic_params().len(), 1);
+    let param = &ty.generic_params()[0];
+    assert_eq!(param.ident().unwrap(), "Number");
     assert_eq!(param.alternatives.len(), 1);
-    assert_eq!(param.alternatives[0].ident, "Float");
+    assert_eq!(param.alternatives[0].ident().unwrap(), "Float");
 
     // `Dictionary<String, Number>` is two distinct generic params, comma-
     // separated. The old code conflated this with the union shape above.
     let v = class_var("class C { var d as Dictionary<String, Number>; }");
     let ty = v.type_.unwrap();
-    assert_eq!(ty.generic_params.len(), 2);
-    assert_eq!(ty.generic_params[0].ident, "String");
-    assert_eq!(ty.generic_params[1].ident, "Number");
-    assert!(ty.generic_params[0].alternatives.is_empty());
+    assert_eq!(ty.generic_params().len(), 2);
+    assert_eq!(ty.generic_params()[0].ident().unwrap(), "String");
+    assert_eq!(ty.generic_params()[1].ident().unwrap(), "Number");
+    assert!(ty.generic_params()[0].alternatives.is_empty());
 
     let v = class_var("class C { var x = 42; }");
     assert!(v.initializer.is_some());
@@ -128,7 +128,7 @@ fn test_const_declarations() {
     assert!(matches!(c.initializer, Expr::Lit(_)));
 
     let c = class_const("class C { const MAX as Number = 100; }");
-    assert_eq!(c.type_.unwrap().ident, "Number");
+    assert_eq!(c.type_.unwrap().ident().unwrap(), "Number");
 
     assert!(class_const("class C { static const RATE = 1; }").is_static);
 }
@@ -138,11 +138,11 @@ fn test_function_signature() {
     let f = first_function("function foo(a as Number, b as String) {}");
     assert_eq!(f.args.len(), 2);
     assert_eq!(f.args[0].name, "a");
-    assert_eq!(f.args[0].type_.as_ref().unwrap().ident, "Number");
+    assert_eq!(f.args[0].type_.as_ref().unwrap().ident().unwrap(), "Number");
     assert_eq!(f.args[1].name, "b");
 
     let f = first_function("function foo() as Void {}");
-    assert_eq!(f.returns.unwrap().ident, "Void");
+    assert_eq!(f.returns.unwrap().ident().unwrap(), "Void");
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn test_try_catch_typed_and_finally() {
         .type_filter
         .as_ref()
         .expect("first catch should be typed");
-    assert_eq!(filter.ident, "MyException");
+    assert_eq!(filter.ident().unwrap(), "MyException");
     assert!(t.catches[1].type_filter.is_none());
     assert!(t.finally.is_some());
 }
@@ -276,7 +276,7 @@ fn test_typedef() {
         panic!("expected typedef");
     };
     assert_eq!(d.name, "Numeric");
-    assert_eq!(d.type_.ident, "Number");
+    assert_eq!(d.type_.ident().unwrap(), "Number");
     assert_eq!(d.type_.alternatives.len(), 3);
 }
 

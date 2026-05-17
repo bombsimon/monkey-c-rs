@@ -183,9 +183,9 @@ fn test_new_array_typed() {
         panic!("expected NewArray");
     };
     let ty = e.element_type.expect("typed array");
-    assert_eq!(ty.ident, "Array");
-    assert_eq!(ty.generic_params.len(), 1);
-    assert_eq!(ty.generic_params[0].ident, "Number");
+    assert_eq!(ty.ident().unwrap(), "Array");
+    assert_eq!(ty.generic_params().len(), 1);
+    assert_eq!(ty.generic_params()[0].ident().unwrap(), "Number");
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn test_type_cast() {
     let Expr::TypeCast(e) = parse_expr("x as Number") else {
         panic!("expected TypeCast");
     };
-    assert_eq!(e.target_type.ident, "Number");
+    assert_eq!(e.target_type.ident().unwrap(), "Number");
 }
 
 #[test]

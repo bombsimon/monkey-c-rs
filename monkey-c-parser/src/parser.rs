@@ -1,7 +1,8 @@
 use crate::ast::{
-    Ast, BlockStmt, CatchClause, ClassDecl, ConstDecl, ElseBranch, ForInit, ForStmt, FunctionDecl,
-    IfStmt, ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, ThrowStmt, TryStmt, Type, TypedefDecl,
-    UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, CatchClause, ClassDecl, ConstDecl, DictTypeEntry, DictTypeKey, ElseBranch,
+    ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt,
+    ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl, Variable, Visibility,
+    WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -174,35 +175,48 @@ impl<'a> Parser<'a> {
         Ok(ty)
     }
 
-    /// Parse a single type name with optional generic params and `?`, but
-    /// without consuming `or` alternatives.
+    /// Parse a single type with optional generic params, optional `?`, and
+    /// no `or` alternatives (which `parse_type` handles).
     ///
     /// Generic params are separated by `,` only. `or` inside `<…>` belongs
     /// to a single param's union (`Array<Number or Null>` → one param whose
     /// `alternatives` is `[Null]`), not to the param list itself.
     pub(crate) fn parse_simple_type(&mut self) -> Result<Type, ParserError> {
-        let ident = self.parse_identifier()?;
-        if self.current_token != token::Type::Less {
-            self.next_token_span();
-        }
-
-        let generic_params = if self.current_token == token::Type::Less {
-            self.next_token_span(); // consume <
-            let mut params = Vec::new();
-
-            if self.current_token != token::Type::Greater {
-                params.push(self.parse_type()?);
-                while self.current_token == token::Type::Comma {
-                    self.next_token_span(); // consume ,
-                    params.push(self.parse_type()?);
-                }
+        let kind = if self.current_token == token::Type::LBrace {
+            let (entries, trailing_comma) = self.parse_inline_dict_type()?;
+            TypeKind::Dict {
+                entries,
+                trailing_comma,
+            }
+        } else {
+            let ident = self.parse_identifier()?;
+            if self.current_token != token::Type::Less {
+                self.next_token_span();
             }
 
-            self.assert_next_token(&[token::Type::Greater])?;
+            let generic_params = if self.current_token == token::Type::Less {
+                self.next_token_span(); // consume <
+                let mut params = Vec::new();
 
-            params
-        } else {
-            Vec::new()
+                if self.current_token != token::Type::Greater {
+                    params.push(self.parse_type()?);
+                    while self.current_token == token::Type::Comma {
+                        self.next_token_span(); // consume ,
+                        params.push(self.parse_type()?);
+                    }
+                }
+
+                self.assert_next_token(&[token::Type::Greater])?;
+
+                params
+            } else {
+                Vec::new()
+            };
+
+            TypeKind::Named {
+                ident,
+                generic_params,
+            }
         };
 
         let optional = self.current_token == token::Type::Question;
@@ -211,11 +225,55 @@ impl<'a> Parser<'a> {
         }
 
         Ok(Type {
-            ident,
-            generic_params,
+            kind,
             alternatives: Vec::new(),
             optional,
         })
+    }
+
+    /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`.
+    /// Consumes the surrounding braces. Returns the entries and whether the
+    /// source ended with a trailing comma (magic-trailing-comma rule).
+    fn parse_inline_dict_type(&mut self) -> Result<(Vec<DictTypeEntry>, bool), ParserError> {
+        self.assert_next_token(&[token::Type::LBrace])?;
+        let mut entries = Vec::new();
+        let mut trailing_comma = false;
+
+        while self.current_token != token::Type::RBrace {
+            let key = match self.current_token.clone() {
+                token::Type::Symbol(name) => {
+                    self.next_token_span();
+                    DictTypeKey::Symbol(name)
+                }
+                token::Type::String(name) => {
+                    self.next_token_span();
+                    DictTypeKey::String(name)
+                }
+                _ => {
+                    return Err(self.parse_error(format!(
+                        "Expected `:symbol` or string key in inline dict type, got {:?}",
+                        self.current_token
+                    )));
+                }
+            };
+            self.assert_next_token(&[token::Type::As])?;
+            let value_type = self.parse_type()?;
+            entries.push(DictTypeEntry { key, value_type });
+
+            if self.current_token == token::Type::Comma {
+                self.next_token_span();
+                if self.current_token == token::Type::RBrace {
+                    trailing_comma = true;
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        self.assert_next_token(&[token::Type::RBrace])?;
+
+        Ok((entries, trailing_comma))
     }
 
     fn parse_declaration(&mut self) -> Result<Ast, ParserError> {

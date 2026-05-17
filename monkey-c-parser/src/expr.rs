@@ -1,8 +1,8 @@
 use crate::ast::{
     ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
     CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
-    NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type, TypeCastExpr, UnaryExpr,
-    UnaryOperator,
+    NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type, TypeCastExpr, TypeKind,
+    UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -666,8 +666,10 @@ impl Parser<'_> {
                 // `new Type<T>[size]` — typed array allocation.
                 if self.current_token == token::Type::LBracket {
                     let element_type = Type {
-                        ident: class,
-                        generic_params,
+                        kind: TypeKind::Named {
+                            ident: class,
+                            generic_params,
+                        },
                         alternatives: Vec::new(),
                         optional: false,
                     };

@@ -3,8 +3,9 @@ mod operators;
 
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, ConstDecl, DictEntry, ElseBranch, Expr,
-    ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt, TryStmt, Type, VarDecl, Visibility,
+    ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, ConstDecl, DictEntry, DictTypeEntry,
+    DictTypeKey, ElseBranch, Expr, ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt, TryStmt,
+    Type, TypeKind, VarDecl, Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
@@ -278,28 +279,37 @@ impl Formatter {
     }
 
     fn type_to_doc(ty: &Type) -> Doc {
-        let base = if ty.generic_params.is_empty() {
-            let suffix = if ty.optional { "?" } else { "" };
-            Doc::text(format!("{}{}", ty.ident, suffix))
-        } else {
-            let params: Vec<Doc> = ty
-                .generic_params
-                .iter()
-                .enumerate()
-                .flat_map(|(i, p)| {
-                    if i > 0 {
-                        vec![Doc::text(", "), Self::type_to_doc(p)]
-                    } else {
-                        vec![Self::type_to_doc(p)]
-                    }
-                })
-                .collect();
-            let suffix = if ty.optional { "?" } else { "" };
-            Doc::concat(vec![
-                Doc::text(format!("{}<", ty.ident)),
-                Doc::Concat(params),
-                Doc::text(format!(">{}", suffix)),
-            ])
+        let suffix = if ty.optional { "?" } else { "" };
+        let base = match &ty.kind {
+            TypeKind::Named {
+                ident,
+                generic_params,
+            } => {
+                if generic_params.is_empty() {
+                    Doc::text(format!("{}{}", ident, suffix))
+                } else {
+                    let params: Vec<Doc> = generic_params
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(i, p)| {
+                            if i > 0 {
+                                vec![Doc::text(", "), Self::type_to_doc(p)]
+                            } else {
+                                vec![Self::type_to_doc(p)]
+                            }
+                        })
+                        .collect();
+                    Doc::concat(vec![
+                        Doc::text(format!("{}<", ident)),
+                        Doc::Concat(params),
+                        Doc::text(format!(">{}", suffix)),
+                    ])
+                }
+            }
+            TypeKind::Dict {
+                entries,
+                trailing_comma,
+            } => Self::inline_dict_type_to_doc(entries, *trailing_comma, suffix),
         };
 
         if ty.alternatives.is_empty() {
@@ -313,6 +323,66 @@ impl Formatter {
         }
 
         Doc::Concat(parts)
+    }
+
+    /// Render an inline dict type `{ :k as T, "k" as U }`. A source-level
+    /// trailing comma forces multi-line (magic-trailing-comma rule); otherwise
+    /// fits on one line when it can.
+    fn inline_dict_type_to_doc(
+        entries: &[DictTypeEntry],
+        trailing_comma: bool,
+        suffix: &str,
+    ) -> Doc {
+        if entries.is_empty() {
+            return Doc::text(format!("{{}}{}", suffix));
+        }
+
+        let entry_doc = |entry: &DictTypeEntry| {
+            let key = match &entry.key {
+                DictTypeKey::Symbol(s) => format!(":{s}"),
+                DictTypeKey::String(s) => format!("\"{s}\""),
+            };
+            Doc::concat(vec![
+                Doc::text(key),
+                Doc::text(" as "),
+                Self::type_to_doc(&entry.value_type),
+            ])
+        };
+
+        if trailing_comma {
+            let mut inner = Vec::new();
+            for (i, entry) in entries.iter().enumerate() {
+                if i > 0 {
+                    inner.push(Doc::text(","));
+                    inner.push(Doc::HardLine);
+                }
+                inner.push(entry_doc(entry));
+            }
+            inner.push(Doc::text(","));
+
+            return Doc::concat(vec![
+                Doc::text("{"),
+                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+                Doc::HardLine,
+                Doc::text(format!("}}{}", suffix)),
+            ]);
+        }
+
+        let mut inner = Vec::new();
+        for (i, entry) in entries.iter().enumerate() {
+            if i > 0 {
+                inner.push(Doc::text(","));
+                inner.push(Doc::Line);
+            }
+            inner.push(entry_doc(entry));
+        }
+
+        Doc::Group(vec![
+            Doc::text("{"),
+            Doc::Indent(vec![Doc::SoftLine, Doc::Concat(inner)]),
+            Doc::SoftLine,
+            Doc::text(format!("}}{}", suffix)),
+        ])
     }
 
     fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {

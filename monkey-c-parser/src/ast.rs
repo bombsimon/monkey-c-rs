@@ -18,7 +18,8 @@ pub enum Visibility {
     Public,
 }
 
-/// A Monkey C type annotation, optionally generic and optionally nullable.
+/// A Monkey C type annotation, optionally nullable and optionally part of
+/// an `or`-union with other peers.
 ///
 /// `,` inside `<…>` and the `or` keyword are *not* interchangeable:
 /// `Dictionary<String, Number>` has two distinct arguments;
@@ -26,16 +27,70 @@ pub enum Visibility {
 /// generic argument may carry its own union.
 #[derive(Debug, PartialEq)]
 pub struct Type {
-    /// Primary type name. For a union this is the first peer (e.g. `Number`
-    /// in `Number or Null`); other peers live in `alternatives`.
-    pub ident: Ident,
-    /// Comma-separated arguments inside `<…>`. Empty for non-generic types.
-    pub generic_params: Vec<Type>,
+    pub kind: TypeKind,
     /// `or`-joined union peers, excluding the first (which is this type
     /// itself). Empty for non-union types.
     pub alternatives: Vec<Type>,
     /// Whether the type is nullable (`?` suffix).
     pub optional: bool,
+}
+
+/// What kind of type this is, before alternatives/optional are applied.
+#[derive(Debug, PartialEq)]
+pub enum TypeKind {
+    /// A named type, possibly generic: `Number`, `Array<T>`,
+    /// `Dictionary<K, V>`.
+    Named {
+        ident: Ident,
+        /// Comma-separated arguments inside `<…>`. Empty for non-generic
+        /// types.
+        generic_params: Vec<Type>,
+    },
+    /// An inline dictionary type: `{ :key1 as T, "key2" as U }`. Used as a
+    /// type annotation, e.g. `function f(opts as { :flag as Boolean })`.
+    ///
+    /// `trailing_comma` mirrors the magic-trailing-comma rule used by dict
+    /// and array literals: when `true`, the formatter always renders
+    /// multi-line; otherwise it tries to fit on one line.
+    Dict {
+        entries: Vec<DictTypeEntry>,
+        trailing_comma: bool,
+    },
+}
+
+/// A single `key as Type` entry in an inline dictionary type.
+#[derive(Debug, PartialEq)]
+pub struct DictTypeEntry {
+    pub key: DictTypeKey,
+    pub value_type: Type,
+}
+
+/// A key in an inline dictionary type. Either a symbol literal (`:name`)
+/// or a string literal (`"name"`).
+#[derive(Debug, PartialEq)]
+pub enum DictTypeKey {
+    Symbol(String),
+    String(String),
+}
+
+impl Type {
+    /// The name of a [`TypeKind::Named`] type, or `None` for an inline
+    /// dictionary type.
+    pub fn ident(&self) -> Option<&str> {
+        match &self.kind {
+            TypeKind::Named { ident, .. } => Some(ident),
+            TypeKind::Dict { .. } => None,
+        }
+    }
+
+    /// Comma-separated generic arguments. Empty for non-generic types and
+    /// for inline dictionary types.
+    pub fn generic_params(&self) -> &[Type] {
+        match &self.kind {
+            TypeKind::Named { generic_params, .. } => generic_params,
+            TypeKind::Dict { .. } => &[],
+        }
+    }
 }
 
 /// A half-open byte range `[start, end)` into the original source string.
