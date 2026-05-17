@@ -517,6 +517,22 @@ fn test_empty_dict_with_tail_comment() {
 }
 
 #[test]
+fn test_while_condition_wraps_like_if() {
+    // Same wrap behaviour as `if` — top-level binary breaks at the operator
+    // and `{` lands on its own line.
+    let src = "function f() { while (alpha + beta + gamma <= maxFieldThreshold) { x = x - 1; } }";
+    let out = fmt_width(src, 40);
+    assert!(out.contains("\n        <= maxFieldThreshold"));
+}
+
+#[test]
+fn test_switch_discriminant_wraps_like_if() {
+    let src = "function f() { switch (computeLong() + somethingElseLong) { case 1: foo(); } }";
+    let out = fmt_width(src, 40);
+    assert!(out.contains("\n        + somethingElseLong"));
+}
+
+#[test]
 fn test_if_condition_wraps_at_comparison_op() {
     // Non-logical top-level binary (here `<=`) is also a wrap-point.
     // Operands break with the operator leading the next line, Rust-style.

@@ -429,25 +429,33 @@ impl Formatter {
         ])
     }
 
-    fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {
-        // Only wrap `{` to its own line when the condition itself can be
-        // broken at an operator (any top-level binary). Otherwise the
-        // brace would dangle on the next line without the condition
-        // wrapping, which doesn't shorten anything.
-        let wrappable = top_level_binary(&s.condition);
-
-        let cond_doc = self.condition_to_doc(&s.condition);
-        let header = if wrappable {
+    /// Render `<keyword> (cond)` followed by either a space (when `cond` fits
+    /// flat) or a hard line break (when it wraps), so the trailing `{` lands
+    /// on its own line in the wrapped case. Used by `if`, `while`, `switch`.
+    ///
+    /// For non-binary conditions there's nothing to wrap at, so a plain
+    /// `<keyword> (cond) ` is emitted regardless of width.
+    fn paren_condition_header(&self, keyword: &str, cond: &Expr) -> Doc {
+        let wrappable = top_level_binary(cond);
+        let cond_doc = self.condition_to_doc(cond);
+        if wrappable {
             Doc::Group(vec![
-                Doc::text("if ("),
+                Doc::text(format!("{keyword} (")),
                 Doc::Indent(vec![cond_doc]),
                 Doc::text(")"),
                 Doc::flat_or_break(Doc::text(" "), Doc::HardLine),
             ])
         } else {
-            Doc::concat(vec![Doc::text("if ("), cond_doc, Doc::text(") ")])
-        };
+            Doc::concat(vec![
+                Doc::text(format!("{keyword} (")),
+                cond_doc,
+                Doc::text(") "),
+            ])
+        }
+    }
 
+    fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {
+        let header = self.paren_condition_header("if", &s.condition);
         let mut parts = vec![header, self.block_body_to_doc(&s.then_branch)];
 
         for (i, comment) in s.trailing_comments.iter().enumerate() {
@@ -579,9 +587,8 @@ impl Formatter {
         }
 
         Doc::concat(vec![
-            Doc::text("switch ("),
-            self.expr_to_doc(&s.discriminant),
-            Doc::text(") {"),
+            self.paren_condition_header("switch", &s.discriminant),
+            Doc::text("{"),
             Doc::Indent(vec![Doc::HardLine, Doc::Concat(body)]),
             Doc::HardLine,
             Doc::text("}"),
@@ -660,10 +667,8 @@ impl Formatter {
             Stmt::If(s) => self.if_stmt_to_doc(s),
 
             Stmt::While(s) => Doc::concat(vec![
-                Doc::text("while ("),
-                self.expr_to_doc(&s.condition),
-                Doc::text(")"),
-                self.block_to_doc(&s.body),
+                self.paren_condition_header("while", &s.condition),
+                self.block_body_to_doc(&s.body),
             ]),
 
             Stmt::For(s) => {
