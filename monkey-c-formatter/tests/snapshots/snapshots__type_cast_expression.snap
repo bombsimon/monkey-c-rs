@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { var x = arr as Array<Number>; }\")"
+---
+function f() {
+    var x = arr as Array<Number>;
+}

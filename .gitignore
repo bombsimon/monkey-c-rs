@@ -1,1 +1,5 @@
 /target
+
+# insta writes a `.snap.new` next to a snapshot when output diverges from the
+# committed `.snap`. They're intermediate, accepted via `cargo insta review`.
+*.snap.new

@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/if_trailing_comment_no_else.mc
+---
+function f() {
+    if (a) {
+        return 1;
+    } // tail
+}

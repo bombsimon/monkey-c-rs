@@ -1,0 +1,12 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    if (a and b or c) { x; }\n    if (a && b || c) { y; }\n}\n\"#.trim())"
+---
+function f() {
+    if (a and b or c) {
+        x;
+    }
+    if (a && b || c) {
+        y;
+    }
+}

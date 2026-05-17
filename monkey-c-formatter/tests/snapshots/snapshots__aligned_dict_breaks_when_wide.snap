@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+expression: "format_aligned_width(r#\"var d = {:foo => \"bar\", :not_foo => \"baz\"};\"#, 30)"
+---
+var d = {
+    :foo     => "bar",
+    :not_foo => "baz"
+};

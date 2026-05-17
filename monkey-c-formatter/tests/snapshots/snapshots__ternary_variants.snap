@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    var simple = true ? 1 : 2;\n    var nested = a ? b : c ? d : e;\n    var short = a ? b : c;\n    var in_dict = { \"k\" => (a == null) ? \"default\" : a };\n}\n\"#.trim())"
+---
+function f() {
+    var simple = true ? 1 : 2;
+    var nested = a ? b : c ? d : e;
+    var short = a ? b : c;
+    var in_dict = {"k" => (a == null) ? "default" : a};
+}

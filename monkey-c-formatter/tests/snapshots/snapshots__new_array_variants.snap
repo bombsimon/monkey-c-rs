@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    var untyped = new [size];\n    var typed = new Array<Number>[size];\n    var expr_size = new [20 + 30];\n}\n\"#.trim())"
+---
+function f() {
+    var untyped = new [size];
+    var typed = new Array<Number>[size];
+    var expr_size = new [20 + 30];
+}

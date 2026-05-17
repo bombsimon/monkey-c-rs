@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nvar x = {\n    :a => 1,\n\n    :b => 2,\n};\n\"#.trim())"
+---
+var x = {
+    :a => 1,
+
+    :b => 2,
+};

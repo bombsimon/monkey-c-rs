@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nimport Toybox.WatchUi;\nusing Toybox.Lang;\nusing Toybox.Lang as Lng;\n\"#.trim())"
+---
+import Toybox.WatchUi;
+using Toybox.Lang;
+using Toybox.Lang as Lng;

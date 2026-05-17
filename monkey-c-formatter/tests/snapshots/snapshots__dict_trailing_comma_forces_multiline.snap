@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"var d = {\"key\" => \"value\",};\"#)"
+---
+var d = {
+    "key" => "value",
+};

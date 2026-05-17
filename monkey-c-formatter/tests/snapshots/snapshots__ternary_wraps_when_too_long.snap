@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format_width(\"var x = superLongCondition ? caseIfTrue : caseIfFalse;\", 40)"
+---
+var x = superLongCondition
+    ? caseIfTrue
+    : caseIfFalse;

@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { if (x > 0) { return x; } else { return 0; } }\")"
+---
+function f() {
+    if (x > 0) {
+        return x;
+    } else {
+        return 0;
+    }
+}

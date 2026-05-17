@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { throw new Lang.Exception(); }\")"
+---
+function f() {
+    throw new Lang.Exception();
+}

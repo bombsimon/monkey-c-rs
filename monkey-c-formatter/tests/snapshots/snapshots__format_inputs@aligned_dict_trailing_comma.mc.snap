@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/aligned_dict_trailing_comma.mc
+---
+var d = {
+    :foo     => "bar",
+    :not_foo => "baz",
+};

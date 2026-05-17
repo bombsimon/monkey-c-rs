@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { while (x > 0) { x = x - 1; } }\")"
+---
+function f() {
+    while (x > 0) {
+        x = x - 1;
+    }
+}

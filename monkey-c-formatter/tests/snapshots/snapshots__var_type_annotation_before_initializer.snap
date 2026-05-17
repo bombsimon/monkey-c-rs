@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"class C { var x as Float = 1.0; }\")"
+---
+class C {
+    var x as Float = 1;
+}

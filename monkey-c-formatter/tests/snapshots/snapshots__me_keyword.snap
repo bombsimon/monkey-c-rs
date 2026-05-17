@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"class C { function f() { me.x = 1; } }\")"
+---
+class C {
+    function f() {
+        me.x = 1;
+    }
+}

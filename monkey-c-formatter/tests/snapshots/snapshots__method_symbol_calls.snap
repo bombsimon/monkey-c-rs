@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    var cb = method(:onReceive);\n    obj.method(:onTap);\n}\n\"#.trim())"
+---
+function f() {
+    var cb = method(:onReceive);
+    obj.method(:onTap);
+}

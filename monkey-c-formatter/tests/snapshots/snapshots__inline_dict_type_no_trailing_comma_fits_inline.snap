@@ -1,0 +1,5 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f(o as { :a as Number, :b as String }) {}\")"
+---
+function f(o as {:a as Number, :b as String}) {}

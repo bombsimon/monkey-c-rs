@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/array_entry_inline_trailing_comment.mc
+---
+function f() {
+    var x = [
+        1,
+        2, // mid
+        3
+    ];
+}

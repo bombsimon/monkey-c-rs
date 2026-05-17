@@ -1,0 +1,5 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"var d = {:title => \"George\", :name => \"Taylor\"};\"#)"
+---
+var d = {:title => "George", :name => "Taylor"};

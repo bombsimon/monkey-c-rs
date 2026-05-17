@@ -1,0 +1,5 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f(o as { :outer as { :inner as Number } }) {}\")"
+---
+function f(o as {:outer as {:inner as Number}}) {}

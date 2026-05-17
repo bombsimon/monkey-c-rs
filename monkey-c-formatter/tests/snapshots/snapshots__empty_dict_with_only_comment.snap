@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { var x = {/* nothing */}; }\")"
+---
+function f() {
+    var x = {
+        /* nothing */
+    };
+}

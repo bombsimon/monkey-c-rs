@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/aligned_dict_preserves_leading_comment.mc
+---
+var icon = {
+    // Day icon              Night icon                Description
+    "01d" => "H",
+    "01n" => "f", // clear sky
+    "02d" => "G",
+    "02n" => "g", // few clouds
+};

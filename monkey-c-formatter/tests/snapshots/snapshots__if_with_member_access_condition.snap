@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { if (obj.flag) { return 1; } }\")"
+---
+function f() {
+    if (obj.flag) {
+        return 1;
+    }
+}

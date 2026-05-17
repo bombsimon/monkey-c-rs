@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/line_comment_preserved.mc
+---
+// a comment
+var x = 1;

@@ -9,3 +9,6 @@ path = "examples/format.rs"
 
 [dependencies]
 monkey-c-parser = { path = "../monkey-c-parser" }
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

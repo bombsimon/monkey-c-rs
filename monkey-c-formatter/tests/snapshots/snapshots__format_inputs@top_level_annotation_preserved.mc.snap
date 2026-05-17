@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/top_level_annotation_preserved.mc
+---
+(:test)
+function foo() {}

@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { if (WatchUI has :WatchFaceDelegate) { foo(); } }\")"
+---
+function f() {
+    if (WatchUI has :WatchFaceDelegate) {
+        foo();
+    }
+}

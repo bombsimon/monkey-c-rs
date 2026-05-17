@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nvar fits = [1, 2, 3];\nvar collapses = [1, 2, 3,];\n\"#.trim())"
+---
+var fits = [1, 2, 3];
+var collapses = [
+    1,
+    2,
+    3,
+];

@@ -1,0 +1,5 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function foo(a as Number, b as String) as Void {}\")"
+---
+function foo(a as Number, b as String) as Void {}

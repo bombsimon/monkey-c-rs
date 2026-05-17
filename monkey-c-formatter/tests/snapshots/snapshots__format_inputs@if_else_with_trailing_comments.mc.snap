@@ -1,0 +1,15 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/if_else_with_trailing_comments.mc
+---
+function f() {
+    if (a) {
+        return 1;
+    } // first
+    else if (b) {
+        return 2;
+    } // second
+    else {
+        return 3;
+    }
+}

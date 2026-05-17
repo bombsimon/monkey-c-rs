@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { return x + 1; }\")"
+---
+function f() {
+    return x + 1;
+}

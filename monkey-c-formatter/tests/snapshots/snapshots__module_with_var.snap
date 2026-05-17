@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"module MyModule { var x; }\")"
+---
+module MyModule {
+    var x;
+}

@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { var x = a + b * c; }\")"
+---
+function f() {
+    var x = a + b * c;
+}

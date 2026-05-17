@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/generic_params_comma_vs_or.mc
+---
+function f() {
+    var d as Dictionary<String, Number> = 1;
+    var a as Array<Number or Null> = 1;
+    var w as Dictionary<String, Array<Number or Null>> = 1;
+}

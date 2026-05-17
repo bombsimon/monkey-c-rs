@@ -1,0 +1,5 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"var a = :mySymbol;\")"
+---
+var a = :mySymbol;

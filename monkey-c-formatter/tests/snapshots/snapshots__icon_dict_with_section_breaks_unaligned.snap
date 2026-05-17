@@ -1,0 +1,21 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nvar icon = {\n    FIELD_TYPE_SUNRISE => \">\",\n    // FIELD_TYPE_SUNSET => \"?\",\n\n    FIELD_TYPE_HEART_RATE => \"3\",\n    FIELD_TYPE_HR_LIVE_5S => \"3\",\n    // FIELD_TYPE_BATTERY => \"4\",\n    // FIELD_TYPE_BATTERY_HIDE_PERCENT => \"4\",\n    FIELD_TYPE_NOTIFICATIONS => \"5\",\n    FIELD_TYPE_TEMPERATURE => \"<\",\n    // FIELD_TYPE_WEATHER => \"<\",\n    // LIVE_HR_SPOT => \"=\",\n\n    FIELD_TYPE_SUNRISE_SUNSET => \"?\",\n    FIELD_TYPE_PULSE_OX => \"B\", // SG Addition\n    FIELD_BODY_BATTERY => \"E\", // SG Addition\n};\n\"#.trim())"
+---
+var icon = {
+    FIELD_TYPE_SUNRISE => ">",
+    // FIELD_TYPE_SUNSET => "?",
+
+    FIELD_TYPE_HEART_RATE => "3",
+    FIELD_TYPE_HR_LIVE_5S => "3",
+    // FIELD_TYPE_BATTERY => "4",
+    // FIELD_TYPE_BATTERY_HIDE_PERCENT => "4",
+    FIELD_TYPE_NOTIFICATIONS => "5",
+    FIELD_TYPE_TEMPERATURE => "<",
+    // FIELD_TYPE_WEATHER => "<",
+    // LIVE_HR_SPOT => "=",
+
+    FIELD_TYPE_SUNRISE_SUNSET => "?",
+    FIELD_TYPE_PULSE_OX => "B", // SG Addition
+    FIELD_BODY_BATTERY => "E", // SG Addition
+};

@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/array_standalone_comment_between_entries.mc
+---
+var x = [
+    1,
+    // Some comment
+    2,
+];

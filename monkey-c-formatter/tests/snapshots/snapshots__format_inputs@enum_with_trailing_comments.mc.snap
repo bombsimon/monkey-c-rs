@@ -1,0 +1,9 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/enum_with_trailing_comments.mc
+---
+enum {
+    Sunday, // 0
+    Monday, // 1
+    Saturday // 6
+}

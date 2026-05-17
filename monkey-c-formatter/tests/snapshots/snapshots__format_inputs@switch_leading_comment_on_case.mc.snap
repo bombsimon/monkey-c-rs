@@ -1,0 +1,15 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/switch_leading_comment_on_case.mc
+---
+function f() {
+    switch (x) {
+        // first
+        case 1:
+            a();
+            break;
+        // fallback
+        default:
+            b();
+    }
+}

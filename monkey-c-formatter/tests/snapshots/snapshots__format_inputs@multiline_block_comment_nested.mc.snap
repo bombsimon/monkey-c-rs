@@ -1,0 +1,12 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/multiline_block_comment_nested.mc
+---
+function f() {
+    if (x) {
+        /* a
+           b
+        */
+        var y = 1;
+    }
+}

@@ -1,0 +1,12 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    if (x > 0) { return x; }\n    if (a || b) { return 1; }\n}\n\"#.trim())"
+---
+function f() {
+    if (x > 0) {
+        return x;
+    }
+    if (a || b) {
+        return 1;
+    }
+}

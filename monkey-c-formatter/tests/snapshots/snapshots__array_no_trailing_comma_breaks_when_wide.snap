@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+expression: "format_width(\"var a = [\\\"a_long_string\\\", \\\"another_long_string\\\"];\", 30)"
+---
+var a = [
+    "a_long_string",
+    "another_long_string"
+];

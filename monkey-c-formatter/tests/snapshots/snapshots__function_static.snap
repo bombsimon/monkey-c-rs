@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"class C { static function foo() {} }\")"
+---
+class C {
+    static function foo() {}
+}

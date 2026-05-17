@@ -1,0 +1,12 @@
+var icon = {
+    FIELD_TYPE_SUNRISE => ">",
+    // FIELD_TYPE_SUNSET => "?",
+
+    FIELD_TYPE_HEART_RATE => "3",
+    FIELD_TYPE_HR_LIVE_5S => "3",
+    // FIELD_TYPE_BATTERY => "4",
+    FIELD_TYPE_NOTIFICATIONS => "5",
+
+    FIELD_TYPE_PRESSURE => "@",
+    FIELD_TYPE_PULSE_OX => "B", // SG Addition
+};

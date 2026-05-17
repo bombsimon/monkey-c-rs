@@ -1,0 +1,12 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function fn() { if (somethingVeryLong > 1 \\\n             || somethingEvenLongerThisTime > 1 \\\n             || somethingLongSoWeshouldBreak > 1) { var x = 1; } }\")"
+---
+function fn() {
+    if (somethingVeryLong > 1
+        || somethingEvenLongerThisTime > 1
+        || somethingLongSoWeshouldBreak > 1)
+    {
+        var x = 1;
+    }
+}

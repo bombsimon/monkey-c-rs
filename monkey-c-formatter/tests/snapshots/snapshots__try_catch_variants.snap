@@ -1,0 +1,22 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nfunction basic() { try { foo(); } catch (e) { log(e); } }\nfunction typed_and_finally() {\n    try { foo(); }\n    catch (e instanceof MyException) { log(e); }\n    catch (e) { other(e); }\n    finally { cleanup(); }\n}\n\"#.trim())"
+---
+function basic() {
+    try {
+        foo();
+    } catch (e) {
+        log(e);
+    }
+}
+function typed_and_finally() {
+    try {
+        foo();
+    } catch (e instanceof MyException) {
+        log(e);
+    } catch (e) {
+        other(e);
+    } finally {
+        cleanup();
+    }
+}

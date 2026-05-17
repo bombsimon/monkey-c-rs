@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"function f() { /* note */ var x = 1; }\")"
+---
+function f() {
+    /* note */
+    var x = 1;
+}

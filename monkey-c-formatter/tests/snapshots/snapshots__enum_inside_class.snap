@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"class C { enum { A, B } }\")"
+---
+class C {
+    enum {
+        A,
+        B
+    }
+}

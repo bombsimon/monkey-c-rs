@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: "format_width(\"function f() { if (value.length() + unit.length() <= mMaxFieldLength) { foo(); } }\",\n40,)"
+---
+function f() {
+    if (value.length() + unit.length()
+        <= mMaxFieldLength)
+    {
+        foo();
+    }
+}

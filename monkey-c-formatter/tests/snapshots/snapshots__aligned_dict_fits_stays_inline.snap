@@ -1,0 +1,5 @@
+---
+source: tests/snapshots.rs
+expression: "format_aligned(r#\"var d = {:foo => \"bar\", :not_foo => \"baz\"};\"#)"
+---
+var d = {:foo => "bar", :not_foo => "baz"};

@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/annotation_glance.mc
+---
+(:glance)
+function f() {}

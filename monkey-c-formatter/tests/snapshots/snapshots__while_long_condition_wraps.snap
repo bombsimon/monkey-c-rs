@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+expression: "format_width(\"function f() { while (alpha + beta + gamma <= maxFieldThreshold) { x = x - 1; } }\",\n40,)"
+---
+function f() {
+    while (alpha + beta + gamma
+        <= maxFieldThreshold)
+    {
+        x = x - 1;
+    }
+}

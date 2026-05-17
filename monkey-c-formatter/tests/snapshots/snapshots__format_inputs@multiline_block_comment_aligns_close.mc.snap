@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/multiline_block_comment_aligns_close.mc
+---
+function f() {
+    /* line 1
+       line 2
+    */
+    var x = 1;
+}

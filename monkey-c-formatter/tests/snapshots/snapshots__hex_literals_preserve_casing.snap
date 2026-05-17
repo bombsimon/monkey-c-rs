@@ -1,0 +1,7 @@
+---
+source: tests/snapshots.rs
+expression: "format(\"var a = 0xFFCC00; var b = 0xffcc00; var c = 0xAbCdEf;\")"
+---
+var a = 0xFFCC00;
+var b = 0xffcc00;
+var c = 0xAbCdEf;

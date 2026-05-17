@@ -1,0 +1,6 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\ntypedef MyInt as Number;\ntypedef Numeric as Number or Float or Long or Double;\n\"#.trim())"
+---
+typedef MyInt as Number;
+typedef Numeric as Number or Float or Long or Double;

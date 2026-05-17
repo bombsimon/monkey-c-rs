@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+expression: "format(r#\"\nclass C {\n    private var x;\n    protected var y;\n    public var z;\n    hidden var w;\n}\n\"#.trim())"
+---
+class C {
+    private var x;
+    protected var y;
+    public var z;
+    hidden var w;
+}

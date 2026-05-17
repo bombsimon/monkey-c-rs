@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/function_param_trailing_comment.mc
+---
+function foo(
+    a, // first
+    b
+) {}
