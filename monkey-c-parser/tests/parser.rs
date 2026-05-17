@@ -270,6 +270,40 @@ fn test_ternary_right_associative() {
 }
 
 #[test]
+fn test_enum_auto_incremented() {
+    let nodes = document_nodes("enum { Sunday, Monday, Saturday }");
+    let Ast::Enum(e) = &nodes[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(e.variants.len(), 3);
+    assert_eq!(e.variants[0].name, "Sunday");
+    assert!(e.variants.iter().all(|v| v.value.is_none()));
+    assert!(!e.trailing_comma);
+}
+
+#[test]
+fn test_enum_explicit_values() {
+    let nodes = document_nodes("enum { x = 1337, y, a = 0 }");
+    let Ast::Enum(e) = &nodes[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(e.variants.len(), 3);
+    assert!(e.variants[0].value.is_some());
+    assert!(e.variants[1].value.is_none());
+    assert!(e.variants[2].value.is_some());
+}
+
+#[test]
+fn test_enum_trailing_comma() {
+    let nodes = document_nodes("enum { A, B, }");
+    let Ast::Enum(e) = &nodes[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(e.variants.len(), 2);
+    assert!(e.trailing_comma);
+}
+
+#[test]
 fn test_typedef() {
     let nodes = document_nodes("typedef Numeric as Number or Float or Long or Double;");
     let Ast::Typedef(d) = &nodes[0] else {

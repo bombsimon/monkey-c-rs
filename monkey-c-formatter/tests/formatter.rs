@@ -91,6 +91,41 @@ fn test_using() {
 }
 
 #[test]
+fn test_enum_auto_incremented() {
+    let src = "enum { Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday }";
+    let out = fmt(src);
+    assert!(out.contains("enum {\n"));
+    assert!(out.contains("    Sunday,"));
+    assert!(out.contains("    Saturday\n}"));
+}
+
+#[test]
+fn test_enum_explicit_values() {
+    let src = "enum { x = 1337, y, z, a = 0, b, c }";
+    let out = fmt(src);
+    assert!(out.contains("    x = 1337,"));
+    assert!(out.contains("    a = 0,"));
+    assert!(out.contains("    c\n}"));
+}
+
+#[test]
+fn test_enum_with_trailing_comments() {
+    let src = "enum {\n    Sunday,     // 0\n    Monday,     // 1\n    Saturday    // 6\n}";
+    let out = fmt(src);
+    assert!(out.contains("Sunday, // 0"));
+    assert!(out.contains("Saturday // 6"));
+}
+
+#[test]
+fn test_enum_inside_class() {
+    let out = fmt("class C { enum { A, B } }");
+    assert!(out.contains("class C {"));
+    assert!(out.contains("    enum {"));
+    assert!(out.contains("        A,"));
+    assert!(out.contains("        B\n    }"));
+}
+
+#[test]
 fn test_typedef() {
     assert_eq!(
         fmt("typedef Numeric as Number or Float or Long or Double;"),

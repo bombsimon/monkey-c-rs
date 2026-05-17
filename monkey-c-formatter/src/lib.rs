@@ -4,8 +4,8 @@ mod operators;
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
     ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, ConstDecl, DictEntry, DictTypeEntry,
-    DictTypeKey, ElseBranch, Expr, ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt, TryStmt,
-    Type, TypeKind, VarDecl, Visibility,
+    DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl, IfStmt, LiteralValue, Stmt,
+    TryStmt, Type, TypeKind, VarDecl, Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
@@ -144,6 +144,7 @@ impl Formatter {
                 ])
             }
             Ast::Function(decl) => self.function_to_doc(decl),
+            Ast::Enum(decl) => self.enum_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
             Ast::Comment(text, _) => Doc::text(format!("//{}", text)),
@@ -167,6 +168,43 @@ impl Formatter {
         }
 
         Doc::Concat(docs)
+    }
+
+    /// Render an `enum { … }`. Always multi-line — enums are declarations
+    /// and never collapse to a single line. A trailing comma in source is
+    /// preserved on the last variant.
+    fn enum_to_doc(&self, decl: &EnumDecl) -> Doc {
+        if decl.variants.is_empty() {
+            return Doc::text("enum {}");
+        }
+
+        let last_idx = decl.variants.len() - 1;
+        let mut inner = Vec::new();
+        for (i, v) in decl.variants.iter().enumerate() {
+            if i > 0 {
+                inner.push(Doc::HardLine);
+            }
+            let mut parts = vec![Doc::text(&v.name)];
+            if let Some(value) = &v.value {
+                parts.push(Doc::text(" = "));
+                parts.push(self.expr_to_doc(value));
+            }
+            if i != last_idx || decl.trailing_comma {
+                parts.push(Doc::text(","));
+            }
+            for c in &v.trailing_comments {
+                parts.push(Doc::text(" "));
+                parts.push(self.stmt_to_doc(c));
+            }
+            inner.push(Doc::Concat(parts));
+        }
+
+        Doc::concat(vec![
+            Doc::text("enum {"),
+            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+            Doc::HardLine,
+            Doc::text("}"),
+        ])
     }
 
     fn function_to_doc(&self, decl: &FunctionDecl) -> Doc {

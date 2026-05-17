@@ -511,6 +511,7 @@ pub enum Ast {
     Module(ModuleDecl),
     Class(ClassDecl),
     Function(FunctionDecl),
+    Enum(EnumDecl),
     Variable(VarDecl),
     Const(ConstDecl),
     Eof,
@@ -559,6 +560,28 @@ pub struct ClassDecl {
     pub extends: Option<Ident>,
     pub body: Vec<Ast>,
     pub span: Span,
+}
+
+/// An `enum { … }` declaration. Anonymous in Monkey C — each variant
+/// becomes a top-level constant mapping a [`Ident`] to a `Number`. Values
+/// are auto-incremented from the last explicit value (or 0 if none yet).
+#[derive(Debug, PartialEq)]
+pub struct EnumDecl {
+    pub variants: Vec<EnumVariant>,
+    pub trailing_comma: bool,
+    pub span: Span,
+}
+
+/// One entry in an [`EnumDecl`].
+#[derive(Debug, PartialEq)]
+pub struct EnumVariant {
+    pub name: Ident,
+    /// Explicit value (`= <expr>`); `None` means the variant is implicitly
+    /// `previous + 1`.
+    pub value: Option<Expr>,
+    /// Comments immediately following this entry (between the value and the
+    /// next `,` / closing `}`). Same pattern as `DictEntry.trailing_comments`.
+    pub trailing_comments: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -651,6 +674,7 @@ impl Ast {
             Ast::Module(d) => Some(&d.span),
             Ast::Class(d) => Some(&d.span),
             Ast::Function(d) => Some(&d.span),
+            Ast::Enum(d) => Some(&d.span),
             Ast::Variable(v) => Some(&v.span),
             Ast::Const(c) => Some(&c.span),
             Ast::Comment(_, s) | Ast::BlockComment(_, s) | Ast::Annotation(_, s) => Some(s),

@@ -1,8 +1,8 @@
 use crate::ast::{
     Ast, BlockStmt, CatchClause, ClassDecl, ConstDecl, DictTypeEntry, DictTypeKey, ElseBranch,
-    ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt,
-    ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl, Variable, Visibility,
-    WhileStmt,
+    EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl,
+    ReturnStmt, Span, Stmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl,
+    Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -316,6 +316,7 @@ impl<'a> Parser<'a> {
             token::Type::BlockComment(content) => self.parse_block_comment_decl(start, content),
             token::Type::Const => self.parse_const_decl(start, visibility, is_static),
             token::Type::Function => self.parse_function_decl(start, visibility, is_static),
+            token::Type::Enum => self.parse_enum_decl(start),
             token::Type::Import => self.parse_import_decl(start),
             token::Type::Using => self.parse_using_decl(start),
             token::Type::Typedef => self.parse_typedef_decl(start),
@@ -475,6 +476,79 @@ impl<'a> Parser<'a> {
             body,
             visibility,
             is_static,
+            span: Span { start, end },
+        }))
+    }
+
+    fn parse_enum_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+        self.next_token_span(); // consume `enum`
+        self.assert_next_token(&[token::Type::LBrace])?;
+
+        let mut variants: Vec<EnumVariant> = Vec::new();
+        let mut trailing_comma = false;
+
+        loop {
+            // Any leading/floating comments attach to the previous variant,
+            // or to a placeholder we'd need to introduce. For now, drop into
+            // the previous variant's trailing slot — matches the dict/array
+            // convention.
+            let pending = self.consume_trailing_comments();
+            if self.current_token == token::Type::RBrace {
+                if let Some(last) = variants.last_mut() {
+                    last.trailing_comments.extend(pending);
+                }
+                break;
+            }
+            if let Some(last) = variants.last_mut() {
+                last.trailing_comments.extend(pending);
+            }
+
+            let name = self.parse_identifier()?;
+            self.next_token_span(); // advance past identifier
+
+            let value = if self.current_token == token::Type::Assign {
+                self.next_token_span(); // consume `=`
+                Some(self.parse_expression()?)
+            } else {
+                None
+            };
+
+            let mut variant = EnumVariant {
+                name,
+                value,
+                trailing_comments: Vec::new(),
+            };
+            variant
+                .trailing_comments
+                .extend(self.consume_trailing_comments());
+
+            if self.current_token == token::Type::Comma {
+                self.next_token_span();
+                variant
+                    .trailing_comments
+                    .extend(self.consume_trailing_comments());
+                variants.push(variant);
+                if self.current_token == token::Type::RBrace {
+                    trailing_comma = true;
+                    break;
+                }
+            } else if self.current_token == token::Type::RBrace {
+                variants.push(variant);
+                break;
+            } else {
+                return Err(self.parse_error(format!(
+                    "Expected ',' or '}}' in enum body, got {:?}",
+                    self.current_token
+                )));
+            }
+        }
+
+        let end = self.current_token_end;
+        self.assert_next_token(&[token::Type::RBrace])?;
+
+        Ok(Ast::Enum(EnumDecl {
+            variants,
+            trailing_comma,
             span: Span { start, end },
         }))
     }
