@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/multi_annotation.mc
+---
+(:debug, :background)
+function logMessage(prefix as String, message as String) as Void {
+    Sys.println(prefix + " : " + message);
+}

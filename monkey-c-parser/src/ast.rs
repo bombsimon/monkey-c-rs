@@ -600,8 +600,10 @@ pub enum Ast {
     /// A block comment (`/* … */`). The string contains the raw text between
     /// the delimiters.
     BlockComment(String, Span),
-    /// A `(:AnnotationName)` decorator. The name is a symbol identifier.
-    Annotation(Symbol, Span),
+    /// A `(:Name)` or `(:Name1, :Name2, …)` decorator. Each entry is a symbol
+    /// identifier; Monkey C supports applying multiple annotations in one
+    /// parenthesised group.
+    Annotation(Vec<Symbol>, Span),
     /// The root of a parsed file.
     Document(Vec<Ast>),
     Import(ImportDecl),

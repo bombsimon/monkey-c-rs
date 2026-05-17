@@ -167,7 +167,14 @@ impl Formatter {
             Ast::Const(decl) => self.const_decl_to_doc(decl),
             Ast::Comment(text, _) => Doc::text(format!("//{}", text)),
             Ast::BlockComment(text, _) => self.block_comment_to_doc(text),
-            Ast::Annotation(name, _) => Doc::text(format!("(:{name})")),
+            Ast::Annotation(names, _) => {
+                let joined = names
+                    .iter()
+                    .map(|n| format!(":{n}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Doc::text(format!("({joined})"))
+            }
             Ast::Eof => Doc::Empty,
         }
     }

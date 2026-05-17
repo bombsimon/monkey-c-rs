@@ -330,26 +330,35 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a `(:Name)` annotation at a declaration position. The lexer
-    /// emits the surface bytes as `LParen`, `Symbol`, `RParen`; the parser
-    /// stitches them back together when seen at decl scope. In expression
-    /// scope the same bytes are a parenthesised symbol expression.
+    /// Parse a `(:Name)` or `(:Name1, :Name2, …)` annotation at a declaration
+    /// position. The lexer emits the surface bytes as `LParen`, `Symbol`s
+    /// separated by commas, `RParen`; the parser stitches them back together
+    /// when seen at decl scope. In expression scope the same bytes are a
+    /// parenthesised symbol expression.
     fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
-        let name = match self.current_token.clone() {
-            token::Type::Symbol(name) => name,
-            _ => {
-                return Err(self.parse_error(format!(
-                    "Expected `:Name` inside annotation, got {:?}",
-                    self.current_token
-                )));
+        let mut names = Vec::new();
+        loop {
+            let name = match self.current_token.clone() {
+                token::Type::Symbol(name) => name,
+                _ => {
+                    return Err(self.parse_error(format!(
+                        "Expected `:Name` inside annotation, got {:?}",
+                        self.current_token
+                    )));
+                }
+            };
+            names.push(name);
+            self.next_token_span();
+            if self.current_token != token::Type::Comma {
+                break;
             }
-        };
-        self.next_token_span(); // consume the symbol
+            self.next_token_span(); // consume `,`
+        }
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
 
-        Ok(Ast::Annotation(name, Span { start, end }))
+        Ok(Ast::Annotation(names, Span { start, end }))
     }
 
     fn parse_class_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
