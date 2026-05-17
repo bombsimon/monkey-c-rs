@@ -177,35 +177,9 @@ fn render_doc(
     }
 }
 
-/// Align a list of `(left, right)` pairs so their separators line up.
-///
-/// Each `left` Doc is measured in flat mode and padded to the width of the
-/// widest left column before the separator is appended. If a left Doc is not
-/// flat-renderable (contains a `HardLine`), it is emitted without extra padding.
-///
-/// Generic over any two-column layout — dicts, function parameter lists, etc.
-pub(crate) fn align_pairs(pairs: Vec<(Doc, Doc)>, separator: &str) -> Vec<Doc> {
-    let max_width = pairs
-        .iter()
-        .filter_map(|(k, _)| flat_width(k))
-        .max()
-        .unwrap_or(0);
-
-    pairs
-        .into_iter()
-        .map(|(key, val)| {
-            let padding = flat_width(&key)
-                .map(|w| " ".repeat(max_width - w))
-                .unwrap_or_default();
-
-            Doc::concat(vec![key, Doc::Text(padding), Doc::text(separator), val])
-        })
-        .collect()
-}
-
 /// Returns the flat (single-line) character width of `doc`, or `None` if it
 /// contains a [`Doc::HardLine`] or [`Doc::BlankLine`] and can never be flat.
-fn flat_width(doc: &Doc) -> Option<usize> {
+pub(crate) fn flat_width(doc: &Doc) -> Option<usize> {
     match doc {
         Doc::Empty => Some(0),
         Doc::Text(s) => Some(s.len()),

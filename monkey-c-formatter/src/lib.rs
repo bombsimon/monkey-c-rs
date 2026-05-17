@@ -4,8 +4,8 @@ mod operators;
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
     ArrayEntry, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, ConstDecl, DictEntry,
-    DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl, IfStmt,
-    LiteralValue, Stmt, SwitchStmt, TryStmt, Type, TypeKind, VarDecl, Visibility,
+    DictMember, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl,
+    IfStmt, LiteralValue, Stmt, SwitchStmt, TryStmt, Type, TypeKind, VarDecl, Visibility,
 };
 use monkey_c_parser::line_index::LineIndex;
 
@@ -825,19 +825,7 @@ impl Formatter {
                 e.trailing_comma,
             ),
 
-            Expr::Dict(e) => {
-                if self.align_dict_pairs && !e.entries.is_empty() {
-                    return self.format_dict_aligned(e);
-                }
-
-                self.format_list(
-                    "{",
-                    "}",
-                    self.dict_entries_to_items(&e.entries),
-                    &e.tail_comments,
-                    e.trailing_comma,
-                )
-            }
+            Expr::Dict(e) => self.format_dict(e),
 
             Expr::Lit(e) => Doc::text(match &e.value {
                 LiteralValue::Long(v) => v.to_string(),
@@ -880,24 +868,6 @@ impl Formatter {
             .iter()
             .map(|e| ListItem {
                 content: self.expr_to_doc(&e.value),
-                trailing_comments: e
-                    .trailing_comments
-                    .iter()
-                    .map(|c| self.stmt_to_doc(c))
-                    .collect(),
-            })
-            .collect()
-    }
-
-    fn dict_entries_to_items(&self, entries: &[DictEntry]) -> Vec<ListItem> {
-        entries
-            .iter()
-            .map(|e| ListItem {
-                content: Doc::concat(vec![
-                    self.expr_to_doc(&e.key),
-                    Doc::text(" => "),
-                    self.expr_to_doc(&e.value),
-                ]),
                 trailing_comments: e
                     .trailing_comments
                     .iter()
@@ -995,87 +965,185 @@ impl Formatter {
         ])
     }
 
-    /// Format a dict with column-aligned `=>` operators.
+    /// Format a dict literal. Walks `members` so free-floating comments and
+    /// blank lines between entries are preserved in source order.
     ///
-    /// If the dict fits on one line it is rendered inline without padding
-    /// (alignment is only meaningful across multiple lines). If it breaks —
-    /// either because it is too wide or has a trailing comma — keys are
-    /// padded so all `=>` operators line up.
-    fn format_dict_aligned(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
-        let has_any_comments = !e.tail_comments.is_empty()
-            || e.entries.iter().any(|x| !x.trailing_comments.is_empty());
+    /// When [`align_dict_pairs`](Self::align_dict_pairs) is on, key columns
+    /// are padded so `=>` operators line up across all entries.
+    fn format_dict(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
+        // Empty dict — single token.
+        if e.members.is_empty() {
+            return Doc::text("{}");
+        }
 
-        let flat_items: Vec<Doc> = e
-            .entries
-            .iter()
-            .map(|entry| {
-                Doc::concat(vec![
-                    self.expr_to_doc(&entry.key),
-                    Doc::text(" => "),
-                    self.expr_to_doc(&entry.value),
-                ])
-            })
-            .collect();
+        // Inline shortcut: only key-value entries, no trailing comma, no
+        // comments. Wadler-Lindig group decides flat vs break.
+        let only_entries = e.members.iter().all(|m| matches!(m, DictMember::Entry(_)));
+        let any_inline_comments = e.members.iter().any(|m| {
+            if let DictMember::Entry(entry) = m {
+                !entry.trailing_comments.is_empty()
+            } else {
+                false
+            }
+        });
+        if only_entries && !e.trailing_comma && !any_inline_comments {
+            if self.align_dict_pairs {
+                // Aligned mode: fit on one line if possible, otherwise break
+                // multi-line with column-padded keys.
+                return self.format_dict_aligned_or_inline(e);
+            }
+            return self.format_dict_inline_or_break(e);
+        }
 
-        let aligned_items = doc::align_pairs(
-            e.entries
-                .iter()
-                .map(|entry| (self.expr_to_doc(&entry.key), self.expr_to_doc(&entry.value)))
-                .collect(),
-            " => ",
-        );
+        self.format_dict_multiline(e)
+    }
 
-        // Flat content: comma-space separated, no padding needed
+    /// Aligned-mode dict with no comments / trailing comma. Renders inline
+    /// if it fits, otherwise breaks multi-line with `=>` columns aligned.
+    fn format_dict_aligned_or_inline(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
+        let entries: Vec<&DictEntry> = e.entries().collect();
         let mut flat_inner = Vec::new();
-        for (i, item) in flat_items.into_iter().enumerate() {
+        for (i, entry) in entries.iter().enumerate() {
             if i > 0 {
                 flat_inner.push(Doc::text(", "));
             }
-
-            flat_inner.push(item);
+            flat_inner.push(Doc::concat(vec![
+                self.expr_to_doc(&entry.key),
+                Doc::text(" => "),
+                self.expr_to_doc(&entry.value),
+            ]));
         }
-
-        // Break content: one aligned pair per line, with each entry's trailing
-        // comments inline after its comma. A final comma is always emitted to
-        // match the existing alignment style.
-        let mut break_inner = Vec::new();
-        let last_idx = aligned_items.len().saturating_sub(1);
-        for (i, item) in aligned_items.into_iter().enumerate() {
-            if i > 0 {
-                break_inner.push(Doc::HardLine);
-            }
-            break_inner.push(item);
-            break_inner.push(Doc::text(","));
-            for c in &e.entries[i].trailing_comments {
-                break_inner.push(Doc::text(" "));
-                break_inner.push(self.stmt_to_doc(c));
-            }
-            let _ = last_idx;
-        }
-
-        for c in &e.tail_comments {
-            break_inner.push(Doc::HardLine);
-            break_inner.push(self.stmt_to_doc(c));
-        }
-
-        if e.trailing_comma || has_any_comments {
-            return Doc::concat(vec![
-                Doc::text("{"),
-                Doc::Indent(vec![Doc::HardLine, Doc::Concat(break_inner)]),
-                Doc::HardLine,
-                Doc::text("}"),
-            ]);
-        }
-
-        Doc::Group(vec![
+        let flat_doc = Doc::concat(vec![
             Doc::text("{"),
-            Doc::Indent(vec![Doc::flat_or_break(
-                Doc::Concat(flat_inner),
-                Doc::concat(vec![Doc::HardLine, Doc::Concat(break_inner)]),
-            )]),
-            Doc::flat_or_break(Doc::Empty, Doc::HardLine),
+            Doc::Concat(flat_inner),
+            Doc::text("}"),
+        ]);
+        let break_doc = self.format_dict_multiline(e);
+
+        Doc::Group(vec![Doc::flat_or_break(flat_doc, break_doc)])
+    }
+
+    /// Multi-line dict body. Walks `members` interleaving entries, comments,
+    /// and blank lines.
+    fn format_dict_multiline(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
+        let entries: Vec<&DictEntry> = e
+            .members
+            .iter()
+            .filter_map(|m| match m {
+                DictMember::Entry(entry) => Some(entry),
+                _ => None,
+            })
+            .collect();
+        let last_entry_idx = entries.len().saturating_sub(1);
+        let mut entry_seen = 0usize;
+
+        // Pre-compute key docs and (for alignment) the max flat key width.
+        let aligned = self.align_dict_pairs && !entries.is_empty();
+        let max_key_width = if aligned {
+            entries
+                .iter()
+                .filter_map(|entry| doc::flat_width(&self.expr_to_doc(&entry.key)))
+                .max()
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        let mut inner: Vec<Doc> = Vec::new();
+        let mut pending_blank = false;
+        let mut first = true;
+
+        for member in &e.members {
+            match member {
+                DictMember::BlankLine => {
+                    pending_blank = true;
+                }
+                DictMember::Comment(c) => {
+                    if !first {
+                        inner.push(if pending_blank {
+                            Doc::BlankLine
+                        } else {
+                            Doc::HardLine
+                        });
+                    }
+                    pending_blank = false;
+                    inner.push(self.stmt_to_doc(c));
+                    first = false;
+                }
+                DictMember::Entry(entry) => {
+                    if !first {
+                        inner.push(if pending_blank {
+                            Doc::BlankLine
+                        } else {
+                            Doc::HardLine
+                        });
+                    }
+                    pending_blank = false;
+
+                    let key_doc = self.expr_to_doc(&entry.key);
+                    let padding = if aligned {
+                        doc::flat_width(&key_doc)
+                            .map(|w| " ".repeat(max_key_width - w))
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+
+                    let mut parts = vec![
+                        key_doc,
+                        Doc::Text(padding),
+                        Doc::text(" => "),
+                        self.expr_to_doc(&entry.value),
+                    ];
+
+                    let is_last = entry_seen == last_entry_idx;
+                    if !is_last || e.trailing_comma {
+                        parts.push(Doc::text(","));
+                    }
+                    for c in &entry.trailing_comments {
+                        parts.push(Doc::text(" "));
+                        parts.push(self.stmt_to_doc(c));
+                    }
+                    inner.push(Doc::Concat(parts));
+                    entry_seen += 1;
+                    first = false;
+                }
+            }
+        }
+
+        Doc::concat(vec![
+            Doc::text("{"),
+            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+            Doc::HardLine,
             Doc::text("}"),
         ])
+    }
+
+    /// Render an all-entries, no-comment dict either inline or broken via
+    /// Wadler-Lindig group decision.
+    fn format_dict_inline_or_break(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
+        let entries: Vec<&DictEntry> = e
+            .members
+            .iter()
+            .filter_map(|m| match m {
+                DictMember::Entry(entry) => Some(entry),
+                _ => None,
+            })
+            .collect();
+
+        let items: Vec<ListItem> = entries
+            .iter()
+            .map(|entry| ListItem {
+                content: Doc::concat(vec![
+                    self.expr_to_doc(&entry.key),
+                    Doc::text(" => "),
+                    self.expr_to_doc(&entry.value),
+                ]),
+                trailing_comments: Vec::new(),
+            })
+            .collect();
+
+        self.format_list("{", "}", items, &[], e.trailing_comma)
     }
 
     /// Return a [`Doc::BlankLine`] if the original source had at least one blank

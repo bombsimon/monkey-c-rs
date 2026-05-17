@@ -1,5 +1,6 @@
 use monkey_c_parser::ast::{
-    Ast, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
+    Ast, CaseLabel, ClassDecl, ConstDecl, DictMember, ElseBranch, Expr, FunctionDecl, Stmt,
+    VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -466,10 +467,12 @@ fn test_dict_entry_trailing_comments_parse() {
     let Expr::Dict(d) = init.as_ref() else {
         panic!("expected dict");
     };
-    assert_eq!(d.entries.len(), 2);
-    assert!(d.entries[0].trailing_comments.is_empty());
-    assert_eq!(d.entries[1].trailing_comments.len(), 1);
-    assert!(d.tail_comments.is_empty());
+    let entries: Vec<_> = d.entries().collect();
+    assert_eq!(entries.len(), 2);
+    assert!(entries[0].trailing_comments.is_empty());
+    // `// note` sits on the same source line as the comma after `:b => 2,`,
+    // so it stays attached as a trailing comment.
+    assert_eq!(entries[1].trailing_comments.len(), 1);
 }
 
 #[test]
@@ -484,8 +487,47 @@ fn test_empty_dict_with_tail_comment_parse() {
     let Expr::Dict(d) = init.as_ref() else {
         panic!("expected dict");
     };
-    assert!(d.entries.is_empty());
-    assert_eq!(d.tail_comments.len(), 1);
+    assert_eq!(d.entries().count(), 0);
+    // The comment lives as a standalone member of the dict.
+    assert!(matches!(d.members.as_slice(), [DictMember::Comment(_)]));
+}
+
+#[test]
+fn test_dict_standalone_comment_between_entries() {
+    let src = "function f() {\n    var x = {\n        :a => 1,\n        // mid\n        :b => 2,\n    };\n}";
+    let f = first_function(src);
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let Some(init) = &v.initializer else {
+        panic!("expected initializer");
+    };
+    let Expr::Dict(d) = init.as_ref() else {
+        panic!("expected dict");
+    };
+    // Members: Entry(a), Comment(// mid), Entry(b)
+    assert_eq!(d.members.len(), 3);
+    assert!(matches!(d.members[0], DictMember::Entry(_)));
+    assert!(matches!(d.members[1], DictMember::Comment(_)));
+    assert!(matches!(d.members[2], DictMember::Entry(_)));
+}
+
+#[test]
+fn test_dict_blank_line_between_entries() {
+    let src = "function f() {\n    var x = {\n        :a => 1,\n\n        :b => 2,\n    };\n}";
+    let f = first_function(src);
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let Some(init) = &v.initializer else {
+        panic!("expected initializer");
+    };
+    let Expr::Dict(d) = init.as_ref() else {
+        panic!("expected dict");
+    };
+    // Members: Entry(a), BlankLine, Entry(b)
+    assert_eq!(d.members.len(), 3);
+    assert!(matches!(d.members[1], DictMember::BlankLine));
 }
 
 #[test]

@@ -1,8 +1,8 @@
 use crate::ast::{
     ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
-    CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
-    NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type, TypeCastExpr, TypeKind,
-    UnaryExpr, UnaryOperator,
+    CallExpr, DictEntry, DictExpr, DictMember, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue,
+    MemberExpr, NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr, Type, TypeCastExpr,
+    TypeKind, UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -581,67 +581,12 @@ impl Parser<'_> {
             token::Type::LBrace => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume {
-                let mut entries: Vec<DictEntry> = Vec::new();
-                let mut tail_comments: Vec<Stmt> = Vec::new();
-                let mut trailing_comma = false;
-
-                loop {
-                    let pending = self.consume_trailing_comments();
-
-                    if self.current_token == token::Type::RBrace {
-                        if let Some(last) = entries.last_mut() {
-                            last.trailing_comments.extend(pending);
-                        } else {
-                            tail_comments = pending;
-                        }
-                        break;
-                    }
-
-                    if let Some(last) = entries.last_mut() {
-                        last.trailing_comments.extend(pending);
-                    } else if !pending.is_empty() {
-                        tail_comments.extend(pending);
-                    }
-
-                    let key = self.parse_primary()?;
-                    self.assert_next_token(&[token::Type::FatArrow])?;
-                    let value = self.parse_expression()?;
-                    let mut entry = DictEntry {
-                        key,
-                        value,
-                        trailing_comments: Vec::new(),
-                    };
-                    entry
-                        .trailing_comments
-                        .extend(self.consume_trailing_comments());
-
-                    if self.current_token == token::Type::Comma {
-                        self.next_token_span(); // consume ,
-                        entry
-                            .trailing_comments
-                            .extend(self.consume_trailing_comments());
-                        entries.push(entry);
-                        if self.current_token == token::Type::RBrace {
-                            trailing_comma = true;
-                            break;
-                        }
-                    } else if self.current_token == token::Type::RBrace {
-                        entries.push(entry);
-                        break;
-                    } else {
-                        return Err(self.parse_error(format!(
-                            "Expected ',' or '}}', got {:?}",
-                            self.current_token
-                        )));
-                    }
-                }
-
+                let (members, trailing_comma) = self.parse_dict_members()?;
                 let end = self.current_token_end; // end of }
                 self.next_token_span(); // consume }
 
                 Ok(Expr::Dict(DictExpr {
-                    entries,
-                    tail_comments,
+                    members,
                     trailing_comma,
                     span: Span { start, end },
                 }))
@@ -757,6 +702,136 @@ impl Parser<'_> {
         }
 
         Ok((args, tail_comments))
+    }
+
+    /// Parse the body of a dict literal, producing an interleaved member
+    /// list. Returns the members and whether a trailing comma appeared after
+    /// the last entry. The opening `{` has already been consumed; the
+    /// closing `}` is left for the caller.
+    fn parse_dict_members(&mut self) -> Result<(Vec<DictMember>, bool), ParserError> {
+        let mut members: Vec<DictMember> = Vec::new();
+        let mut trailing_comma = false;
+        // Byte offset of the last consumed token's end, used to detect blank
+        // lines and same-line attachment.
+        let mut last_end = self.current_token_start;
+
+        loop {
+            // Blank-line detection between previous member and the next thing.
+            if !members.is_empty() {
+                let blanks = self
+                    .line_index
+                    .blank_lines_between(last_end as u32, self.current_token_start as u32);
+                if blanks > 0 && !matches!(members.last(), Some(DictMember::BlankLine)) {
+                    members.push(DictMember::BlankLine);
+                }
+            }
+
+            if self.current_token == token::Type::RBrace {
+                break;
+            }
+
+            // A comment at the *start* of an iteration sits on its own line
+            // (otherwise it would have been a trailing comment of the
+            // previous entry). Promote it to a standalone member.
+            if matches!(
+                self.current_token,
+                token::Type::Comment(_) | token::Type::BlockComment(_)
+            ) {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                let stmt = match self.current_token.clone() {
+                    token::Type::Comment(c) => Stmt::Comment(c, Span { start, end }),
+                    token::Type::BlockComment(c) => Stmt::BlockComment(c, Span { start, end }),
+                    _ => unreachable!(),
+                };
+                self.next_token_span();
+                last_end = end;
+                members.push(DictMember::Comment(stmt));
+                continue;
+            }
+
+            // Key-value entry.
+            let key = self.parse_primary()?;
+            self.assert_next_token(&[token::Type::FatArrow])?;
+            let value = self.parse_expression()?;
+            // `value`'s span ends where the next token starts (current_token).
+            let value_line_end = self.current_token_start;
+
+            let mut entry = DictEntry {
+                key,
+                value,
+                trailing_comments: Vec::new(),
+            };
+
+            // Same-line comments between the value and the next token.
+            self.collect_same_line_comments(value_line_end, &mut entry.trailing_comments);
+
+            let pivot;
+            if self.current_token == token::Type::Comma {
+                let comma_end = self.current_token_end;
+                self.next_token_span();
+                // Same-line comments after the comma — still trailing.
+                self.collect_same_line_comments(comma_end, &mut entry.trailing_comments);
+                pivot = comma_end;
+                members.push(DictMember::Entry(entry));
+                if self.current_token == token::Type::RBrace {
+                    trailing_comma = true;
+                    break;
+                }
+            } else if self.current_token == token::Type::RBrace {
+                members.push(DictMember::Entry(entry));
+                break;
+            } else {
+                return Err(self.parse_error(format!(
+                    "Expected ',' or '}}', got {:?}",
+                    self.current_token
+                )));
+            }
+
+            // Position for blank-line detection on the next iteration is the
+            // end of the comma we just consumed, or the end of the last
+            // same-line trailing comment if one was attached.
+            last_end = members
+                .last()
+                .and_then(|m| match m {
+                    DictMember::Entry(e) => e.trailing_comments.last().map(|c| c.span().end),
+                    _ => None,
+                })
+                .unwrap_or(pivot);
+        }
+
+        Ok((members, trailing_comma))
+    }
+
+    /// Consume comment tokens at the current position as long as they sit
+    /// on the same source line as `anchor_end`. Stops at the first non-
+    /// comment token or comment on a later line.
+    fn collect_same_line_comments(&mut self, anchor_end: usize, out: &mut Vec<Stmt>) {
+        loop {
+            let same_line = matches!(
+                self.current_token,
+                token::Type::Comment(_) | token::Type::BlockComment(_)
+            ) && self
+                .line_index
+                .line_col(anchor_end.saturating_sub(1) as u32)
+                .line
+                == self
+                    .line_index
+                    .line_col(self.current_token_start as u32)
+                    .line;
+            if !same_line {
+                return;
+            }
+            let start = self.current_token_start;
+            let end = self.current_token_end;
+            let stmt = match self.current_token.clone() {
+                token::Type::Comment(c) => Stmt::Comment(c, Span { start, end }),
+                token::Type::BlockComment(c) => Stmt::BlockComment(c, Span { start, end }),
+                _ => unreachable!(),
+            };
+            self.next_token_span();
+            out.push(stmt);
+        }
     }
 
     /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new`

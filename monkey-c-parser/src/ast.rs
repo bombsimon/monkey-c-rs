@@ -338,21 +338,48 @@ pub struct ArrayEntry {
 
 #[derive(Debug, PartialEq)]
 pub struct DictExpr {
-    pub entries: Vec<DictEntry>,
-    /// Comments inside the braces that aren't attached to any entry (only
-    /// populated when `entries` is empty).
-    pub tail_comments: Vec<Stmt>,
+    /// Ordered contents of the dict body. Mixes key-value entries with
+    /// free-floating comments and blank-line markers so source layout is
+    /// preserved verbatim.
+    pub members: Vec<DictMember>,
     /// Whether the source had a trailing comma after the last entry.
     /// See [`ArrayExpr::trailing_comma`].
     pub trailing_comma: bool,
     pub span: Span,
 }
 
+/// One item inside a dictionary literal.
+#[derive(Debug, PartialEq)]
+pub enum DictMember {
+    /// A `key => value` pair, optionally with same-line trailing comment(s).
+    Entry(DictEntry),
+    /// A standalone comment that sits on its own line between entries (or
+    /// before the first / after the last).
+    Comment(Stmt),
+    /// One or more blank source lines between the previous member and the
+    /// next. Always a single `BlankLine` regardless of how many blank lines
+    /// actually appeared.
+    BlankLine,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct DictEntry {
     pub key: Expr,
     pub value: Expr,
+    /// Comments on the SAME source line as the value or its trailing comma.
+    /// Comments on a separate line become a [`DictMember::Comment`] instead.
     pub trailing_comments: Vec<Stmt>,
+}
+
+impl DictExpr {
+    /// Iterate the key-value entries, skipping free-floating comments and
+    /// blank-line markers. Useful when only the data matters.
+    pub fn entries(&self) -> impl Iterator<Item = &DictEntry> {
+        self.members.iter().filter_map(|m| match m {
+            DictMember::Entry(entry) => Some(entry),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
