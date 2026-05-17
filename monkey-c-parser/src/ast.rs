@@ -180,10 +180,16 @@ pub enum AssignOperator {
 /// A compile-time constant value.
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
+    /// 32-bit signed integer (no suffix in source).
+    Number(i32),
+    /// 64-bit signed integer (`l` suffix in source).
     Long(i64),
     /// A hex-formatted integer literal (`0x…`). Stores the raw digits so the
     /// formatter can preserve the original casing.
     Hex(String),
+    /// 32-bit floating point number (no suffix on a decimal literal).
+    Float(f32),
+    /// 64-bit floating point number (`d` suffix in source).
     Double(f64),
     String(String),
     Boolean(bool),

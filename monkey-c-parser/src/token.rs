@@ -44,10 +44,12 @@ pub enum Type {
     /// A hex integer literal, stored as a string to support preserving casing.
     Boolean(bool),
     Double(f64),
+    Float(f32),
     Hex(String),
     Long(i64),
     NaN,
     Null,
+    Number(i32),
     String(String),
 
     // Identifiers
@@ -157,11 +159,13 @@ impl std::fmt::Display for Type {
 
             // Literals
             Type::Boolean(b) => write!(f, "{}", b),
-            Type::Double(n) => write!(f, "{}", n),
+            Type::Double(n) => write!(f, "{}d", n),
+            Type::Float(n) => write!(f, "{}", n),
             Type::Hex(s) => write!(f, "0x{}", s),
-            Type::Long(n) => write!(f, "{}", n),
+            Type::Long(n) => write!(f, "{}l", n),
             Type::NaN => write!(f, "NaN"),
             Type::Null => write!(f, "null"),
+            Type::Number(n) => write!(f, "{}", n),
             Type::String(s) => write!(f, "{}", s),
 
             // Identifiers

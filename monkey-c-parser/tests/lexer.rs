@@ -35,7 +35,7 @@ fn test_var_declaration() {
             Type::Var,
             Type::Identifier("x".into()),
             Type::Assign,
-            Type::Double(5.0),
+            Type::Float(5.0),
             Type::Semicolon,
         ]
     );
@@ -94,7 +94,7 @@ fn test_comment() {
             Type::Var,
             Type::Identifier("x".into()),
             Type::Assign,
-            Type::Long(1),
+            Type::Number(1),
             Type::Semicolon,
         ]
     );
@@ -188,7 +188,7 @@ fn test_symbol_literal() {
 fn test_fat_arrow() {
     assert_eq!(
         tokens(":key => 1"),
-        vec![Type::Symbol("key".into()), Type::FatArrow, Type::Long(1)]
+        vec![Type::Symbol("key".into()), Type::FatArrow, Type::Number(1)]
     );
     // = alone is still Assign, == is still EqualEqual
     assert_eq!(tokens("= =>"), vec![Type::Assign, Type::FatArrow]);
@@ -215,15 +215,15 @@ fn test_compound_operators() {
         vec![
             Type::Identifier("x".into()),
             Type::AddAssign,
-            Type::Long(1),
+            Type::Number(1),
             Type::Semicolon,
             Type::Identifier("y".into()),
             Type::SubAssign,
-            Type::Long(2),
+            Type::Number(2),
             Type::Semicolon,
             Type::Identifier("z".into()),
             Type::MulAssign,
-            Type::Long(3),
+            Type::Number(3),
             Type::Semicolon,
         ]
     );
@@ -268,12 +268,12 @@ fn test_span_skips_whitespace() {
 
 #[test]
 fn test_integer_literal() {
-    assert_eq!(tokens("42"), vec![Type::Long(42)]);
+    assert_eq!(tokens("42"), vec![Type::Number(42)]);
 }
 
 #[test]
 fn test_float_literal() {
-    assert_eq!(tokens("1.5"), vec![Type::Double(1.5)]);
+    assert_eq!(tokens("1.5"), vec![Type::Float(1.5)]);
 }
 
 #[test]

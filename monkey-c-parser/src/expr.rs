@@ -440,6 +440,15 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
+            token::Type::Number(value) => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Lit(LitExpr {
+                    value: LiteralValue::Number(value),
+                    span: Span { start, end },
+                }))
+            }
             token::Type::Long(value) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;
@@ -455,6 +464,15 @@ impl Parser<'_> {
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Hex(digits),
+                    span: Span { start, end },
+                }))
+            }
+            token::Type::Float(value) => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Lit(LitExpr {
+                    value: LiteralValue::Float(value),
                     span: Span { start, end },
                 }))
             }

@@ -36,8 +36,10 @@ fn parse_function(src: &str) -> FunctionDecl {
 #[test]
 fn test_literals() {
     for (src, expected) in [
-        ("42", LiteralValue::Long(42)),
-        ("1.5", LiteralValue::Double(1.5)),
+        ("42", LiteralValue::Number(42)),
+        ("42l", LiteralValue::Long(42)),
+        ("1.5", LiteralValue::Float(1.5)),
+        ("1.5d", LiteralValue::Double(1.5)),
         ("true", LiteralValue::Boolean(true)),
         ("false", LiteralValue::Boolean(false)),
         ("null", LiteralValue::Null),

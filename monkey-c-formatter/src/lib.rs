@@ -20,6 +20,17 @@ struct ListItem {
 
 /// Whether `expr` is a binary expression — any top-level binary operator
 /// gives the formatter a natural wrap-point.
+/// Rust's `f32`/`f64` `to_string` strips trailing `.0`, but Monkey C source
+/// distinguishes integer and float literals by the decimal point — re-emit it
+/// when it's missing so `1.0` doesn't round-trip to `1`.
+fn with_decimal_point(s: &str) -> String {
+    if s.contains('.') {
+        s.to_string()
+    } else {
+        format!("{}.0", s)
+    }
+}
+
 fn top_level_binary(expr: &Expr) -> bool {
     matches!(expr, Expr::Binary(_))
 }
@@ -846,9 +857,11 @@ impl Formatter {
             Expr::Dict(e) => self.format_dict(e),
 
             Expr::Lit(e) => Doc::text(match &e.value {
-                LiteralValue::Long(v) => v.to_string(),
+                LiteralValue::Number(v) => v.to_string(),
+                LiteralValue::Long(v) => format!("{}l", v),
                 LiteralValue::Hex(s) => format!("0x{}", s),
-                LiteralValue::Double(v) => v.to_string(),
+                LiteralValue::Float(v) => with_decimal_point(&v.to_string()),
+                LiteralValue::Double(v) => format!("{}d", with_decimal_point(&v.to_string())),
                 LiteralValue::String(v) => format!("\"{}\"", v),
                 LiteralValue::Boolean(v) => v.to_string(),
                 LiteralValue::Symbol(v) => format!(":{v}"),

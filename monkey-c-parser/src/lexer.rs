@@ -1,7 +1,9 @@
 use crate::token;
 
 enum NumberLiteral {
+    Number(String),
     Long(String),
+    Float(String),
     Double(String),
     Hex(String),
 }
@@ -97,10 +99,17 @@ impl<'a> Lexer<'a> {
         }
 
         let text = self.input[start_position..self.position].to_string();
-        if is_float {
-            NumberLiteral::Double(text)
-        } else {
-            NumberLiteral::Long(text)
+        match self.ch {
+            b'l' => {
+                self.read_char();
+                NumberLiteral::Long(text)
+            }
+            b'd' => {
+                self.read_char();
+                NumberLiteral::Double(text)
+            }
+            _ if is_float => NumberLiteral::Float(text),
+            _ => NumberLiteral::Number(text),
         }
     }
 
@@ -315,7 +324,9 @@ impl<'a> Lexer<'a> {
                     }
                 } else if self.ch.is_ascii_digit() {
                     let token_type = match self.read_number() {
+                        NumberLiteral::Number(s) => token::Type::Number(s.parse().unwrap_or(0)),
                         NumberLiteral::Long(s) => token::Type::Long(s.parse().unwrap_or(0)),
+                        NumberLiteral::Float(s) => token::Type::Float(s.parse().unwrap_or(0.0)),
                         NumberLiteral::Double(s) => token::Type::Double(s.parse().unwrap_or(0.0)),
                         NumberLiteral::Hex(s) => token::Type::Hex(s),
                     };

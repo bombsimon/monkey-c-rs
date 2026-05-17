@@ -1,0 +1,5 @@
+var int32 = 5;
+var int64 = 9000l;
+var float32 = 6.0;
+var float64 = 2.718281828459045d;
+var hex = 0xFFCC00;
