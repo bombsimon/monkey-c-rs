@@ -304,7 +304,6 @@ impl<'a> Lexer<'a> {
                 return (start, token::Type::String(content), self.position);
             }
             b'$' => (token::Type::Bling, 1),
-            b'\n' => (token::Type::Newline, 1),
             0 => (token::Type::Eof, 0),
             _ => {
                 if self.ch.is_ascii_alphabetic() || self.ch == b'_' {
