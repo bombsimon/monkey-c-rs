@@ -17,6 +17,12 @@ struct ListItem {
     trailing_comments: Vec<Doc>,
 }
 
+/// Whether `expr` is a binary expression — any top-level binary operator
+/// gives the formatter a natural wrap-point.
+fn top_level_binary(expr: &Expr) -> bool {
+    matches!(expr, Expr::Binary(_))
+}
+
 /// Walk a left-associative binary tree and collect all operands joined by `op`,
 /// at the same precedence level.
 ///
@@ -424,13 +430,23 @@ impl Formatter {
     }
 
     fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {
+        // Only wrap `{` to its own line when the condition itself can be
+        // broken at an operator (any top-level binary). Otherwise the
+        // brace would dangle on the next line without the condition
+        // wrapping, which doesn't shorten anything.
+        let wrappable = top_level_binary(&s.condition);
+
         let cond_doc = self.condition_to_doc(&s.condition);
-        let header = Doc::Group(vec![
-            Doc::text("if ("),
-            Doc::Indent(vec![cond_doc]),
-            Doc::text(")"),
-            Doc::flat_or_break(Doc::text(" "), Doc::HardLine),
-        ]);
+        let header = if wrappable {
+            Doc::Group(vec![
+                Doc::text("if ("),
+                Doc::Indent(vec![cond_doc]),
+                Doc::text(")"),
+                Doc::flat_or_break(Doc::text(" "), Doc::HardLine),
+            ])
+        } else {
+            Doc::concat(vec![Doc::text("if ("), cond_doc, Doc::text(") ")])
+        };
 
         let mut parts = vec![header, self.block_body_to_doc(&s.then_branch)];
 
@@ -470,33 +486,27 @@ impl Formatter {
 
     /// Render an expression intended as a control-flow condition.
     ///
-    /// For top-level `||` / `&&` chains, the operands are joined by a
+    /// For any top-level binary expression, the operands are joined by a
     /// breakable [`Doc::Line`] so an enclosing [`Doc::Group`] can wrap the
-    /// chain at line width. Other expressions delegate to `expr_to_doc`.
+    /// chain at line width — operator leads the next line (Rust-style):
+    /// `a + b\n    <= c`. Same-operator chains are flattened; mixed operators
+    /// keep their precedence-determined nesting on the broken side.
     fn condition_to_doc(&self, expr: &Expr) -> Doc {
         if let Expr::Binary(e) = expr {
-            if matches!(
-                e.operator,
-                BinaryOperator::Or
-                    | BinaryOperator::OrKeyword
-                    | BinaryOperator::And
-                    | BinaryOperator::AndKeyword
-            ) {
-                let op_str = format!("{} ", operators::binary_op(&e.operator));
-                let mut operands: Vec<&Expr> = Vec::new();
-                collect_logical_chain(expr, &e.operator, &mut operands);
+            let op_str = format!("{} ", operators::binary_op(&e.operator));
+            let mut operands: Vec<&Expr> = Vec::new();
+            collect_logical_chain(expr, &e.operator, &mut operands);
 
-                let mut parts: Vec<Doc> = Vec::new();
-                for (i, operand) in operands.iter().enumerate() {
-                    if i > 0 {
-                        parts.push(Doc::Line);
-                        parts.push(Doc::text(op_str.clone()));
-                    }
-                    parts.push(self.expr_to_doc(operand));
+            let mut parts: Vec<Doc> = Vec::new();
+            for (i, operand) in operands.iter().enumerate() {
+                if i > 0 {
+                    parts.push(Doc::Line);
+                    parts.push(Doc::text(op_str.clone()));
                 }
-
-                return Doc::Concat(parts);
+                parts.push(self.expr_to_doc(operand));
             }
+
+            return Doc::Concat(parts);
         }
 
         self.expr_to_doc(expr)

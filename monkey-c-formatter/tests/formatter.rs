@@ -517,6 +517,16 @@ fn test_empty_dict_with_tail_comment() {
 }
 
 #[test]
+fn test_if_condition_wraps_at_comparison_op() {
+    // Non-logical top-level binary (here `<=`) is also a wrap-point.
+    // Operands break with the operator leading the next line, Rust-style.
+    let src = "function f() { if (value.length() + unit.length() <= mMaxFieldLength) { foo(); } }";
+    let out = fmt_width(src, 40);
+    assert!(out.contains("<= mMaxFieldLength"));
+    assert!(out.contains("\n        <="));
+}
+
+#[test]
 fn test_if_condition_wraps_at_logical_ops() {
     let src = "function fn() { if (somethingVeryLong > 1 \
                || somethingEvenLongerThisTime > 1 \
