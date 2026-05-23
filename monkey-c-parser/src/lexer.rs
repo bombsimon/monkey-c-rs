@@ -114,7 +114,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_string(&mut self) -> String {
-        let mut result = String::new();
+        let mut bytes: Vec<u8> = Vec::new();
 
         loop {
             match self.ch {
@@ -124,15 +124,15 @@ impl<'a> Lexer<'a> {
                     self.read_char();
 
                     match self.ch {
-                        b'n' => result.push('\n'),
-                        b'r' => result.push('\r'),
-                        b't' => result.push('\t'),
-                        b'\\' => result.push('\\'),
-                        b'"' => result.push('"'),
-                        _ => result.push(self.ch as char),
+                        b'n' => bytes.push(b'\n'),
+                        b'r' => bytes.push(b'\r'),
+                        b't' => bytes.push(b'\t'),
+                        b'\\' => bytes.push(b'\\'),
+                        b'"' => bytes.push(b'"'),
+                        _ => bytes.push(self.ch),
                     }
                 }
-                _ => result.push(self.ch as char),
+                _ => bytes.push(self.ch),
             }
 
             self.read_char();
@@ -140,7 +140,11 @@ impl<'a> Lexer<'a> {
 
         self.read_char(); // Now advance past the closing quote
 
-        result
+        // The lexer is byte-oriented, so multi-byte UTF-8 sequences are read
+        // one byte at a time. Collect them as raw bytes and let `from_utf8`
+        // reassemble the codepoints — pushing `self.ch as char` would treat
+        // each byte as a separate codepoint and mangle non-ASCII input.
+        String::from_utf8(bytes).unwrap_or_default()
     }
 
     fn read_comment(&mut self) -> String {

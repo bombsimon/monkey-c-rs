@@ -86,6 +86,19 @@ fn test_string_escape_sequences() {
 }
 
 #[test]
+fn test_string_multibyte_utf8() {
+    assert_eq!(
+        tokens(r#"x = "°😀";"#),
+        vec![
+            Type::Identifier("x".into()),
+            Type::Assign,
+            Type::String("°😀".into()),
+            Type::Semicolon,
+        ]
+    );
+}
+
+#[test]
 fn test_comment() {
     assert_eq!(
         tokens("// a comment\nvar x = 1;"),
