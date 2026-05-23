@@ -39,7 +39,7 @@ to wrap lines and it uses the concept of anchoring comments to nodes rather than
 a streaming variant. This means that some formatting might be normalized in a
 way that's different from the original source code.
 
-> ![IMPORANT]
+> [!IMPORTANT]
 > The formatter is in an early stage and constantly evolving. The goal is a
 > zero-config solution that has sensible defaults but with the option to add
 > rules and configuration as they are requested.
