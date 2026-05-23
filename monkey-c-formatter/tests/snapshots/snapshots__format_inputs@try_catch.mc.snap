@@ -1,0 +1,21 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/try_catch.mc
+---
+using Toybox.Lang;
+
+function tc() {
+    try {
+        /* Debug */ System.println("t");
+    } catch (e) {
+        /* Debug */ System.println("c");
+    }
+}
+
+function tc2() {
+    try {
+        System.println("t");
+    } catch (e) {
+        // Nothing
+    }
+}

@@ -1,6 +1,5 @@
 ---
 source: tests/snapshots.rs
-assertion_line: 18
 input_file: tests/snapshot_inputs/multi_binding_decls.mc
 ---
 var a, b, c;

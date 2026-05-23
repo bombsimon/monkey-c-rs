@@ -363,6 +363,21 @@ fn attach_one(
                     own_line: true,
                 });
             }
+            (None, None) => {
+                // The container has no children near the comment — it's an
+                // empty body (`catch (e) { /* C */ }`, `function f() { /* C */ }`).
+                // Without this branch, the next rule would attach the comment
+                // as trailing on an *external* prev (the previous block's
+                // `}`), leaking the comment out of the container.
+                map.dangling
+                    .entry((c, DanglingPlacement::Inside))
+                    .or_default()
+                    .push(i);
+                return Some(AttachOutcome {
+                    target: AttachTarget::Dangling(c, DanglingPlacement::Inside),
+                    own_line: true,
+                });
+            }
             _ => {}
         }
     }
