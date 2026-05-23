@@ -147,6 +147,7 @@ fn render_doc(
             } else {
                 Mode::Break
             };
+
             for d in docs {
                 render_doc(d, width, indent, child_mode, out, col);
             }
@@ -182,6 +183,7 @@ pub(crate) fn flat_width(doc: &Doc) -> Option<usize> {
             for d in docs {
                 total += flat_width(d)?;
             }
+
             Some(total)
         }
         Doc::FlatOrBreak(flat, _) => flat_width(flat),

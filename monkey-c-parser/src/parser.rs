@@ -375,10 +375,12 @@ impl<'a> Parser<'a> {
                 }
             };
             names.push(name);
+
             self.next_token_span();
             if self.current_token != token::Type::Comma {
                 break;
             }
+
             self.next_token_span(); // consume `,`
         }
         let end = self.current_token_end;
@@ -708,6 +710,7 @@ impl<'a> Parser<'a> {
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
                 args.push(arg);
+
                 if self.current_token == token::Type::RParen {
                     break;
                 }

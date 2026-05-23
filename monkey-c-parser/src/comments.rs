@@ -128,6 +128,7 @@ pub fn attach_comments(ast: &Ast, table: &CommentTable, line_index: &LineIndex) 
                         map.dangling.entry((*span, *placement)).or_default().push(i);
                     }
                 }
+
                 cluster = Some((comment_end_line, target.clone()));
                 continue;
             }
@@ -223,6 +224,7 @@ fn attach_one(
                     .entry((c, DanglingPlacement::BeforeBracket))
                     .or_default()
                     .push(i);
+
                 return Some(AttachOutcome {
                     target: AttachTarget::Dangling(c, DanglingPlacement::BeforeBracket),
                     own_line: false,
@@ -390,6 +392,7 @@ fn attach_one(
             .entry((c, DanglingPlacement::Inside))
             .or_default()
             .push(i);
+
         return Some(AttachOutcome {
             target: AttachTarget::Dangling(c, DanglingPlacement::Inside),
             own_line: true,
@@ -448,9 +451,11 @@ fn collect_spans_ast(
                     collect_spans_expr(init, out);
                 }
             }
+
             for stmt in &decl.body.stmts {
                 collect_spans_stmt(stmt, out, brace_starts);
             }
+
             out.push(decl.body.span);
         }
         Ast::Enum(decl) => {
@@ -491,14 +496,17 @@ fn collect_spans_stmt(
         Stmt::While(s) => {
             brace_starts.insert(s.span, (s.condition.close, s.body.span.start));
             collect_spans_expr(&s.condition.inner, out);
+
             for sub in &s.body.stmts {
                 collect_spans_stmt(sub, out, brace_starts);
             }
+
             out.push(s.body.span);
         }
         Stmt::DoWhile(s) => {
             brace_starts.insert(s.span, (s.header_end, s.body.span.start));
             collect_spans_expr(&s.condition, out);
+
             for sub in &s.body.stmts {
                 collect_spans_stmt(sub, out, brace_starts);
             }
@@ -512,15 +520,19 @@ fn collect_spans_stmt(
                     ForInit::Expr(e) => collect_spans_expr(e, out),
                 }
             }
+
             if let Some(c) = &s.header.inner.condition {
                 collect_spans_expr(c, out);
             }
+
             if let Some(u) = &s.header.inner.update {
                 collect_spans_expr(u, out);
             }
+
             for sub in &s.body.stmts {
                 collect_spans_stmt(sub, out, brace_starts);
             }
+
             out.push(s.body.span);
         }
         Stmt::Switch(s) => {
@@ -528,9 +540,11 @@ fn collect_spans_stmt(
             collect_spans_expr(&s.discriminant.inner, out);
             for case in &s.cases {
                 out.push(case.span);
+
                 if let CaseLabel::Value(e) = &case.label {
                     collect_spans_expr(e, out);
                 }
+
                 for sub in &case.stmts {
                     collect_spans_stmt(sub, out, brace_starts);
                 }
@@ -541,17 +555,22 @@ fn collect_spans_stmt(
             for sub in &s.body.stmts {
                 collect_spans_stmt(sub, out, brace_starts);
             }
+
             out.push(s.body.span);
+
             for catch in &s.catches {
                 for sub in &catch.body.stmts {
                     collect_spans_stmt(sub, out, brace_starts);
                 }
+
                 out.push(catch.body.span);
             }
+
             if let Some(f) = &s.finally {
                 for sub in &f.stmts {
                     collect_spans_stmt(sub, out, brace_starts);
                 }
+
                 out.push(f.span);
             }
         }
@@ -583,9 +602,11 @@ fn collect_spans_if(
     brace_starts.insert(s.span, (s.condition.close, s.then_branch.span.start));
     collect_spans_expr(&s.condition.inner, out);
     out.push(s.then_branch.span);
+
     for sub in &s.then_branch.stmts {
         collect_spans_stmt(sub, out, brace_starts);
     }
+
     if let Some(else_branch) = &s.else_branch {
         match else_branch {
             ElseBranch::Block(b) => {

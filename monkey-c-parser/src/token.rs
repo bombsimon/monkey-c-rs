@@ -158,26 +158,26 @@ impl std::fmt::Display for Type {
             Type::While => write!(f, "while"),
 
             // Literals
-            Type::Boolean(b) => write!(f, "{}", b),
-            Type::Double(n) => write!(f, "{}d", n),
-            Type::Float(n) => write!(f, "{}", n),
-            Type::Hex(s) => write!(f, "0x{}", s),
-            Type::Long(n) => write!(f, "{}l", n),
+            Type::Boolean(b) => write!(f, "{b}"),
+            Type::Double(n) => write!(f, "{n}d"),
+            Type::Float(n) => write!(f, "{n}"),
+            Type::Hex(s) => write!(f, "0x{s}"),
+            Type::Long(n) => write!(f, "{n}l"),
             Type::NaN => write!(f, "NaN"),
             Type::Null => write!(f, "null"),
-            Type::Number(n) => write!(f, "{}", n),
-            Type::String(s) => write!(f, "{}", s),
+            Type::Number(n) => write!(f, "{n}"),
+            Type::String(s) => write!(f, "{s}"),
 
             // Identifiers
             Type::Bling => write!(f, "$"),
-            Type::Identifier(s) => write!(f, "{}", s),
+            Type::Identifier(s) => write!(f, "{s}"),
             Type::Me => write!(f, "me"),
             Type::Self_ => write!(f, "self"),
             Type::Symbol(s) => write!(f, ":{s}"),
 
             // Comments
-            Type::BlockComment(s) => write!(f, "/*{}*/", s),
-            Type::Comment(s) => write!(f, "//{}", s),
+            Type::BlockComment(s) => write!(f, "/*{s}*/"),
+            Type::Comment(s) => write!(f, "//{s}"),
 
             // Operators
             Type::AddAssign => write!(f, "+="),
@@ -331,7 +331,7 @@ impl std::str::FromStr for Type {
             ")" => Ok(Type::RParen),
             ";" => Ok(Type::Semicolon),
 
-            _ => Err(format!("Unknown token: {}", s)),
+            _ => Err(format!("Unknown token: {s}")),
         }
     }
 }

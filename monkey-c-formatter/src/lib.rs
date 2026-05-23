@@ -29,42 +29,6 @@ enum BodyItem<'a> {
     Comment(CommentStmt),
 }
 
-/// Whether `expr` is a binary expression — any top-level binary operator
-/// gives the formatter a natural wrap-point.
-/// Rust's `f32`/`f64` `to_string` strips trailing `.0`, but Monkey C source
-/// distinguishes integer and float literals by the decimal point — re-emit it
-/// when it's missing so `1.0` doesn't round-trip to `1`.
-fn with_decimal_point(s: &str) -> String {
-    if s.contains('.') {
-        s.to_string()
-    } else {
-        format!("{}.0", s)
-    }
-}
-
-fn top_level_binary(expr: &Expr) -> bool {
-    matches!(expr, Expr::Binary(_))
-}
-
-/// Walk a left-associative binary tree and collect all operands joined by `op`,
-/// at the same precedence level.
-///
-/// `a || b || c` parses as `Or(Or(a, b), c)` — this flattens it to
-/// `[a, b, c]` so the formatter can render the chain with breakable
-/// separators between siblings.
-fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<&'a Expr>) {
-    if let Expr::Binary(be) = expr {
-        if be.operator == *op {
-            collect_logical_chain(&be.left, op, out);
-            collect_logical_chain(&be.right, op, out);
-
-            return;
-        }
-    }
-
-    out.push(expr);
-}
-
 /// Formats a Monkey C AST back into source text.
 ///
 /// Construct with [`Formatter::new`], optionally configure with builder
@@ -162,11 +126,13 @@ impl Formatter {
         if comments.is_empty() {
             return Doc::Empty;
         }
+
         let mut parts = Vec::new();
         for c in &comments {
             parts.push(self.comment_to_doc(c));
             parts.push(Doc::text(" "));
         }
+
         Doc::Concat(parts)
     }
 
@@ -208,13 +174,16 @@ impl Formatter {
                 .line_index
                 .line_col(c.span.end.saturating_sub(1) as u32)
                 .line;
+
             parts.push(self.comment_to_doc(c));
+
             if c.is_block && comment_end_line == node_line {
                 parts.push(Doc::text(" "));
             } else {
                 parts.push(Doc::HardLine);
             }
         }
+
         Doc::Concat(parts)
     }
 
@@ -231,6 +200,7 @@ impl Formatter {
             .line_index
             .line_col(span.end.saturating_sub(1) as u32)
             .line;
+
         let mut parts = Vec::new();
         let mut last_line = node_end_line;
         for c in &comments {
@@ -280,10 +250,12 @@ impl Formatter {
                     before_bracket,
                     Doc::text("{"),
                 ]);
+
                 let inner = self.decls_to_doc(&decl.body, decl.span);
                 if decl.body.is_empty() && matches!(inner, Doc::Empty) {
                     return Doc::concat(vec![header, Doc::text("}")]);
                 }
+
                 Doc::concat(vec![
                     header,
                     Doc::Indent(vec![Doc::HardLine, inner]),
@@ -297,16 +269,18 @@ impl Formatter {
                     Doc::text(format!("class {}", decl.name)),
                     decl.extends
                         .as_ref()
-                        .map(|e| Doc::text(format!(" extends {}", e)))
+                        .map(|e| Doc::text(format!(" extends {e}")))
                         .unwrap_or(Doc::Empty),
                     Doc::text(" "),
                     before_bracket,
                     Doc::text("{"),
                 ]);
+
                 let inner = self.decls_to_doc(&decl.body, decl.span);
                 if decl.body.is_empty() && matches!(inner, Doc::Empty) {
                     return Doc::concat(vec![header, Doc::text("}")]);
                 }
+
                 Doc::concat(vec![
                     header,
                     Doc::Indent(vec![Doc::HardLine, inner]),
@@ -349,6 +323,7 @@ impl Formatter {
         for c in dangling_comments {
             items.push(BodyItem::Comment(c));
         }
+
         // Sort by the leading-comment-extended start so an item's leading
         // comments slot ahead of a previous item's trailing-end in the gap math.
         items.sort_by_key(|i| self.effective_start(i));
@@ -362,6 +337,7 @@ impl Formatter {
                 let next_span = Span { start, end: start };
                 docs.push(self.gap_between_spans(Some(&prev_span), Some(&next_span)));
             }
+
             match item {
                 BodyItem::Decl(decl, decl_span) => {
                     docs.push(self.leading_doc(*decl_span));
@@ -373,6 +349,7 @@ impl Formatter {
                 }
                 BodyItem::Stmt(_, _) => unreachable!("decls_to_doc only contains Decl items"),
             }
+
             prev_end = Some(self.effective_end(item));
         }
 
@@ -426,6 +403,7 @@ impl Formatter {
 
         let last_idx = decl.variants.len() - 1;
         let mut inner = Vec::new();
+
         // Body-level `BeforeFirstChild` comments (e.g. a `// header` line
         // between `{` and the first variant) render on their own lines before
         // the variants.
@@ -495,6 +473,7 @@ impl Formatter {
         if let Some(vis) = &decl.visibility {
             parts.push(self.visibility_to_doc(vis));
         }
+
         if decl.is_static {
             parts.push(Doc::text("static "));
         }
@@ -516,6 +495,7 @@ impl Formatter {
                     arg_parts.push(Doc::text(" as "));
                     arg_parts.push(Self::type_to_doc(ty));
                 }
+
                 ListItem {
                     content: Doc::Concat(arg_parts),
                     trailing_comments: self
@@ -551,6 +531,7 @@ impl Formatter {
         if let Some(vis) = &decl.visibility {
             parts.push(self.visibility_to_doc(vis));
         }
+
         if decl.is_static {
             parts.push(Doc::text("static "));
         }
@@ -578,6 +559,7 @@ impl Formatter {
         if let Some(vis) = &var.visibility {
             parts.push(self.visibility_to_doc(vis));
         }
+
         if var.is_static {
             parts.push(Doc::text("static "));
         }
@@ -614,7 +596,7 @@ impl Formatter {
                 generic_params,
             } => {
                 if generic_params.is_empty() {
-                    Doc::text(format!("{}{}", ident, suffix))
+                    Doc::text(format!("{ident}{suffix}"))
                 } else {
                     let params: Vec<Doc> = generic_params
                         .iter()
@@ -627,10 +609,11 @@ impl Formatter {
                             }
                         })
                         .collect();
+
                     Doc::concat(vec![
-                        Doc::text(format!("{}<", ident)),
+                        Doc::text(format!("{ident}<")),
                         Doc::Concat(params),
-                        Doc::text(format!(">{}", suffix)),
+                        Doc::text(format!(">{suffix}")),
                     ])
                 }
             }
@@ -662,7 +645,7 @@ impl Formatter {
         suffix: &str,
     ) -> Doc {
         if entries.is_empty() {
-            return Doc::text(format!("{{}}{}", suffix));
+            return Doc::text(format!("{{}}{suffix}"));
         }
 
         let entry_doc = |entry: &DictTypeEntry| {
@@ -692,7 +675,7 @@ impl Formatter {
                 Doc::text("{"),
                 Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
                 Doc::HardLine,
-                Doc::text(format!("}}{}", suffix)),
+                Doc::text(format!("}}{suffix}")),
             ]);
         }
 
@@ -709,7 +692,7 @@ impl Formatter {
             Doc::text("{"),
             Doc::Indent(vec![Doc::SoftLine, Doc::Concat(inner)]),
             Doc::SoftLine,
-            Doc::text(format!("}}{}", suffix)),
+            Doc::text(format!("}}{suffix}")),
         ])
     }
 
@@ -720,7 +703,7 @@ impl Formatter {
     /// For non-binary conditions there's nothing to wrap at, so a plain
     /// `<keyword> (cond) ` is emitted regardless of width.
     fn paren_condition_header(&self, keyword: &str, cond: &Expr) -> Doc {
-        let wrappable = top_level_binary(cond);
+        let wrappable = matches!(cond, Expr::Binary(_));
         let cond_doc = self.condition_to_doc(cond);
         if wrappable {
             Doc::Group(vec![
@@ -760,6 +743,7 @@ impl Formatter {
                     parts.push(Doc::HardLine);
                     parts.push(Doc::text("else"));
                 }
+
                 parts.push(self.block_to_doc(b));
             }
             Some(ElseBranch::If(inner)) => {
@@ -769,6 +753,7 @@ impl Formatter {
                     parts.push(Doc::HardLine);
                     parts.push(Doc::text("else "));
                 }
+
                 parts.push(self.if_stmt_to_doc(inner));
             }
         }
@@ -795,6 +780,7 @@ impl Formatter {
                     parts.push(Doc::Line);
                     parts.push(Doc::text(op_str.clone()));
                 }
+
                 parts.push(self.expr_to_doc(operand));
             }
 
@@ -813,13 +799,13 @@ impl Formatter {
     /// inline unchanged.
     fn block_comment_to_doc(&self, text: &str) -> Doc {
         if !text.contains('\n') {
-            return Doc::text(format!("/*{}*/", text));
+            return Doc::text(format!("/*{text}*/"));
         }
 
         let trimmed = text.trim_end();
 
         Doc::concat(vec![
-            Doc::text(format!("/*{}", trimmed)),
+            Doc::text(format!("/*{trimmed}")),
             Doc::HardLine,
             Doc::text("*/"),
         ])
@@ -855,6 +841,7 @@ impl Formatter {
                     header = vec![Doc::text("default")];
                 }
             }
+
             header.push(Doc::text(":"));
             body.push(Doc::Concat(header));
 
@@ -893,6 +880,7 @@ impl Formatter {
                 header.push(Doc::text(" instanceof "));
                 header.push(Self::type_to_doc(ty));
             }
+
             header.push(Doc::text(")"));
             parts.push(Doc::Concat(header));
             parts.push(self.block_to_doc(&catch.body));
@@ -1035,15 +1023,12 @@ impl Formatter {
     fn stmt_inner_to_doc(&self, stmt: &Stmt) -> Doc {
         match stmt {
             Stmt::Block(block) => Doc::concat(vec![Doc::text("{"), self.block_inner_to_doc(block)]),
-
             Stmt::If(s) => self.if_stmt_to_doc(s),
-
             Stmt::While(s) => Doc::concat(vec![
                 self.paren_condition_header("while", &s.condition.inner),
                 self.before_bracket_doc(s.span),
                 self.block_body_to_doc(&s.body),
             ]),
-
             Stmt::DoWhile(s) => Doc::concat(vec![
                 Doc::text("do "),
                 self.before_bracket_doc(s.span),
@@ -1052,7 +1037,6 @@ impl Formatter {
                 self.expr_to_doc(&s.condition),
                 Doc::text(");"),
             ]),
-
             Stmt::For(s) => {
                 let init_doc = match &s.header.inner.init {
                     None => Doc::Empty,
@@ -1086,7 +1070,6 @@ impl Formatter {
                     self.block_body_to_doc(&s.body),
                 ])
             }
-
             Stmt::Return(s) => match &s.value {
                 None => Doc::text("return;"),
                 Some(v) => Doc::concat(vec![
@@ -1095,7 +1078,6 @@ impl Formatter {
                     Doc::text(";"),
                 ]),
             },
-
             Stmt::Break(_) => Doc::text("break;"),
             Stmt::Continue(_) => Doc::text("continue;"),
             Stmt::Throw(s) => Doc::concat(vec![
@@ -1163,7 +1145,6 @@ impl Formatter {
                 Doc::text(format!(" {} ", operators::binary_op(&e.operator))),
                 self.expr_to_doc(&e.right),
             ]),
-
             Expr::Unary(e) => match e.operator {
                 UnaryOperator::PostInc => {
                     Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("++")])
@@ -1176,7 +1157,6 @@ impl Formatter {
                     self.expr_to_doc(&e.operand),
                 ]),
             },
-
             Expr::Ternary(e) => Doc::Group(vec![
                 self.expr_to_doc(&e.cond),
                 Doc::Indent(vec![
@@ -1188,35 +1168,29 @@ impl Formatter {
                     self.expr_to_doc(&e.else_expr),
                 ]),
             ]),
-
             Expr::Assign(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.target),
                 Doc::text(format!(" {} ", operators::assign_op(&e.operator))),
                 self.expr_to_doc(&e.value),
             ]),
-
             Expr::Call(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.callee),
                 self.format_list("(", ")", self.call_args_to_items(&e.args), &[], false),
             ]),
-
             Expr::Member(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.object),
                 Doc::text(format!(".{}", e.property)),
             ]),
-
             Expr::Index(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.object),
                 Doc::text("["),
                 self.expr_to_doc(&e.index),
                 Doc::text("]"),
             ]),
-
             Expr::New(e) => Doc::concat(vec![
                 Doc::text(format!("new {}", e.class)),
                 self.format_list("(", ")", self.call_args_to_items(&e.args), &[], false),
             ]),
-
             Expr::NewArray(e) => {
                 let mut parts = vec![Doc::text("new")];
                 if let Some(ty) = &e.element_type {
@@ -1231,30 +1205,25 @@ impl Formatter {
 
                 Doc::Concat(parts)
             }
-
             Expr::TypeCast(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.expr),
                 Doc::text(" as "),
                 Self::type_to_doc(&e.target_type),
             ]),
-
             Expr::Array(e) => self.format_array(e),
-
             Expr::Dict(e) => self.format_dict(e),
-
             Expr::Lit(e) => Doc::text(match &e.value {
                 LiteralValue::Number(v) => v.to_string(),
-                LiteralValue::Long(v) => format!("{}l", v),
-                LiteralValue::Hex(s) => format!("0x{}", s),
+                LiteralValue::Long(v) => format!("{v}l"),
+                LiteralValue::Hex(s) => format!("0x{s}"),
                 LiteralValue::Float(v) => with_decimal_point(&v.to_string()),
                 LiteralValue::Double(v) => format!("{}d", with_decimal_point(&v.to_string())),
-                LiteralValue::String(v) => format!("\"{}\"", v),
+                LiteralValue::String(v) => format!("\"{v}\""),
                 LiteralValue::Boolean(v) => v.to_string(),
                 LiteralValue::Symbol(v) => format!(":{v}"),
                 LiteralValue::Null => "null".to_string(),
                 LiteralValue::NaN => "NaN".to_string(),
             }),
-
             Expr::Ident(e) => Doc::text(&e.name),
             Expr::Paren(e) => Doc::concat(vec![
                 Doc::text("("),
@@ -1356,7 +1325,7 @@ impl Formatter {
         trailing_comma: bool,
     ) -> Doc {
         if items.is_empty() && tail_comments.is_empty() {
-            return Doc::text(format!("{}{}", open, close));
+            return Doc::text(format!("{open}{close}"));
         }
 
         let has_any_comments =
@@ -1387,10 +1356,13 @@ impl Formatter {
                 if i > 0 {
                     inner.push(Doc::HardLine);
                 }
+
                 inner.push(item.content);
+
                 if i != last_idx || trailing_comma {
                     inner.push(Doc::text(","));
                 }
+
                 for c in &item.trailing_comments {
                     inner.push(Doc::text(" "));
                     inner.push(c.clone());
@@ -1416,6 +1388,7 @@ impl Formatter {
                 inner.push(Doc::text(","));
                 inner.push(Doc::Line);
             }
+
             inner.push(item.content);
         }
 
@@ -1440,13 +1413,16 @@ impl Formatter {
             if dangling_comments.is_empty() {
                 return Doc::text("{}");
             }
+
             let mut inner = Vec::new();
             for (i, c) in dangling_comments.iter().enumerate() {
                 if i > 0 {
                     inner.push(Doc::HardLine);
                 }
+
                 inner.push(self.comment_to_doc(c));
             }
+
             return Doc::concat(vec![
                 Doc::text("{"),
                 Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
@@ -1465,6 +1441,7 @@ impl Formatter {
         if self.align_dict_pairs {
             return self.format_dict_aligned_or_inline(e);
         }
+
         self.format_dict_inline_or_break(e)
     }
 
@@ -1476,6 +1453,7 @@ impl Formatter {
             if i > 0 {
                 flat_inner.push(Doc::text(", "));
             }
+
             flat_inner.push(Doc::concat(vec![
                 self.expr_to_doc(&entry.key),
                 Doc::text(" => "),
@@ -1677,4 +1655,36 @@ impl Formatter {
             Doc::HardLine
         }
     }
+}
+
+/// Whether `expr` is a binary expression — any top-level binary operator
+/// gives the formatter a natural wrap-point.
+/// Rust's `f32`/`f64` `to_string` strips trailing `.0`, but Monkey C source
+/// distinguishes integer and float literals by the decimal point — re-emit it
+/// when it's missing so `1.0` doesn't round-trip to `1`.
+fn with_decimal_point(s: &str) -> String {
+    if s.contains('.') {
+        s.to_string()
+    } else {
+        format!("{s}.0")
+    }
+}
+
+/// Walk a left-associative binary tree and collect all operands joined by `op`,
+/// at the same precedence level.
+///
+/// `a || b || c` parses as `Or(Or(a, b), c)` — this flattens it to
+/// `[a, b, c]` so the formatter can render the chain with breakable
+/// separators between siblings.
+fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<&'a Expr>) {
+    if let Expr::Binary(be) = expr {
+        if be.operator == *op {
+            collect_logical_chain(&be.left, op, out);
+            collect_logical_chain(&be.right, op, out);
+
+            return;
+        }
+    }
+
+    out.push(expr);
 }

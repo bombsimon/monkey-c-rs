@@ -618,7 +618,7 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
-            _ => Err(self.parse_error(format!("Unexpected token in expression: {:?}", token_type))),
+            _ => Err(self.parse_error(format!("Unexpected token in expression: {token_type:?}"))),
         }
     }
 
