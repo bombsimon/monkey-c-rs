@@ -32,6 +32,20 @@ between key-value pairs in dictionaries.
 
 It's backed by the [`monkey-c-parser`][parser] to parse the code.
 
+## Design
+
+The design is heavily inspired of Ruff. It uses the [Wadler]-[Lindig] algorithm
+to wrap lines and it uses the concept of anchoring comments to nodes rather than
+a streaming variant. This means that some formatting might be normalized in a
+way that's different from the original source code.
+
+> ![IMPORANT]
+> The formatter is in an early stage and constantly evolving. The goal is a
+> zero-config solution that has sensible defaults but with the option to add
+> rules and configuration as they are requested.
+
+[Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
+[Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [Monkey C]: https://developer.garmin.com/connect-iq/monkey-c/
 [parser]: ../monkey-c-parser
 [ruff]: https://docs.astral.sh/ruff/
