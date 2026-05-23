@@ -570,15 +570,23 @@ pub struct ThrowStmt {
     pub span: Span,
 }
 
+/// A single `name [as Type] [= init]` binding inside a `var` or `const`
+/// declaration. Each binding in a comma-separated list carries its own type
+/// annotation and initializer independently.
+#[derive(Debug, PartialEq)]
+pub struct Binding {
+    pub name: Ident,
+    pub type_: Option<Type>,
+    pub initializer: Option<Box<Expr>>,
+    pub span: Span,
+}
+
 /// A `var` declaration, at module/class scope or inside a function body.
+/// Holds one or more comma-separated bindings: `var a, b = 2, c as Number;`.
 #[derive(Debug, PartialEq)]
 pub struct VarDecl {
-    pub name: Ident,
-    /// Declared type (`as Type`), if present.
-    pub type_: Option<Type>,
+    pub bindings: Vec<Binding>,
     pub visibility: Option<Visibility>,
-    /// Initial value (`= expr`), if present.
-    pub initializer: Option<Box<Expr>>,
     pub is_static: bool,
     pub span: Span,
 }
@@ -706,12 +714,8 @@ pub struct FunctionDecl {
 /// not deeply freeze its value (a `const` array still has mutable elements).
 #[derive(Debug, PartialEq)]
 pub struct ConstDecl {
-    pub name: Ident,
-    /// Declared type (`as Type`), if present.
-    pub type_: Option<Type>,
+    pub bindings: Vec<Binding>,
     pub visibility: Option<Visibility>,
-    /// The required initial value.
-    pub initializer: Expr,
     pub is_static: bool,
     pub span: Span,
 }

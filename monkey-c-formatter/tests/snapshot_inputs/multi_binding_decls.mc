@@ -1,0 +1,21 @@
+var a, b, c;
+
+const a, b, c = 1;
+
+var a, b, c = 1 as Number;
+
+var a = 1, b = 2;
+
+var a = 1 as Number, b = 2 as Number;
+
+class Foo {
+    var x, y;
+    const A = 1, B = 2;
+
+    function f() {
+        var i, j, k = 0;
+        for (i = 0; i < 10; i += 1) {
+            doX();
+        }
+    }
+}

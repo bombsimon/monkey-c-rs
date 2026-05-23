@@ -1,9 +1,9 @@
 use crate::ast::{
-    Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, CommentTable, ConstDecl,
-    DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant, ForHeader, ForInit,
-    ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl, Parens, ParseOutput, ReturnStmt, Span,
-    Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl,
-    VarDecl, Variable, Visibility, WhileStmt,
+    Ast, Binding, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, CommentTable,
+    ConstDecl, DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant,
+    ForHeader, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl, Parens, ParseOutput,
+    ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind,
+    TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -433,27 +433,14 @@ impl<'a> Parser<'a> {
         visibility: Option<Visibility>,
         is_static: bool,
     ) -> Result<Ast, ParserError> {
-        self.next_token_span();
-        let name = self.parse_identifier()?;
-        self.next_token_span();
-
-        let type_ = if self.current_token == token::Type::As {
-            self.next_token_span();
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-
-        self.assert_next_token(&[token::Type::Assign])?;
-        let initializer = self.parse_expression()?;
+        self.next_token_span(); // consume `const`
+        let bindings = self.parse_bindings()?;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
         Ok(Ast::Const(ConstDecl {
-            name,
-            type_,
+            bindings,
             visibility,
-            initializer,
             is_static,
             span: Span {
                 start,
@@ -739,31 +726,62 @@ impl<'a> Parser<'a> {
         visibility: Option<Visibility>,
         is_static: bool,
     ) -> Result<VarDecl, ParserError> {
+        let bindings = self.parse_bindings()?;
+
+        Ok(VarDecl {
+            bindings,
+            visibility,
+            is_static,
+            // Callers fill in the real span after consuming the trailing semicolon.
+            span: Span { start: 0, end: 0 },
+        })
+    }
+
+    /// Parse a comma-separated list of `name [as Type] [= init]` bindings —
+    /// shared between `var` and `const` declarations.
+    fn parse_bindings(&mut self) -> Result<Vec<Binding>, ParserError> {
+        let mut bindings = Vec::new();
+        loop {
+            bindings.push(self.parse_one_binding()?);
+            if self.current_token == token::Type::Comma {
+                self.next_token_span(); // consume `,`
+            } else {
+                break;
+            }
+        }
+
+        Ok(bindings)
+    }
+
+    fn parse_one_binding(&mut self) -> Result<Binding, ParserError> {
+        let start = self.current_token_start;
         let name = self.parse_identifier()?;
-        self.next_token_span(); // advance past identifier
+        let mut end = self.current_token_end;
+        self.next_token_span();
 
         let type_ = if self.current_token == token::Type::As {
             self.next_token_span();
-            Some(self.parse_type()?)
+            let ty = self.parse_type()?;
+            end = self.prev_token_end;
+            Some(ty)
         } else {
             None
         };
 
         let initializer = if self.current_token == token::Type::Assign {
-            self.next_token_span(); // consume =
-            Some(Box::new(self.parse_expression()?))
+            self.next_token_span(); // consume `=`
+            let expr = self.parse_expression()?;
+            end = expr.span().end;
+            Some(Box::new(expr))
         } else {
             None
         };
 
-        Ok(VarDecl {
+        Ok(Binding {
             name,
             type_,
-            visibility,
             initializer,
-            is_static,
-            // Callers fill in the real span after consuming the trailing semicolon.
-            span: Span { start: 0, end: 0 },
+            span: Span { start, end },
         })
     }
 

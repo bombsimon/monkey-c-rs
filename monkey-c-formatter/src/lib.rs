@@ -3,7 +3,7 @@ mod operators;
 
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    ArrayExpr, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
+    ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
     DictExpr, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl,
     IfStmt, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt, TryStmt, Type, TypeKind,
     UnaryOperator, VarDecl, Visibility,
@@ -526,25 +526,8 @@ impl Formatter {
     }
 
     fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
-        let mut parts: Vec<Doc> = Vec::new();
-
-        if let Some(vis) = &decl.visibility {
-            parts.push(self.visibility_to_doc(vis));
-        }
-
-        if decl.is_static {
-            parts.push(Doc::text("static "));
-        }
-
-        parts.push(Doc::text(format!("const {}", decl.name)));
-
-        if let Some(ty) = &decl.type_ {
-            parts.push(Doc::text(" as "));
-            parts.push(Self::type_to_doc(ty));
-        }
-
-        parts.push(Doc::text(" = "));
-        parts.push(self.expr_to_doc(&decl.initializer));
+        let mut parts = self.decl_keyword(decl.visibility.as_ref(), decl.is_static, "const");
+        self.push_bindings(&mut parts, &decl.bindings);
         parts.push(Doc::text(";"));
 
         Doc::Concat(parts)
@@ -554,29 +537,51 @@ impl Formatter {
     ///
     /// Used for both `var` statements and `for`-loop init clauses.
     fn var_decl_to_doc(&self, var: &VarDecl) -> Doc {
-        let mut parts: Vec<Doc> = Vec::new();
+        let mut parts = self.decl_keyword(var.visibility.as_ref(), var.is_static, "var");
+        self.push_bindings(&mut parts, &var.bindings);
 
-        if let Some(vis) = &var.visibility {
+        Doc::Concat(parts)
+    }
+
+    /// `[visibility ][static ]<keyword> ` prefix shared by `var` and `const`.
+    fn decl_keyword(
+        &self,
+        visibility: Option<&Visibility>,
+        is_static: bool,
+        keyword: &str,
+    ) -> Vec<Doc> {
+        let mut parts: Vec<Doc> = Vec::new();
+        if let Some(vis) = visibility {
             parts.push(self.visibility_to_doc(vis));
         }
 
-        if var.is_static {
+        if is_static {
             parts.push(Doc::text("static "));
         }
 
-        parts.push(Doc::text(format!("var {}", var.name)));
+        parts.push(Doc::text(format!("{keyword} ")));
+        parts
+    }
 
-        if let Some(ty) = &var.type_ {
-            parts.push(Doc::text(" as "));
-            parts.push(Self::type_to_doc(ty));
+    /// Append comma-separated `name [as Type] [= init]` bindings to `parts`.
+    fn push_bindings(&self, parts: &mut Vec<Doc>, bindings: &[Binding]) {
+        for (i, b) in bindings.iter().enumerate() {
+            if i > 0 {
+                parts.push(Doc::text(", "));
+            }
+
+            parts.push(Doc::text(&b.name));
+
+            if let Some(ty) = &b.type_ {
+                parts.push(Doc::text(" as "));
+                parts.push(Self::type_to_doc(ty));
+            }
+
+            if let Some(init) = &b.initializer {
+                parts.push(Doc::text(" = "));
+                parts.push(self.expr_to_doc(init));
+            }
         }
-
-        if let Some(init) = &var.initializer {
-            parts.push(Doc::text(" = "));
-            parts.push(self.expr_to_doc(init));
-        }
-
-        Doc::Concat(parts)
     }
 
     fn visibility_to_doc(&self, vis: &Visibility) -> Doc {

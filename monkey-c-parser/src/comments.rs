@@ -468,12 +468,20 @@ fn collect_spans_ast(
             }
         }
         Ast::Variable(decl) => {
-            if let Some(init) = &decl.initializer {
-                collect_spans_expr(init, out);
+            for b in &decl.bindings {
+                out.push(b.span);
+                if let Some(init) = &b.initializer {
+                    collect_spans_expr(init, out);
+                }
             }
         }
         Ast::Const(decl) => {
-            collect_spans_expr(&decl.initializer, out);
+            for b in &decl.bindings {
+                out.push(b.span);
+                if let Some(init) = &b.initializer {
+                    collect_spans_expr(init, out);
+                }
+            }
         }
         Ast::Typedef(_) | Ast::Import(_) | Ast::Using(_) => {}
         Ast::Annotation(_, _) | Ast::Eof => {}
@@ -583,8 +591,11 @@ fn collect_spans_stmt(
             }
         }
         Stmt::Var(v) => {
-            if let Some(init) = &v.initializer {
-                collect_spans_expr(init, out);
+            for b in &v.bindings {
+                out.push(b.span);
+                if let Some(init) = &b.initializer {
+                    collect_spans_expr(init, out);
+                }
             }
         }
         Stmt::Expr(e) => collect_spans_expr(e, out),

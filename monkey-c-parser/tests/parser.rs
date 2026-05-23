@@ -74,13 +74,14 @@ fn test_class() {
 #[test]
 fn test_var_declarations() {
     let v = class_var("class C { var x as Float; }");
-    assert_eq!(v.name, "x");
-    assert_eq!(v.type_.unwrap().ident().unwrap(), "Float");
+    let b = v.bindings.into_iter().next().unwrap();
+    assert_eq!(b.name, "x");
+    assert_eq!(b.type_.unwrap().ident().unwrap(), "Float");
 
     // `Array<Number or Float>` is one generic param whose type is a union,
     // not two comma-separated params. Confirm the corrected shape.
     let v = class_var("class C { var items as Array<Number or Float>; }");
-    let ty = v.type_.unwrap();
+    let ty = v.bindings.into_iter().next().unwrap().type_.unwrap();
     assert_eq!(ty.ident().unwrap(), "Array");
     assert_eq!(ty.generic_params().len(), 1);
     let param = &ty.generic_params()[0];
@@ -91,21 +92,31 @@ fn test_var_declarations() {
     // `Dictionary<String, Number>` is two distinct generic params, comma-
     // separated. The old code conflated this with the union shape above.
     let v = class_var("class C { var d as Dictionary<String, Number>; }");
-    let ty = v.type_.unwrap();
+    let ty = v.bindings.into_iter().next().unwrap().type_.unwrap();
     assert_eq!(ty.generic_params().len(), 2);
     assert_eq!(ty.generic_params()[0].ident().unwrap(), "String");
     assert_eq!(ty.generic_params()[1].ident().unwrap(), "Number");
     assert!(ty.generic_params()[0].alternatives.is_empty());
 
     let v = class_var("class C { var x = 42; }");
-    assert!(v.initializer.is_some());
+    assert!(v.bindings[0].initializer.is_some());
 
     // Type names can be dotted via `using`-imported module paths.
     let v = class_var("class C { var e as Toybox.Lang.Boolean; }");
-    assert_eq!(v.type_.unwrap().ident().unwrap(), "Toybox.Lang.Boolean");
+    assert_eq!(
+        v.bindings
+            .into_iter()
+            .next()
+            .unwrap()
+            .type_
+            .unwrap()
+            .ident()
+            .unwrap(),
+        "Toybox.Lang.Boolean"
+    );
 
     let v = class_var("class C { var arr as Toybox.Lang.Array<Foo.Bar>; }");
-    let ty = v.type_.unwrap();
+    let ty = v.bindings.into_iter().next().unwrap().type_.unwrap();
     assert_eq!(ty.ident().unwrap(), "Toybox.Lang.Array");
     assert_eq!(ty.generic_params()[0].ident().unwrap(), "Foo.Bar");
 }
@@ -133,13 +144,57 @@ fn test_var_static() {
 #[test]
 fn test_const_declarations() {
     let c = class_const("class C { const PI = 3; }");
-    assert_eq!(c.name, "PI");
-    assert!(matches!(c.initializer, Expr::Lit(_)));
+    let b = c.bindings.into_iter().next().unwrap();
+    assert_eq!(b.name, "PI");
+    assert!(matches!(*b.initializer.unwrap(), Expr::Lit(_)));
 
     let c = class_const("class C { const MAX as Number = 100; }");
-    assert_eq!(c.type_.unwrap().ident().unwrap(), "Number");
+    assert_eq!(
+        c.bindings
+            .into_iter()
+            .next()
+            .unwrap()
+            .type_
+            .unwrap()
+            .ident()
+            .unwrap(),
+        "Number"
+    );
 
     assert!(class_const("class C { static const RATE = 1; }").is_static);
+}
+
+#[test]
+fn test_var_multiple_bindings() {
+    let v = class_var("class C { var a, b, c; }");
+    assert_eq!(v.bindings.len(), 3);
+    assert_eq!(v.bindings[0].name, "a");
+    assert_eq!(v.bindings[1].name, "b");
+    assert_eq!(v.bindings[2].name, "c");
+    assert!(v.bindings.iter().all(|b| b.initializer.is_none()));
+
+    let v = class_var("class C { var a = 1, b = 2; }");
+    assert!(v.bindings[0].initializer.is_some());
+    assert!(v.bindings[1].initializer.is_some());
+
+    let v = class_var("class C { var a = 1 as Number, b = 2 as Number; }");
+    assert!(matches!(
+        *v.bindings[0].initializer.as_ref().unwrap().as_ref(),
+        Expr::TypeCast(_)
+    ));
+    assert!(matches!(
+        *v.bindings[1].initializer.as_ref().unwrap().as_ref(),
+        Expr::TypeCast(_)
+    ));
+}
+
+#[test]
+fn test_const_multiple_bindings() {
+    let c = class_const("class C { const A, B, C = 1; }");
+    assert_eq!(c.bindings.len(), 3);
+    assert!(c.bindings[0].initializer.is_none());
+    assert!(c.bindings[1].initializer.is_none());
+    assert!(c.bindings[2].initializer.is_some());
 }
 
 #[test]
@@ -297,7 +352,7 @@ fn test_ternary() {
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
-    let Some(init) = &v.initializer else {
+    let Some(init) = &v.bindings[0].initializer else {
         panic!("expected initializer");
     };
     assert!(matches!(init.as_ref(), Expr::Ternary(_)));
@@ -309,7 +364,7 @@ fn test_ternary_right_associative() {
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
-    let Some(init) = &v.initializer else {
+    let Some(init) = &v.bindings[0].initializer else {
         panic!("expected initializer");
     };
     let Expr::Ternary(outer) = init.as_ref() else {
@@ -482,7 +537,7 @@ fn test_dict_entry_trailing_comments_parse() {
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
-    let Some(init) = &v.initializer else {
+    let Some(init) = &v.bindings[0].initializer else {
         panic!("expected initializer");
     };
     let Expr::Dict(d) = init.as_ref() else {
@@ -498,7 +553,7 @@ fn test_empty_dict_with_tail_comment_parse() {
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
-    let Some(init) = &v.initializer else {
+    let Some(init) = &v.bindings[0].initializer else {
         panic!("expected initializer");
     };
     let Expr::Dict(d) = init.as_ref() else {
@@ -516,7 +571,7 @@ fn test_dict_standalone_comment_between_entries() {
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
-    let Some(init) = &v.initializer else {
+    let Some(init) = &v.bindings[0].initializer else {
         panic!("expected initializer");
     };
     let Expr::Dict(d) = init.as_ref() else {
@@ -536,7 +591,7 @@ fn test_dict_blank_line_between_entries_does_not_add_members() {
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
-    let Some(init) = &v.initializer else {
+    let Some(init) = &v.bindings[0].initializer else {
         panic!("expected initializer");
     };
     let Expr::Dict(d) = init.as_ref() else {
