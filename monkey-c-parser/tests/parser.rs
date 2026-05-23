@@ -99,6 +99,15 @@ fn test_var_declarations() {
 
     let v = class_var("class C { var x = 42; }");
     assert!(v.initializer.is_some());
+
+    // Type names can be dotted via `using`-imported module paths.
+    let v = class_var("class C { var e as Toybox.Lang.Boolean; }");
+    assert_eq!(v.type_.unwrap().ident().unwrap(), "Toybox.Lang.Boolean");
+
+    let v = class_var("class C { var arr as Toybox.Lang.Array<Foo.Bar>; }");
+    let ty = v.type_.unwrap();
+    assert_eq!(ty.ident().unwrap(), "Toybox.Lang.Array");
+    assert_eq!(ty.generic_params()[0].ident().unwrap(), "Foo.Bar");
 }
 
 #[test]

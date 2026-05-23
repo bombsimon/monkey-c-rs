@@ -217,10 +217,7 @@ impl<'a> Parser<'a> {
                 trailing_comma,
             }
         } else {
-            let ident = self.parse_identifier()?;
-            if self.current_token != token::Type::Less {
-                self.next_token_span();
-            }
+            let ident = self.parse_dotted_identifier()?;
 
             let generic_params = if self.current_token == token::Type::Less {
                 self.next_token_span(); // consume <
