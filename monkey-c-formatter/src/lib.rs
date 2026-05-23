@@ -403,26 +403,31 @@ impl Formatter {
 
         let last_idx = decl.variants.len() - 1;
         let mut inner = Vec::new();
+        let mut prev_end: Option<usize> = None;
 
-        // Body-level `BeforeFirstChild` comments (e.g. a `// header` line
-        // between `{` and the first variant) render on their own lines before
-        // the variants.
-        for (i, c) in body_before_comments.iter().enumerate() {
-            if i > 0 {
-                inner.push(Doc::HardLine);
-            }
+        let push_gap = |inner: &mut Vec<Doc>, prev_end: Option<usize>, next_start: usize| {
+            let Some(pe) = prev_end else { return };
+            let prev_span = Span { start: 0, end: pe };
+            let next_span = Span {
+                start: next_start,
+                end: next_start,
+            };
+            inner.push(self.gap_between_spans(Some(&prev_span), Some(&next_span)));
+        };
 
+        for c in &body_before_comments {
+            push_gap(&mut inner, prev_end, c.span.start);
             inner.push(self.comment_to_doc(c));
-        }
-
-        if !body_before_comments.is_empty() {
-            inner.push(Doc::HardLine);
+            prev_end = Some(c.span.end);
         }
 
         for (i, v) in decl.variants.iter().enumerate() {
-            if i > 0 {
-                inner.push(Doc::HardLine);
-            }
+            let leading_comments = self.leading(v.span);
+            let v_start = leading_comments
+                .first()
+                .map(|c| c.span.start)
+                .unwrap_or(v.span.start);
+            push_gap(&mut inner, prev_end, v_start);
 
             let mut parts = Vec::new();
 
@@ -442,21 +447,46 @@ impl Formatter {
                 parts.push(Doc::text(","));
             }
 
-            // Trailing comments on the variant (`Variant, /* X */`).
-            for c in self.trailing(v.span) {
-                parts.push(Doc::text(" "));
-                parts.push(self.comment_to_doc(&c));
+            // Trailing comments on the variant. A comment written on the same
+            // source line stays inline (`Variant, // X`); a comment on a
+            // later line (e.g. commented-out code below the variant) keeps
+            // its own line.
+            let variant_end_line = self
+                .line_index
+                .line_col(v.span.end.saturating_sub(1) as u32)
+                .line;
+            let mut last_line = variant_end_line;
+            let trailing_comments = self.trailing(v.span);
+            for c in &trailing_comments {
+                let comment_start_line = self.line_index.line_col(c.span.start as u32).line;
+                if comment_start_line == last_line {
+                    parts.push(Doc::text(" "));
+                } else {
+                    parts.push(Doc::HardLine);
+                }
+                parts.push(self.comment_to_doc(c));
+                last_line = self
+                    .line_index
+                    .line_col(c.span.end.saturating_sub(1) as u32)
+                    .line;
             }
 
             inner.push(Doc::Concat(parts));
+            prev_end = Some(
+                trailing_comments
+                    .last()
+                    .map(|c| c.span.end)
+                    .unwrap_or(v.span.end),
+            );
         }
 
         // Standalone comments between the last variant and `}` — they don't
         // belong to any variant, so render them on their own lines at the
         // variant indent.
         for c in &after_last_comments {
-            inner.push(Doc::HardLine);
+            push_gap(&mut inner, prev_end, c.span.start);
             inner.push(self.comment_to_doc(c));
+            prev_end = Some(c.span.end);
         }
 
         Doc::concat(vec![
