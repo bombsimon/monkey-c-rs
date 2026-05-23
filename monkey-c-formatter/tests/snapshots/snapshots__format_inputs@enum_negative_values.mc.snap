@@ -1,0 +1,10 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/enum_negative_values.mc
+---
+enum {
+    A = 1, // positive
+    B = -2, // negative
+    C = -3, /* block */
+    D = !flag, // logical not
+}

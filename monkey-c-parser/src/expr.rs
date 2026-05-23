@@ -282,7 +282,7 @@ impl Parser<'_> {
             _ => unreachable!(),
         };
         let right = self.parse_unary()?;
-        let (_, _, end) = self.lexer.peek_token();
+        let end = right.span().end;
         Ok(Expr::Unary(UnaryExpr {
             operator,
             operand: Box::new(right),
@@ -536,7 +536,7 @@ impl Parser<'_> {
             token::Type::Minus => {
                 let (start, _, _) = self.next_token_span();
                 let operand = self.parse_primary()?;
-                let (_, _, end) = self.lexer.peek_token();
+                let end = operand.span().end;
                 Ok(Expr::Unary(UnaryExpr {
                     operator: UnaryOperator::Neg,
                     operand: Box::new(operand),
