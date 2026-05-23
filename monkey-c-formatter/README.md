@@ -6,7 +6,7 @@ reasonable width but can, similar to [ruff], allow automatic multiline wrapping
 of arrays and dictionaries by specifying a trailing newline.
 
 ```sh
-› echo 'var x=[1,    2,3,];' | cargo run --example format
+› echo 'var x=[1,    2,3,];' | cargo run
 var x = [
     1,
     2,
@@ -15,7 +15,7 @@ var x = [
 ```
 
 ```sh
-› echo 'var x=[1,    2,3];' | cargo run --example format
+› echo 'var x=[1,    2,3];' | cargo run
 var x = [1, 2, 3];
 ```
 
@@ -23,7 +23,7 @@ In addition to line breaks it currently has support to align the fat arrow
 between key-value pairs in dictionaries.
 
 ```sh
-› echo 'static const x = {:foo=>"bar", :not_foo=>"baz",};' | cargo run --example format
+› echo 'static const x = {:foo=>"bar", :not_foo=>"baz",};' | cargo run
  static const x = {
     :foo:    => "bar",
     :not_foo => "baz",
