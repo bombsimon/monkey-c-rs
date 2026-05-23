@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/string_escapes.mc
+---
+function f() {
+    var a = "embedded \"quote\" inside";
+    var b = "newline\nhere";
+    var c = "tab\there";
+    var d = "back\\slash";
+    s.find("\"");
+}

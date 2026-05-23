@@ -656,7 +656,7 @@ impl Formatter {
         let entry_doc = |entry: &DictTypeEntry| {
             let key = match &entry.key {
                 DictTypeKey::Symbol(s) => format!(":{s}"),
-                DictTypeKey::String(s) => format!("\"{s}\""),
+                DictTypeKey::String(s) => format!("\"{}\"", escape_string(s)),
             };
             Doc::concat(vec![
                 Doc::text(key),
@@ -1233,7 +1233,7 @@ impl Formatter {
                 LiteralValue::Hex(s) => format!("0x{s}"),
                 LiteralValue::Float(v) => with_decimal_point(&v.to_string()),
                 LiteralValue::Double(v) => format!("{}d", with_decimal_point(&v.to_string())),
-                LiteralValue::String(v) => format!("\"{v}\""),
+                LiteralValue::String(v) => format!("\"{}\"", escape_string(v)),
                 LiteralValue::Boolean(v) => v.to_string(),
                 LiteralValue::Symbol(v) => format!(":{v}"),
                 LiteralValue::Null => "null".to_string(),
@@ -1690,6 +1690,26 @@ fn with_decimal_point(s: &str) -> String {
     } else {
         format!("{s}.0")
     }
+}
+
+/// The lexer decodes escape sequences in string literals (`\"` → `"`, `\n` →
+/// newline, etc.), so emitting the stored value verbatim would produce invalid
+/// source. Re-encode the same set the lexer recognises.
+fn escape_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            _ => out.push(c),
+        }
+    }
+
+    out
 }
 
 /// Walk a left-associative binary tree and collect all operands joined by `op`,
