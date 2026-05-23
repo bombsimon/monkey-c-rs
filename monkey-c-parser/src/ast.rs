@@ -477,7 +477,8 @@ pub struct WhileStmt {
 pub struct DoWhileStmt {
     pub body: BlockStmt,
     pub condition: Expr,
-    /// Byte offset after the `do` keyword. See [`IfStmt::header_end`].
+    /// Byte offset just past the `do` keyword. Used by the comment-attachment
+    /// pass to recognise comments in the `do /* C */ {` slot.
     pub header_end: usize,
     pub span: Span,
 }
@@ -548,7 +549,8 @@ pub struct TryStmt {
     pub body: BlockStmt,
     pub catches: Vec<CatchClause>,
     pub finally: Option<BlockStmt>,
-    /// Byte offset after the `try` keyword. See [`IfStmt::header_end`].
+    /// Byte offset just past the `try` keyword. Used by the comment-attachment
+    /// pass to recognise comments in the `try /* C */ {` slot.
     pub header_end: usize,
     pub span: Span,
 }
