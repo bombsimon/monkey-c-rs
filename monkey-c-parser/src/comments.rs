@@ -8,7 +8,7 @@ use crate::ast::{
     Ast, CaseLabel, CommentStmt, CommentTable, ElseBranch, Expr, ForInit, Span, Stmt,
 };
 use crate::line_index::LineIndex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Where a `dangling` comment sits relative to its containing node's
 /// structure. The renderer uses this to decide placement.
@@ -18,6 +18,10 @@ pub enum DanglingPlacement {
     /// opening `{`: `enum /* X */ {`, `function f() /* C */ {`,
     /// `if (x) /* C */ {`. The renderer emits it just before `{`.
     BeforeBracket,
+    /// Comment is on the same source line as the opening `{` but *inside*
+    /// the block — `if (x) { // C\n  body }`. The renderer emits it
+    /// immediately after `{` on that line.
+    AfterOpenBrace,
     /// Comment is inside the brace body but before the first child —
     /// e.g. `{ /* X */ first }` or `{ /* X */ }`.
     BeforeFirstChild,
@@ -92,7 +96,8 @@ type BracketZone = (usize, usize);
 pub fn attach_comments(ast: &Ast, table: &CommentTable, line_index: &LineIndex) -> CommentsMap {
     let mut spans: Vec<Span> = Vec::new();
     let mut brace_starts: HashMap<Span, BracketZone> = HashMap::new();
-    collect_spans_ast(ast, &mut spans, &mut brace_starts);
+    let mut block_spans: HashSet<Span> = HashSet::new();
+    collect_spans_ast(ast, &mut spans, &mut brace_starts, &mut block_spans);
     spans.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| b.end.cmp(&a.end)));
 
     let mut map = CommentsMap {
@@ -134,7 +139,15 @@ pub fn attach_comments(ast: &Ast, table: &CommentTable, line_index: &LineIndex) 
             }
         }
 
-        let outcome = attach_one(i, comment, &spans, &brace_starts, line_index, &mut map);
+        let outcome = attach_one(
+            i,
+            comment,
+            &spans,
+            &brace_starts,
+            &block_spans,
+            line_index,
+            &mut map,
+        );
         cluster = outcome.and_then(|o| {
             // Only own-line attachments seed a cluster anchor. Same-line
             // trailing/leading should not pull subsequent comments off
@@ -195,6 +208,7 @@ fn attach_one(
     comment: &CommentStmt,
     spans: &[Span],
     brace_starts: &HashMap<Span, BracketZone>,
+    block_spans: &HashSet<Span>,
     line_index: &LineIndex,
     map: &mut CommentsMap,
 ) -> Option<AttachOutcome> {
@@ -275,6 +289,27 @@ fn attach_one(
         line_index.blank_lines_between(comment.span.end as u32, n.start as u32) == 0
     });
 
+    // "Within" the containing node: only consider prev/next that are
+    // strict children of `containing`. A comment sitting between the
+    // containing's start and its first child — or between its last child
+    // and the containing's end — is a dangling comment on the containing
+    // node, *not* a leading/trailing of some outer sibling.
+    let prev_within = prev
+        .and_then(|p| containing.and_then(|c| (p.start >= c.start && p.end <= c.end).then_some(p)));
+    let next_within = next
+        .and_then(|n| containing.and_then(|c| (n.start >= c.start && n.end <= c.end).then_some(n)));
+
+    // Same-line trailing/leading is only valid when the neighbour sits in the
+    // same containing scope as the comment. Crossing a container boundary
+    // (e.g. `if (cond) { // C`, where prev=`cond` is outside the block body
+    // that contains the comment) would render the comment in the wrong
+    // structural slot. When there is no containing node (top-level), no
+    // boundary can be crossed, so accept the same-line neighbour as-is.
+    let prev_same_line_in_scope =
+        matches!(prev_same_line, Some(true)) && (containing.is_none() || prev_within.is_some());
+    let next_same_line_in_scope =
+        matches!(next_same_line, Some(true)) && (containing.is_none() || next_within.is_some());
+
     // Attachment rules, in priority order:
     //
     // 1. Same line on both sides → tiebreak by source distance. Covers
@@ -288,8 +323,8 @@ fn attach_one(
     //    `// header` style own-line comments above a node.
     // 6. Adjacent on neither → dangling on the containing node, or fall
     //    back to leading-on-next / trailing-on-prev if no parent exists.
-    match (prev_same_line, next_same_line) {
-        (Some(true), Some(true)) => {
+    match (prev_same_line_in_scope, next_same_line_in_scope) {
+        (true, true) => {
             let p = prev.unwrap();
             let n = next.unwrap();
             let dist_prev = comment.span.start.saturating_sub(p.end);
@@ -308,7 +343,7 @@ fn attach_one(
                 }
             });
         }
-        (Some(true), _) => {
+        (true, false) => {
             let p = prev.unwrap();
             map.trailing.entry(p).or_default().push(i);
             return Some(AttachOutcome {
@@ -316,7 +351,7 @@ fn attach_one(
                 own_line: false,
             });
         }
-        (_, Some(true)) => {
+        (false, true) => {
             let n = next.unwrap();
             map.leading.entry(n).or_default().push(i);
             return Some(AttachOutcome {
@@ -327,30 +362,24 @@ fn attach_one(
         _ => {}
     }
 
-    // "Within" the containing node: only consider prev/next that are
-    // strict children of `containing`. A comment sitting between the
-    // containing's start and its first child — or between its last child
-    // and the containing's end — is a dangling comment on the containing
-    // node, *not* a leading/trailing of some outer sibling.
-    let prev_within = prev
-        .and_then(|p| containing.and_then(|c| (p.start >= c.start && p.end <= c.end).then_some(p)));
-    let next_within = next
-        .and_then(|n| containing.and_then(|c| (n.start >= c.start && n.end <= c.end).then_some(n)));
-
     if let Some(c) = containing {
         match (prev_within, next_within) {
             (None, Some(_)) => {
-                // Inside `c` but before any child — dangling
-                // `BeforeFirstChild`. Lets the renderer place the comment
-                // between the node's header (`enum`, `class`, `(`, …) and
-                // its first child.
-                map.dangling
-                    .entry((c, DanglingPlacement::BeforeFirstChild))
-                    .or_default()
-                    .push(i);
+                // Inside `c` but before any child. When `c` is a block whose
+                // opening `{` sits on the comment's own source line, render
+                // it as `{ // C` (same line). Otherwise render on its own
+                // line above the first child.
+                let block_open_same_line = block_spans.contains(&c)
+                    && line_index.line_col(c.start as u32).line == comment_start_line;
+                let placement = if block_open_same_line {
+                    DanglingPlacement::AfterOpenBrace
+                } else {
+                    DanglingPlacement::BeforeFirstChild
+                };
+                map.dangling.entry((c, placement)).or_default().push(i);
                 return Some(AttachOutcome {
-                    target: AttachTarget::Dangling(c, DanglingPlacement::BeforeFirstChild),
-                    own_line: true,
+                    target: AttachTarget::Dangling(c, placement),
+                    own_line: !block_open_same_line,
                 });
             }
             (Some(_), None) => {
@@ -438,6 +467,7 @@ fn collect_spans_ast(
     ast: &Ast,
     out: &mut Vec<Span>,
     brace_starts: &mut HashMap<Span, BracketZone>,
+    block_spans: &mut HashSet<Span>,
 ) {
     if let Some(s) = ast.span() {
         out.push(*s);
@@ -446,19 +476,19 @@ fn collect_spans_ast(
     match ast {
         Ast::Document(nodes, _) => {
             for n in nodes {
-                collect_spans_ast(n, out, brace_starts);
+                collect_spans_ast(n, out, brace_starts, block_spans);
             }
         }
         Ast::Module(decl) => {
             brace_starts.insert(decl.span, (0, decl.brace_start));
             for n in &decl.body {
-                collect_spans_ast(n, out, brace_starts);
+                collect_spans_ast(n, out, brace_starts, block_spans);
             }
         }
         Ast::Class(decl) => {
             brace_starts.insert(decl.span, (0, decl.brace_start));
             for n in &decl.body {
-                collect_spans_ast(n, out, brace_starts);
+                collect_spans_ast(n, out, brace_starts, block_spans);
             }
         }
         Ast::Function(decl) => {
@@ -471,9 +501,10 @@ fn collect_spans_ast(
             }
 
             for stmt in &decl.body.stmts {
-                collect_spans_stmt(stmt, out, brace_starts);
+                collect_spans_stmt(stmt, out, brace_starts, block_spans);
             }
 
+            block_spans.insert(decl.body.span);
             out.push(decl.body.span);
         }
         Ast::Enum(decl) => {
@@ -510,23 +541,26 @@ fn collect_spans_stmt(
     stmt: &Stmt,
     out: &mut Vec<Span>,
     brace_starts: &mut HashMap<Span, BracketZone>,
+    block_spans: &mut HashSet<Span>,
 ) {
     out.push(*stmt.span());
     match stmt {
         Stmt::Block(b) => {
+            block_spans.insert(b.span);
             for s in &b.stmts {
-                collect_spans_stmt(s, out, brace_starts);
+                collect_spans_stmt(s, out, brace_starts, block_spans);
             }
         }
-        Stmt::If(s) => collect_spans_if(s, out, brace_starts),
+        Stmt::If(s) => collect_spans_if(s, out, brace_starts, block_spans),
         Stmt::While(s) => {
             brace_starts.insert(s.span, (s.condition.close, s.body.span.start));
             collect_spans_expr(&s.condition.inner, out);
 
             for sub in &s.body.stmts {
-                collect_spans_stmt(sub, out, brace_starts);
+                collect_spans_stmt(sub, out, brace_starts, block_spans);
             }
 
+            block_spans.insert(s.body.span);
             out.push(s.body.span);
         }
         Stmt::DoWhile(s) => {
@@ -534,8 +568,9 @@ fn collect_spans_stmt(
             collect_spans_expr(&s.condition, out);
 
             for sub in &s.body.stmts {
-                collect_spans_stmt(sub, out, brace_starts);
+                collect_spans_stmt(sub, out, brace_starts, block_spans);
             }
+            block_spans.insert(s.body.span);
             out.push(s.body.span);
         }
         Stmt::For(s) => {
@@ -556,9 +591,10 @@ fn collect_spans_stmt(
             }
 
             for sub in &s.body.stmts {
-                collect_spans_stmt(sub, out, brace_starts);
+                collect_spans_stmt(sub, out, brace_starts, block_spans);
             }
 
+            block_spans.insert(s.body.span);
             out.push(s.body.span);
         }
         Stmt::Switch(s) => {
@@ -572,31 +608,34 @@ fn collect_spans_stmt(
                 }
 
                 for sub in &case.stmts {
-                    collect_spans_stmt(sub, out, brace_starts);
+                    collect_spans_stmt(sub, out, brace_starts, block_spans);
                 }
             }
         }
         Stmt::Try(s) => {
             brace_starts.insert(s.span, (s.header_end, s.body.span.start));
             for sub in &s.body.stmts {
-                collect_spans_stmt(sub, out, brace_starts);
+                collect_spans_stmt(sub, out, brace_starts, block_spans);
             }
 
+            block_spans.insert(s.body.span);
             out.push(s.body.span);
 
             for catch in &s.catches {
                 for sub in &catch.body.stmts {
-                    collect_spans_stmt(sub, out, brace_starts);
+                    collect_spans_stmt(sub, out, brace_starts, block_spans);
                 }
 
+                block_spans.insert(catch.body.span);
                 out.push(catch.body.span);
             }
 
             if let Some(f) = &s.finally {
                 for sub in &f.stmts {
-                    collect_spans_stmt(sub, out, brace_starts);
+                    collect_spans_stmt(sub, out, brace_starts, block_spans);
                 }
 
+                block_spans.insert(f.span);
                 out.push(f.span);
             }
         }
@@ -627,26 +666,29 @@ fn collect_spans_if(
     s: &crate::ast::IfStmt,
     out: &mut Vec<Span>,
     brace_starts: &mut HashMap<Span, BracketZone>,
+    block_spans: &mut HashSet<Span>,
 ) {
     brace_starts.insert(s.span, (s.condition.close, s.then_branch.span.start));
     collect_spans_expr(&s.condition.inner, out);
+    block_spans.insert(s.then_branch.span);
     out.push(s.then_branch.span);
 
     for sub in &s.then_branch.stmts {
-        collect_spans_stmt(sub, out, brace_starts);
+        collect_spans_stmt(sub, out, brace_starts, block_spans);
     }
 
     if let Some(else_branch) = &s.else_branch {
         match else_branch {
             ElseBranch::Block(b) => {
+                block_spans.insert(b.span);
                 out.push(b.span);
                 for sub in &b.stmts {
-                    collect_spans_stmt(sub, out, brace_starts);
+                    collect_spans_stmt(sub, out, brace_starts, block_spans);
                 }
             }
             ElseBranch::If(inner) => {
                 out.push(inner.span);
-                collect_spans_if(inner, out, brace_starts);
+                collect_spans_if(inner, out, brace_starts, block_spans);
             }
         }
     }

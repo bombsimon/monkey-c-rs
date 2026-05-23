@@ -911,13 +911,15 @@ impl Formatter {
 
     fn block_body_to_doc(&self, block: &BlockStmt) -> Doc {
         let trailing = self.trailing_doc(block.span);
+        let after_open = self.after_open_brace_doc(block.span);
         let inner = self.stmts_to_doc(&block.stmts, block.span);
         if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
-            return Doc::concat(vec![Doc::text("{}"), trailing]);
+            return Doc::concat(vec![Doc::text("{"), after_open, Doc::text("}"), trailing]);
         }
 
         Doc::concat(vec![
             Doc::text("{"),
+            after_open,
             Doc::Indent(vec![Doc::HardLine, inner]),
             Doc::HardLine,
             Doc::text("}"),
@@ -928,18 +930,38 @@ impl Formatter {
     /// Render a block as ` {\n    …\n}` with the opening brace on the same line.
     fn block_to_doc(&self, block: &BlockStmt) -> Doc {
         let trailing = self.trailing_doc(block.span);
+        let after_open = self.after_open_brace_doc(block.span);
         let inner = self.stmts_to_doc(&block.stmts, block.span);
         if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
-            return Doc::concat(vec![Doc::text(" {}"), trailing]);
+            return Doc::concat(vec![Doc::text(" {"), after_open, Doc::text("}"), trailing]);
         }
 
         Doc::concat(vec![
             Doc::text(" {"),
+            after_open,
             Doc::Indent(vec![Doc::HardLine, inner]),
             Doc::HardLine,
             Doc::text("}"),
             trailing,
         ])
+    }
+
+    /// Render any `AfterOpenBrace` dangling comments on `block_span` as
+    /// ` // C` (or ` /* C */`) — emitted immediately after the `{`, on the
+    /// same source line.
+    fn after_open_brace_doc(&self, block_span: Span) -> Doc {
+        let comments = self.dangling(block_span, DanglingPlacement::AfterOpenBrace);
+        if comments.is_empty() {
+            return Doc::Empty;
+        }
+
+        let mut parts = Vec::new();
+        for c in &comments {
+            parts.push(Doc::text(" "));
+            parts.push(self.comment_to_doc(c));
+        }
+
+        Doc::Concat(parts)
     }
 
     /// Render a sequence of statements interleaved with any standalone
