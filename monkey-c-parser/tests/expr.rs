@@ -6,8 +6,8 @@ use monkey_c_parser::parser::Parser;
 /// Parse a standalone expression by wrapping it in a function return statement.
 fn parse_expr(src: &str) -> Expr {
     let wrapped = format!("function f() {{ return {src}; }}");
-    let ast = Parser::new(&wrapped).parse().expect("should parse");
-    if let Ast::Document(nodes) = ast {
+    let ast = Parser::new(&wrapped).parse().expect("should parse").ast;
+    if let Ast::Document(nodes, _) = ast {
         if let Ast::Function(f) = nodes.into_iter().next().unwrap() {
             if let Stmt::Return(r) = f.body.stmts.into_iter().next().unwrap() {
                 return r.value.unwrap();
@@ -18,7 +18,7 @@ fn parse_expr(src: &str) -> Expr {
 }
 
 fn parse_function(src: &str) -> FunctionDecl {
-    let Ast::Document(nodes) = Parser::new(src).parse().expect("should parse") else {
+    let Ast::Document(nodes, _) = Parser::new(src).parse().expect("should parse").ast else {
         panic!("expected document");
     };
     nodes
@@ -294,19 +294,19 @@ fn test_array_literals() {
     let Expr::Array(e) = parse_expr("[1, 2, 3]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.entries().count(), 3);
+    assert_eq!(e.entries.len(), 3);
     assert!(!e.trailing_comma, "no trailing comma");
 
     let Expr::Array(e) = parse_expr("[1, 2, 3,]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.entries().count(), 3);
+    assert_eq!(e.entries.len(), 3);
     assert!(e.trailing_comma, "trailing comma");
 
     let Expr::Array(e) = parse_expr("[]") else {
         panic!("expected Array");
     };
-    assert_eq!(e.entries().count(), 0);
+    assert_eq!(e.entries.len(), 0);
 }
 
 #[test]
@@ -314,7 +314,7 @@ fn test_dict_literals() {
     let Expr::Dict(e) = parse_expr(r#"{"key" => "value"}"#) else {
         panic!("expected Dict");
     };
-    assert_eq!(e.entries().count(), 1);
+    assert_eq!(e.entries.len(), 1);
     assert!(!e.trailing_comma, "no trailing comma");
 
     let Expr::Dict(e) = parse_expr(r#"{"key" => "value",}"#) else {
@@ -345,7 +345,7 @@ fn test_symbol_dict_keys() {
     let Expr::Dict(e) = parse_expr(r#"{:title => "George", :name => "Taylor"}"#) else {
         panic!("expected Dict");
     };
-    let entries: Vec<_> = e.entries().collect();
+    let entries: Vec<_> = e.entries.iter().collect();
     assert_eq!(entries.len(), 2);
     assert!(
         matches!(&entries[0].key, Expr::Lit(l) if l.value == LiteralValue::Symbol("title".into()))

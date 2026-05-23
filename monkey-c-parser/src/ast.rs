@@ -49,8 +49,7 @@ pub enum TypeKind {
     /// An inline dictionary type: `{ :key1 as T, "key2" as U }`. Used as a
     /// type annotation, e.g. `function f(opts as { :flag as Boolean })`.
     ///
-    /// `trailing_comma` mirrors the magic-trailing-comma rule used by dict
-    /// and array literals: when `true`, the formatter always renders
+    /// When `trailing_comma` is `true`, the formatter always renders
     /// multi-line; otherwise it tries to fit on one line.
     Dict {
         entries: Vec<DictTypeEntry>,
@@ -97,7 +96,7 @@ impl Type {
 ///
 /// All offsets are global — measured from byte 0 of the file.
 /// Use [`LineIndex`](crate::line_index::LineIndex) to convert to line/column.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     /// Byte offset of the first character of this node.
     pub start: usize,
@@ -111,6 +110,28 @@ impl From<(usize, usize)> for Span {
     }
 }
 
+/// A parenthesised wrapper around an inner AST piece. Tracks the source
+/// positions of the opening `(` and closing `)`. Used wherever the grammar
+/// requires parens — `if (cond)`, `function f(args)`, `for (init; cond; update)`,
+/// `switch (disc)` — so the comment-attachment pass can recognise the
+/// "between `)` and `{`" slot without each parent carrying a `header_end`
+/// field.
+#[derive(Debug, PartialEq)]
+pub struct Parens<T> {
+    /// Byte offset of the opening `(`.
+    pub open: usize,
+    pub inner: T,
+    /// Byte offset just past the closing `)`.
+    pub close: usize,
+}
+
+impl<T> std::ops::Deref for Parens<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
 /// A named, optionally-typed binding used for function parameters.
 #[derive(Debug, PartialEq)]
 pub struct Variable {
@@ -121,9 +142,9 @@ pub struct Variable {
     /// Default value (`= expr`), if present.
     pub initializer: Option<Box<Expr>>,
     pub is_static: bool,
-    /// Comments trailing this parameter in a function decl, between the value
-    /// and the next `,` / closing `)`. Empty for non-parameter uses.
-    pub trailing_comments: Vec<Stmt>,
+    /// Source span of this parameter, used to attach comments via the
+    /// [`crate::comments::CommentsMap`].
+    pub span: Span,
 }
 
 /// A binary (two-operand) operator.
@@ -270,18 +291,13 @@ pub struct AssignExpr {
 pub struct CallExpr {
     pub callee: Box<Expr>,
     pub args: Vec<CallArg>,
-    /// Comments inside the call parens that aren't attached to any argument
-    /// (only populated when `args` is empty).
-    pub tail_comments: Vec<Stmt>,
     pub span: Span,
 }
 
-/// A single argument inside a call or `new` expression, plus any comments that
-/// trail it (between the value and the next `,` / closing `)`).
+/// A single argument inside a call or `new` expression.
 #[derive(Debug, PartialEq)]
 pub struct CallArg {
     pub value: Expr,
-    pub trailing_comments: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -304,7 +320,6 @@ pub struct NewExpr {
     /// Fully qualified class name, e.g. `MyModule.Foo`.
     pub class: Ident,
     pub args: Vec<CallArg>,
-    pub tail_comments: Vec<Stmt>,
     pub span: Span,
 }
 
@@ -326,88 +341,31 @@ pub struct TypeCastExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
-    /// Ordered contents of the array. Like [`DictExpr::members`], mixes
-    /// entries with free-floating comments and blank-line markers so source
-    /// layout is preserved.
-    pub members: Vec<ArrayMember>,
-    /// Whether the source had a trailing comma — drives the magic trailing comma
-    /// formatting rule (trailing comma → always multi-line).
+    pub entries: Vec<ArrayEntry>,
+    /// Whether the source had a trailing comma — drives the magic trailing
+    /// comma formatting rule (trailing comma → always multi-line, blank lines
+    /// preserved).
     pub trailing_comma: bool,
     pub span: Span,
-}
-
-/// One item inside an array literal. See [`DictMember`] for the dict
-/// equivalent.
-#[derive(Debug, PartialEq)]
-pub enum ArrayMember {
-    Entry(ArrayEntry),
-    Comment(CommentStmt),
-    BlankLine,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ArrayEntry {
     pub value: Expr,
-    /// Comments on the SAME source line as the value or its trailing comma.
-    /// Comments on a separate line become an [`ArrayMember::Comment`].
-    pub trailing_comments: Vec<Stmt>,
-}
-
-impl ArrayExpr {
-    /// Iterate the value entries, skipping free-floating comments and blank
-    /// markers.
-    pub fn entries(&self) -> impl Iterator<Item = &ArrayEntry> {
-        self.members.iter().filter_map(|m| match m {
-            ArrayMember::Entry(e) => Some(e),
-            _ => None,
-        })
-    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct DictExpr {
-    /// Ordered contents of the dict body. Mixes key-value entries with
-    /// free-floating comments and blank-line markers so source layout is
-    /// preserved verbatim.
-    pub members: Vec<DictMember>,
-    /// Whether the source had a trailing comma after the last entry.
+    pub entries: Vec<DictEntry>,
     /// See [`ArrayExpr::trailing_comma`].
     pub trailing_comma: bool,
     pub span: Span,
-}
-
-/// One item inside a dictionary literal.
-#[derive(Debug, PartialEq)]
-pub enum DictMember {
-    /// A `key => value` pair, optionally with same-line trailing comment(s).
-    Entry(DictEntry),
-    /// A standalone comment on its own line between entries (or before the
-    /// first / after the last).
-    Comment(CommentStmt),
-    /// One or more blank source lines between the previous member and the
-    /// next. Always a single `BlankLine` regardless of how many blank lines
-    /// actually appeared.
-    BlankLine,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct DictEntry {
     pub key: Expr,
     pub value: Expr,
-    /// Comments on the SAME source line as the value or its trailing comma.
-    /// Comments on a separate line become a [`DictMember::Comment`] instead.
-    pub trailing_comments: Vec<Stmt>,
-}
-
-impl DictExpr {
-    /// Iterate the key-value entries, skipping free-floating comments and
-    /// blank-line markers. Useful when only the data matters.
-    pub fn entries(&self) -> impl Iterator<Item = &DictEntry> {
-        self.members.iter().filter_map(|m| match m {
-            DictMember::Entry(entry) => Some(entry),
-            _ => None,
-        })
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -425,17 +383,42 @@ pub struct IdentExpr {
 /// A source comment, either a `// …` line comment or a `/* … */` block
 /// comment. `is_block` is the distinction; the stored `text` is the raw
 /// content between the comment delimiters.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CommentStmt {
     pub text: String,
     pub is_block: bool,
     pub span: Span,
 }
 
+/// All comments in a parsed file, in source order. Comments are not woven
+/// into the AST itself; consumers attach them to nodes via a separate pass.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct CommentTable {
+    pub comments: Vec<CommentStmt>,
+}
+
+impl CommentTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn push(&mut self, comment: CommentStmt) {
+        self.comments.push(comment);
+    }
+}
+
+/// Output of [`crate::parser::Parser::parse`]. Carries both the AST and the
+/// source-order comment table.
+#[derive(Debug)]
+pub struct ParseOutput {
+    pub ast: Ast,
+    pub comments: CommentTable,
+}
+
 /// A statement node.
 #[derive(Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Stmt {
-    Comment(CommentStmt),
     Break(Span),
     Continue(Span),
     Block(BlockStmt),
@@ -460,13 +443,8 @@ pub struct BlockStmt {
 
 #[derive(Debug, PartialEq)]
 pub struct IfStmt {
-    pub condition: Expr,
+    pub condition: Parens<Expr>,
     pub then_branch: BlockStmt,
-    /// Comments that appear immediately after the `}` of `then_branch`. When
-    /// `else_branch` is `Some` they sit between the closing `}` and `else`;
-    /// otherwise they trail the whole if statement. Only ever line or block
-    /// comments.
-    pub trailing_comments: Vec<Stmt>,
     pub else_branch: Option<ElseBranch>,
     pub span: Span,
 }
@@ -490,7 +468,7 @@ impl ElseBranch {
 
 #[derive(Debug, PartialEq)]
 pub struct WhileStmt {
-    pub condition: Expr,
+    pub condition: Parens<Expr>,
     pub body: BlockStmt,
     pub span: Span,
 }
@@ -499,6 +477,8 @@ pub struct WhileStmt {
 pub struct DoWhileStmt {
     pub body: BlockStmt,
     pub condition: Expr,
+    /// Byte offset after the `do` keyword. See [`IfStmt::header_end`].
+    pub header_end: usize,
     pub span: Span,
 }
 
@@ -509,11 +489,17 @@ pub enum ForInit {
     Expr(Expr),
 }
 
+/// The `(init; cond; update)` triple of a `for` loop.
 #[derive(Debug, PartialEq)]
-pub struct ForStmt {
+pub struct ForHeader {
     pub init: Option<ForInit>,
     pub condition: Option<Expr>,
     pub update: Option<Expr>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ForStmt {
+    pub header: Parens<ForHeader>,
     pub body: BlockStmt,
     pub span: Span,
 }
@@ -528,19 +514,16 @@ pub struct ReturnStmt {
 /// including any `default` arm.
 #[derive(Debug, PartialEq)]
 pub struct SwitchStmt {
-    pub discriminant: Expr,
+    pub discriminant: Parens<Expr>,
     pub cases: Vec<SwitchCase>,
-    /// Comments after the last case but before the closing `}` of the switch
-    /// body. Only populated when no case follows them.
-    pub tail_comments: Vec<Stmt>,
+    /// Byte offset of the body's opening `{`.
+    pub brace_start: usize,
     pub span: Span,
 }
 
 /// A single arm inside a `switch` body.
 #[derive(Debug, PartialEq)]
 pub struct SwitchCase {
-    /// Comments appearing immediately before the `case` / `default` keyword.
-    pub leading_comments: Vec<Stmt>,
     pub label: CaseLabel,
     /// Statements until the next `case`/`default` or the closing `}`.
     /// Empty when the case immediately falls through to the next.
@@ -565,6 +548,8 @@ pub struct TryStmt {
     pub body: BlockStmt,
     pub catches: Vec<CatchClause>,
     pub finally: Option<BlockStmt>,
+    /// Byte offset after the `try` keyword. See [`IfStmt::header_end`].
+    pub header_end: usize,
     pub span: Span,
 }
 
@@ -601,17 +586,14 @@ pub struct VarDecl {
 /// A top-level AST node. Also used for class and module body members.
 #[derive(Debug, PartialEq)]
 pub enum Ast {
-    /// A line comment (`// …`). The string contains the raw text after `//`.
-    Comment(String, Span),
-    /// A block comment (`/* … */`). The string contains the raw text between
-    /// the delimiters.
-    BlockComment(String, Span),
     /// A `(:Name)` or `(:Name1, :Name2, …)` decorator. Each entry is a symbol
     /// identifier; Monkey C supports applying multiple annotations in one
     /// parenthesised group.
     Annotation(Vec<Symbol>, Span),
-    /// The root of a parsed file.
-    Document(Vec<Ast>),
+    /// The root of a parsed file. The span covers the entire source so that
+    /// top-level standalone comments can attach as `Dangling(Inside)` of the
+    /// document.
+    Document(Vec<Ast>, Span),
     Import(ImportDecl),
     Using(UsingDecl),
     Typedef(TypedefDecl),
@@ -657,6 +639,8 @@ pub struct TypedefDecl {
 pub struct ModuleDecl {
     pub name: Ident,
     pub body: Vec<Ast>,
+    /// Byte offset of the body's opening `{`.
+    pub brace_start: usize,
     pub span: Span,
 }
 
@@ -666,6 +650,8 @@ pub struct ClassDecl {
     /// Base class name from `extends BaseClass`.
     pub extends: Option<Ident>,
     pub body: Vec<Ast>,
+    /// Byte offset of the body's opening `{`.
+    pub brace_start: usize,
     pub span: Span,
 }
 
@@ -676,6 +662,8 @@ pub struct ClassDecl {
 pub struct EnumDecl {
     pub variants: Vec<EnumVariant>,
     pub trailing_comma: bool,
+    /// Byte offset of the body's opening `{`.
+    pub brace_start: usize,
     pub span: Span,
 }
 
@@ -686,23 +674,26 @@ pub struct EnumVariant {
     /// Explicit value (`= <expr>`); `None` means the variant is implicitly
     /// `previous + 1`.
     pub value: Option<Expr>,
-    /// Comments immediately following this entry (between the value and the
-    /// next `,` / closing `}`). Same pattern as `DictEntry.trailing_comments`.
-    pub trailing_comments: Vec<Stmt>,
+    /// Span from the variant's name through its value (or just the name if
+    /// no `= value`). Used by the [`crate::comments`] attachment pass to
+    /// place leading/trailing comments.
+    pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct FunctionDecl {
     pub name: Ident,
-    pub args: Vec<Variable>,
-    /// Comments inside the parameter list parens that aren't attached to any
-    /// parameter (only populated when `args` is empty).
-    pub args_tail_comments: Vec<Stmt>,
+    pub args: Parens<Vec<Variable>>,
     /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
     pub body: BlockStmt,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
+    /// Byte offset where the "between header and `{`" region ends. With a
+    /// return type this is the end of `as ReturnType`; without, it equals
+    /// `args.close`. Used by the comment-attachment pass to recognise
+    /// `function f() as X /* C */ {` style header comments.
+    pub header_end: usize,
     pub span: Span,
 }
 
@@ -764,7 +755,6 @@ impl Stmt {
             Stmt::Throw(s) => &s.span,
             Stmt::Break(s) | Stmt::Continue(s) => s,
             Stmt::Var(s) => &s.span,
-            Stmt::Comment(c) => &c.span,
             Stmt::Expr(e) => e.span(),
         }
     }
@@ -773,10 +763,10 @@ impl Stmt {
 impl Ast {
     /// Return the source span of this node, if it has one.
     ///
-    /// `Document` and `Eof` have no meaningful span.
+    /// `Eof` has no meaningful span.
     pub fn span(&self) -> Option<&Span> {
         match self {
-            Ast::Document(_) | Ast::Eof => None,
+            Ast::Eof => None,
             Ast::Import(d) => Some(&d.span),
             Ast::Using(d) => Some(&d.span),
             Ast::Typedef(d) => Some(&d.span),
@@ -786,7 +776,7 @@ impl Ast {
             Ast::Enum(d) => Some(&d.span),
             Ast::Variable(v) => Some(&v.span),
             Ast::Const(c) => Some(&c.span),
-            Ast::Comment(_, s) | Ast::BlockComment(_, s) | Ast::Annotation(_, s) => Some(s),
+            Ast::Document(_, s) | Ast::Annotation(_, s) => Some(s),
         }
     }
 }

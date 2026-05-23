@@ -1,8 +1,9 @@
 use crate::ast::{
-    Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, ConstDecl, DictTypeEntry,
-    DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant, ForInit, ForStmt, FunctionDecl,
-    IfStmt, ImportDecl, ModuleDecl, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt,
-    TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
+    Ast, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, CommentTable, ConstDecl,
+    DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant, ForHeader, ForInit,
+    ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl, Parens, ParseOutput, ReturnStmt, Span,
+    Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl,
+    VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -38,25 +39,45 @@ pub struct Parser<'a> {
     pub(crate) current_token_start: usize,
     /// Byte offset of the end (exclusive) of `current_token`.
     pub(crate) current_token_end: usize,
+    /// Byte offset of the end (exclusive) of the token consumed *before*
+    /// `current_token`. Useful for callers that want "position right after the
+    /// last consumed real token" — e.g. the end of a parsed type's last
+    /// token, used to bound the `BeforeBracket` comment slot on a function
+    /// with a return type.
+    pub(crate) prev_token_end: usize,
+    /// Every comment encountered during parsing, in source order. Populated
+    /// at the lexer-parser boundary by `next_token_span` — comments never
+    /// reach `current_token`.
+    pub(crate) comment_table: CommentTable,
+    /// Byte length of the source — used to build the synthetic `Ast::Document`
+    /// span so top-level standalone comments can attach as dangling-inside.
+    pub(crate) source_len: usize,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
         let line_index = LineIndex::new(source);
-        let mut lexer = crate::lexer::Lexer::new(source);
-        let (start, token_type, end) = lexer.next_token();
-
-        Self {
+        let lexer = crate::lexer::Lexer::new(source);
+        let mut parser = Self {
             lexer,
             line_index,
-            current_token: token_type,
-            current_token_start: start,
-            current_token_end: end,
-        }
+            current_token: token::Type::Eof,
+            current_token_start: 0,
+            current_token_end: 0,
+            prev_token_end: 0,
+            comment_table: CommentTable::new(),
+            source_len: source.len(),
+        };
+
+        // Prime the first token; comment tokens are auto-drained into the
+        // table by `next_token_span`.
+        parser.next_token_span();
+        parser
     }
 
-    /// Parse a complete source file into an [`Ast::Document`].
-    pub fn parse(&mut self) -> Result<Ast, ParserError> {
+    /// Parse a complete source file into an [`Ast::Document`] and the
+    /// [`CommentTable`] of source comments.
+    pub fn parse(mut self) -> Result<ParseOutput, ParserError> {
         let mut nodes = Vec::new();
 
         loop {
@@ -64,11 +85,18 @@ impl<'a> Parser<'a> {
             if decl == Ast::Eof {
                 break;
             }
-
             nodes.push(decl);
         }
 
-        Ok(Ast::Document(nodes))
+        let span = Span {
+            start: 0,
+            end: self.source_len,
+        };
+
+        Ok(ParseOutput {
+            ast: Ast::Document(nodes, span),
+            comments: self.comment_table,
+        })
     }
 
     pub(crate) fn assert_next_token(
@@ -94,46 +122,37 @@ impl<'a> Parser<'a> {
         expect.contains(&self.current_token)
     }
 
-    /// Consume any line/block comment tokens at the current position and
-    /// return them as `Stmt::Comment`. Stops at the first non-comment token.
-    /// Used to absorb trailing comments inside delimited lists (dicts, arrays,
-    /// args).
-    pub(crate) fn consume_trailing_comments(&mut self) -> Vec<Stmt> {
-        let mut comments = Vec::new();
+    /// Advance past `current_token`, drain any intervening comments into the
+    /// side-table, and update `current_token` to the next non-comment token.
+    /// The grammar code therefore never observes comments — they're invisible
+    /// at the parser/lexer boundary.
+    pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
         loop {
-            let start = self.current_token_start;
-            let end = self.current_token_end;
-            let span = Span { start, end };
-            let stmt = match self.current_token.clone() {
+            let (start, token_type, end) = self.lexer.next_token();
+            match &token_type {
                 token::Type::Comment(text) => {
-                    self.next_token_span();
-                    Stmt::Comment(CommentStmt {
-                        text,
+                    self.comment_table.push(CommentStmt {
+                        text: text.clone(),
                         is_block: false,
-                        span,
-                    })
+                        span: Span { start, end },
+                    });
                 }
                 token::Type::BlockComment(text) => {
-                    self.next_token_span();
-                    Stmt::Comment(CommentStmt {
-                        text,
+                    self.comment_table.push(CommentStmt {
+                        text: text.clone(),
                         is_block: true,
-                        span,
-                    })
+                        span: Span { start, end },
+                    });
                 }
-                _ => return comments,
-            };
-            comments.push(stmt);
+                _ => {
+                    self.prev_token_end = self.current_token_end;
+                    self.current_token = token_type.clone();
+                    self.current_token_start = start;
+                    self.current_token_end = end;
+                    return (start, token_type, end);
+                }
+            }
         }
-    }
-
-    pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
-        let (start, token_type, end) = self.lexer.next_token();
-        self.current_token = token_type.clone();
-        self.current_token_start = start;
-        self.current_token_end = end;
-
-        (start, token_type, end)
     }
 
     /// Build a [`ParserError`] pointing at the start of `current_token`.
@@ -242,7 +261,7 @@ impl<'a> Parser<'a> {
 
     /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`.
     /// Consumes the surrounding braces. Returns the entries and whether the
-    /// source ended with a trailing comma (magic-trailing-comma rule).
+    /// source ended with a trailing comma.
     fn parse_inline_dict_type(&mut self) -> Result<(Vec<DictTypeEntry>, bool), ParserError> {
         self.assert_next_token(&[token::Type::LBrace])?;
         let mut entries = Vec::new();
@@ -321,8 +340,6 @@ impl<'a> Parser<'a> {
                 self.parse_annotation_decl(start)
             }
             token::Type::Class => self.parse_class_decl(start),
-            token::Type::Comment(content) => self.parse_comment_decl(start, content),
-            token::Type::BlockComment(content) => self.parse_block_comment_decl(start, content),
             token::Type::Const => self.parse_const_decl(start, visibility, is_static),
             token::Type::Function => self.parse_function_decl(start, visibility, is_static),
             token::Type::Enum => self.parse_enum_decl(start),
@@ -384,6 +401,7 @@ impl<'a> Parser<'a> {
             None
         };
 
+        let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
         let body = self.parse_class_body()?;
         let rbrace_end = self.current_token_end;
@@ -393,6 +411,7 @@ impl<'a> Parser<'a> {
             name,
             extends,
             body,
+            brace_start,
             span: Span {
                 start,
                 end: rbrace_end,
@@ -403,29 +422,10 @@ impl<'a> Parser<'a> {
     fn parse_class_body(&mut self) -> Result<Vec<Ast>, ParserError> {
         let mut body = Vec::new();
         while self.current_token != token::Type::RBrace {
-            let member = self.parse_declaration()?;
-            body.push(member);
+            body.push(self.parse_declaration()?);
         }
 
         Ok(body)
-    }
-
-    fn parse_comment_decl(&mut self, start: usize, content: String) -> Result<Ast, ParserError> {
-        let end = self.current_token_end;
-        self.next_token_span();
-
-        Ok(Ast::Comment(content, Span { start, end }))
-    }
-
-    fn parse_block_comment_decl(
-        &mut self,
-        start: usize,
-        content: String,
-    ) -> Result<Ast, ParserError> {
-        let end = self.current_token_end;
-        self.next_token_span();
-
-        Ok(Ast::BlockComment(content, Span { start, end }))
     }
 
     fn parse_const_decl(
@@ -472,11 +472,14 @@ impl<'a> Parser<'a> {
         self.next_token_span();
         let name = self.parse_identifier()?;
         self.next_token_span();
-        let (args, args_tail_comments) = self.parse_function_args()?;
+        let args = self.parse_function_args()?;
 
+        let mut header_end = args.close;
         let returns = if self.current_token == token::Type::As {
             self.next_token_span();
-            Some(self.parse_type()?)
+            let ty = self.parse_type()?;
+            header_end = self.prev_token_end;
+            Some(ty)
         } else {
             None
         };
@@ -489,62 +492,53 @@ impl<'a> Parser<'a> {
         Ok(Ast::Function(FunctionDecl {
             name,
             args,
-            args_tail_comments,
             returns,
             body,
             visibility,
             is_static,
+            header_end,
             span: Span { start, end },
         }))
     }
 
     fn parse_enum_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `enum`
+        let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
 
         let mut variants: Vec<EnumVariant> = Vec::new();
         let mut trailing_comma = false;
 
         loop {
-            // Any leading/floating comments attach to the previous variant,
-            // or to a placeholder we'd need to introduce. For now, drop into
-            // the previous variant's trailing slot — matches the dict/array
-            // convention.
-            let pending = self.consume_trailing_comments();
             if self.current_token == token::Type::RBrace {
-                if let Some(last) = variants.last_mut() {
-                    last.trailing_comments.extend(pending);
-                }
                 break;
             }
-            if let Some(last) = variants.last_mut() {
-                last.trailing_comments.extend(pending);
-            }
 
+            let name_start = self.current_token_start;
             let name = self.parse_identifier()?;
+            let mut variant_end = self.current_token_end;
             self.next_token_span(); // advance past identifier
 
             let value = if self.current_token == token::Type::Assign {
                 self.next_token_span(); // consume `=`
-                Some(self.parse_expression()?)
+                let v = self.parse_expression()?;
+                variant_end = v.span().end;
+                Some(v)
             } else {
                 None
             };
 
-            let mut variant = EnumVariant {
+            let variant = EnumVariant {
                 name,
                 value,
-                trailing_comments: Vec::new(),
+                span: Span {
+                    start: name_start,
+                    end: variant_end,
+                },
             };
-            variant
-                .trailing_comments
-                .extend(self.consume_trailing_comments());
 
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
-                variant
-                    .trailing_comments
-                    .extend(self.consume_trailing_comments());
                 variants.push(variant);
                 if self.current_token == token::Type::RBrace {
                     trailing_comma = true;
@@ -567,6 +561,7 @@ impl<'a> Parser<'a> {
         Ok(Ast::Enum(EnumDecl {
             variants,
             trailing_comma,
+            brace_start,
             span: Span { start, end },
         }))
     }
@@ -634,6 +629,7 @@ impl<'a> Parser<'a> {
         let name = self.parse_identifier()?;
         self.next_token_span(); // advance past name
 
+        let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
         let body = self.parse_class_body()?;
         let rbrace_end = self.current_token_end;
@@ -642,6 +638,7 @@ impl<'a> Parser<'a> {
         Ok(Ast::Module(ModuleDecl {
             name,
             body,
+            brace_start,
             span: Span {
                 start,
                 end: rbrace_end,
@@ -667,54 +664,49 @@ impl<'a> Parser<'a> {
         Ok(Ast::Variable(var_decl))
     }
 
-    fn parse_function_args(&mut self) -> Result<(Vec<Variable>, Vec<Stmt>), ParserError> {
+    /// Parse a `(arg, arg, ...)` parameter list, returning the args wrapped
+    /// with their parens' source positions.
+    fn parse_function_args(&mut self) -> Result<Parens<Vec<Variable>>, ParserError> {
+        let open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
         let mut args: Vec<Variable> = Vec::new();
-        let mut tail_comments: Vec<Stmt> = Vec::new();
 
         loop {
-            let pending = self.consume_trailing_comments();
-
             if self.current_token == token::Type::RParen {
-                if let Some(last) = args.last_mut() {
-                    last.trailing_comments.extend(pending);
-                } else {
-                    tail_comments = pending;
-                }
                 break;
             }
 
-            if let Some(last) = args.last_mut() {
-                last.trailing_comments.extend(pending);
-            } else if !pending.is_empty() {
-                tail_comments.extend(pending);
-            }
-
+            let arg_start = self.current_token_start;
             let name = self.parse_identifier()?;
+            let mut arg_end = self.current_token_end;
             self.next_token_span();
 
             let type_ = if self.current_token == token::Type::As {
                 self.next_token_span();
-                Some(self.parse_type()?)
+                let t = self.parse_type()?;
+                // `parse_type` advances to the token after the type, so the
+                // type ends at the previous token boundary. Track via
+                // `current_token_start` saturating back.
+                arg_end = self.current_token_start;
+                Some(t)
             } else {
                 None
             };
 
-            let mut arg = Variable {
+            let arg = Variable {
                 name,
                 type_,
                 visibility: None,
                 initializer: None,
                 is_static: false,
-                trailing_comments: Vec::new(),
+                span: Span {
+                    start: arg_start,
+                    end: arg_end,
+                },
             };
-            arg.trailing_comments
-                .extend(self.consume_trailing_comments());
 
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
-                arg.trailing_comments
-                    .extend(self.consume_trailing_comments());
                 args.push(arg);
                 if self.current_token == token::Type::RParen {
                     break;
@@ -730,9 +722,14 @@ impl<'a> Parser<'a> {
             }
         }
 
+        let close = self.current_token_end;
         self.next_token_span(); // consume RParen
 
-        Ok((args, tail_comments))
+        Ok(Parens {
+            open,
+            inner: args,
+            close,
+        })
     }
 
     /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.
@@ -791,8 +788,6 @@ impl<'a> Parser<'a> {
 
     fn parse_statement(&mut self) -> Result<Stmt, ParserError> {
         match self.current_token.clone() {
-            token::Type::Comment(content) => self.parse_comment_stmt(content),
-            token::Type::BlockComment(content) => self.parse_block_comment_stmt(content),
             token::Type::Break => self.parse_break_stmt(),
             token::Type::Continue => self.parse_continue_stmt(),
             token::Type::Var => self.parse_var_stmt(),
@@ -829,30 +824,6 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_comment_stmt(&mut self, text: String) -> Result<Stmt, ParserError> {
-        let start = self.current_token_start;
-        let end = self.current_token_end;
-        self.next_token_span();
-
-        Ok(Stmt::Comment(CommentStmt {
-            text,
-            is_block: false,
-            span: Span { start, end },
-        }))
-    }
-
-    fn parse_block_comment_stmt(&mut self, text: String) -> Result<Stmt, ParserError> {
-        let start = self.current_token_start;
-        let end = self.current_token_end;
-        self.next_token_span();
-
-        Ok(Stmt::Comment(CommentStmt {
-            text,
-            is_block: true,
-            span: Span { start, end },
-        }))
-    }
-
     fn parse_continue_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span();
@@ -875,6 +846,7 @@ impl<'a> Parser<'a> {
     fn parse_for_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span(); // consume `for`
+        let header_open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
 
         let init = match self.current_token {
@@ -913,7 +885,17 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_expression()?)
         };
+        let header_close = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
+        let header = Parens {
+            open: header_open,
+            inner: ForHeader {
+                init,
+                condition,
+                update,
+            },
+            close: header_close,
+        };
 
         let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
@@ -921,9 +903,7 @@ impl<'a> Parser<'a> {
         let end = body.span.end;
 
         Ok(Stmt::For(ForStmt {
-            init,
-            condition,
-            update,
+            header,
             body,
             span: Span { start, end },
         }))
@@ -938,21 +918,20 @@ impl<'a> Parser<'a> {
     fn parse_if_inner(&mut self) -> Result<IfStmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span();
+        let cond_open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
-        let condition = self.parse_expression()?;
+        let cond_inner = self.parse_expression()?;
+        let cond_close = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
+        let condition = Parens {
+            open: cond_open,
+            inner: cond_inner,
+            close: cond_close,
+        };
 
         let then_brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
         let then_branch = self.parse_block(then_brace_start)?;
-
-        let mut trailing_comments = Vec::new();
-        while matches!(
-            self.current_token,
-            token::Type::Comment(_) | token::Type::BlockComment(_)
-        ) {
-            trailing_comments.push(self.parse_statement()?);
-        }
 
         let else_branch = if self.current_token == token::Type::Else {
             self.next_token_span(); // consume `else`
@@ -970,13 +949,11 @@ impl<'a> Parser<'a> {
         let end = else_branch
             .as_ref()
             .map(|b| b.span().end)
-            .or_else(|| trailing_comments.last().map(|s| s.span().end))
             .unwrap_or(then_branch.span.end);
 
         Ok(IfStmt {
             condition,
             then_branch,
-            trailing_comments,
             else_branch,
             span: Span { start, end },
         })
@@ -1021,21 +998,23 @@ impl<'a> Parser<'a> {
     fn parse_switch_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span(); // consume `switch`
+        let disc_open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
-        let discriminant = self.parse_expression()?;
+        let disc_inner = self.parse_expression()?;
+        let disc_close = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
+        let discriminant = Parens {
+            open: disc_open,
+            inner: disc_inner,
+            close: disc_close,
+        };
+        let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
 
         let mut cases = Vec::new();
-        let tail_comments = loop {
-            let leading = self.consume_trailing_comments();
-            if self.current_token == token::Type::RBrace {
-                break leading;
-            }
-            let mut case = self.parse_switch_case()?;
-            case.leading_comments = leading;
-            cases.push(case);
-        };
+        while self.current_token != token::Type::RBrace {
+            cases.push(self.parse_switch_case()?);
+        }
 
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RBrace])?;
@@ -1043,7 +1022,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Switch(SwitchStmt {
             discriminant,
             cases,
-            tail_comments,
+            brace_start,
             span: Span { start, end },
         }))
     }
@@ -1081,22 +1060,6 @@ impl<'a> Parser<'a> {
             self.current_token,
             token::Type::Case | token::Type::Default | token::Type::RBrace
         ) {
-            // A comment immediately followed by `case` / `default` / `}` is
-            // a leading comment for the next arm, not a statement of this
-            // one — bail out and let the outer loop pick it up.
-            if matches!(
-                self.current_token,
-                token::Type::Comment(_) | token::Type::BlockComment(_)
-            ) {
-                let (_, next, _) = self.lexer.peek_token();
-                if matches!(
-                    next,
-                    token::Type::Case | token::Type::Default | token::Type::RBrace
-                ) {
-                    break;
-                }
-            }
-
             stmts.push(self.parse_statement()?);
         }
 
@@ -1106,7 +1069,6 @@ impl<'a> Parser<'a> {
             .unwrap_or(self.current_token_end);
 
         Ok(SwitchCase {
-            leading_comments: Vec::new(),
             label,
             stmts,
             span: Span { start, end },
@@ -1115,6 +1077,7 @@ impl<'a> Parser<'a> {
 
     fn parse_try_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
+        let header_end = self.current_token_end;
         self.next_token_span(); // consume `try`
 
         let body_brace_start = self.current_token_start;
@@ -1151,6 +1114,7 @@ impl<'a> Parser<'a> {
             body,
             catches,
             finally,
+            header_end,
             span: Span { start, end },
         }))
     }
@@ -1198,9 +1162,16 @@ impl<'a> Parser<'a> {
     fn parse_while_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span(); // consume `while`
+        let cond_open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
-        let condition = self.parse_expression()?;
+        let cond_inner = self.parse_expression()?;
+        let cond_close = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
+        let condition = Parens {
+            open: cond_open,
+            inner: cond_inner,
+            close: cond_close,
+        };
 
         let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
@@ -1216,6 +1187,7 @@ impl<'a> Parser<'a> {
 
     fn parse_do_while_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
+        let header_end = self.current_token_end;
         self.next_token_span(); // consume `do`
 
         let brace_start = self.current_token_start;
@@ -1232,6 +1204,7 @@ impl<'a> Parser<'a> {
         Ok(Stmt::DoWhile(DoWhileStmt {
             body,
             condition,
+            header_end,
             span: Span {
                 start,
                 end: semi_end,

@@ -2,7 +2,7 @@
 ///
 /// Formatters build a `Doc` tree describing layout *intent*, then pass it to
 /// `render` which resolves flat-vs-break based on the target line width.
-/// This is the Wadler-Lindig algorithm used by Prettier and Ruff.
+/// This is the Wadler-Lindig pretty-printing algorithm.
 ///
 /// # Typical usage
 ///
@@ -110,18 +110,15 @@ fn render_doc(
 ) {
     match doc {
         Doc::Empty => {}
-
         Doc::Text(s) => {
             out.push_str(s);
             *col += s.len();
         }
-
         Doc::HardLine => {
             out.push('\n');
             out.push_str(&" ".repeat(indent));
             *col = indent;
         }
-
         Doc::SoftLine => {
             if mode == Mode::Break {
                 out.push('\n');
@@ -129,7 +126,6 @@ fn render_doc(
                 *col = indent;
             }
         }
-
         Doc::Line => {
             if mode == Mode::Flat {
                 out.push(' ');
@@ -140,13 +136,11 @@ fn render_doc(
                 *col = indent;
             }
         }
-
         Doc::Indent(docs) => {
             for d in docs {
                 render_doc(d, width, indent + 4, mode, out, col);
             }
         }
-
         Doc::Group(docs) => {
             let child_mode = if fits_flat(docs, width.saturating_sub(*col)) {
                 Mode::Flat
@@ -157,19 +151,16 @@ fn render_doc(
                 render_doc(d, width, indent, child_mode, out, col);
             }
         }
-
         Doc::Concat(docs) => {
             for d in docs {
                 render_doc(d, width, indent, mode, out, col);
             }
         }
-
         Doc::BlankLine => {
             out.push_str("\n\n");
             out.push_str(&" ".repeat(indent));
             *col = indent;
         }
-
         Doc::FlatOrBreak(flat, break_) => {
             let child = if mode == Mode::Flat { flat } else { break_ };
             render_doc(child, width, indent, mode, out, col);

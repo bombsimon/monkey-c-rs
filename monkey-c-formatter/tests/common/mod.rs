@@ -3,24 +3,26 @@ use monkey_c_formatter::Formatter;
 use monkey_c_parser::parser::Parser;
 
 pub fn format(src: &str) -> String {
-    let ast = Parser::new(src).parse().expect("should parse");
-    Formatter::new(src).format(&ast)
+    let output = Parser::new(src).parse().expect("should parse");
+    Formatter::new(src).format(&output)
 }
 
 pub fn format_aligned(src: &str) -> String {
-    let ast = Parser::new(src).parse().expect("should parse");
-    Formatter::new(src).with_aligned_dict_pairs().format(&ast)
+    let output = Parser::new(src).parse().expect("should parse");
+    Formatter::new(src)
+        .with_aligned_dict_pairs()
+        .format(&output)
 }
 
 pub fn format_width(src: &str, width: usize) -> String {
-    let ast = Parser::new(src).parse().expect("should parse");
-    Formatter::new(src).with_line_width(width).format(&ast)
+    let output = Parser::new(src).parse().expect("should parse");
+    Formatter::new(src).with_line_width(width).format(&output)
 }
 
 pub fn format_aligned_width(src: &str, width: usize) -> String {
-    let ast = Parser::new(src).parse().expect("should parse");
+    let output = Parser::new(src).parse().expect("should parse");
     Formatter::new(src)
         .with_aligned_dict_pairs()
         .with_line_width(width)
-        .format(&ast)
+        .format(&output)
 }

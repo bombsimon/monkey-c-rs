@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod comments;
 pub mod expr;
 pub mod lexer;
 pub mod line_index;

@@ -1,8 +1,8 @@
 use crate::ast::{
-    ArrayEntry, ArrayExpr, ArrayMember, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator,
-    CallArg, CallExpr, CommentStmt, DictEntry, DictExpr, DictMember, Expr, IdentExpr, IndexExpr,
-    LitExpr, LiteralValue, MemberExpr, NewArrayExpr, NewExpr, ParenExpr, Span, Stmt, TernaryExpr,
-    Type, TypeCastExpr, TypeKind, UnaryExpr, UnaryOperator,
+    ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
+    CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
+    NewArrayExpr, NewExpr, ParenExpr, Span, TernaryExpr, Type, TypeCastExpr, TypeKind, UnaryExpr,
+    UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -30,7 +30,8 @@ impl Parser<'_> {
             | token::Type::BitOrAssign
             | token::Type::BitXorAssign => {
                 let operator_token = self.current_token.clone();
-                let (start, _, _) = self.next_token_span();
+                let start = expr.span().start;
+                self.next_token_span();
                 let operator = match operator_token {
                     token::Type::Assign => AssignOperator::Assign,
                     token::Type::AddAssign => AssignOperator::AddAssign,
@@ -44,7 +45,7 @@ impl Parser<'_> {
                     _ => unreachable!(),
                 };
                 let value = self.parse_expression()?;
-                let (_, _, end) = self.lexer.peek_token();
+                let end = value.span().end;
                 Ok(Expr::Assign(AssignExpr {
                     target: Box::new(expr),
                     operator,
@@ -85,7 +86,8 @@ impl Parser<'_> {
         left: Expr,
         operator_token: token::Type,
     ) -> Result<Expr, ParserError> {
-        let (start, _, _) = self.next_token_span();
+        let start = left.span().start;
+        self.next_token_span();
         let operator = match operator_token {
             token::Type::Or => BinaryOperator::Or,
             token::Type::OrKeyword => BinaryOperator::OrKeyword,
@@ -94,7 +96,7 @@ impl Parser<'_> {
             _ => unreachable!(),
         };
         let right = self.parse_logical_and()?;
-        let (_, _, end) = self.lexer.peek_token();
+        let end = right.span().end;
         Ok(Expr::Binary(BinaryExpr {
             left: Box::new(left),
             operator,
@@ -146,14 +148,17 @@ impl Parser<'_> {
         left: Expr,
         operator_token: token::Type,
     ) -> Result<Expr, ParserError> {
-        let (start, _, _) = self.next_token_span();
+        let start = left.span().start;
+        self.next_token_span();
         let operator = match operator_token {
             token::Type::EqualEqual => BinaryOperator::Eq,
             token::Type::BangEqual => BinaryOperator::NotEq,
             _ => unreachable!(),
         };
+
         let right = self.parse_comparison()?;
-        let (_, _, end) = self.lexer.peek_token();
+        let end = right.span().end;
+
         Ok(Expr::Binary(BinaryExpr {
             left: Box::new(left),
             operator,
@@ -187,7 +192,9 @@ impl Parser<'_> {
                 | token::Type::Has
         ) {
             let operator_token = self.current_token.clone();
-            let (start, _, _) = self.next_token_span();
+            let start = expr.span().start;
+            self.next_token_span();
+
             let operator = match operator_token {
                 token::Type::Less => BinaryOperator::Lt,
                 token::Type::LessEqual => BinaryOperator::LtEq,
@@ -197,8 +204,10 @@ impl Parser<'_> {
                 token::Type::Has => BinaryOperator::Has,
                 _ => unreachable!(),
             };
+
             let right = self.parse_term()?;
-            let (_, _, end) = self.lexer.peek_token();
+            let end = right.span().end;
+
             expr = Expr::Binary(BinaryExpr {
                 left: Box::new(expr),
                 operator,
@@ -218,7 +227,9 @@ impl Parser<'_> {
         let mut expr = left;
         while self.current_token_is(operators) {
             let operator_token = self.current_token.clone();
-            let (start, _, _) = self.next_token_span();
+            let start = expr.span().start;
+            self.next_token_span();
+
             let operator = match operator_token {
                 token::Type::Plus => BinaryOperator::Add,
                 token::Type::Minus => BinaryOperator::Sub,
@@ -230,8 +241,10 @@ impl Parser<'_> {
                 token::Type::BitAnd => BinaryOperator::BitAnd,
                 _ => unreachable!(),
             };
+
             let right = self.parse_factor()?;
-            let (_, _, end) = self.lexer.peek_token();
+            let end = right.span().end;
+
             expr = Expr::Binary(BinaryExpr {
                 left: Box::new(expr),
                 operator,
@@ -339,12 +352,11 @@ impl Parser<'_> {
 
             if self.current_token == token::Type::LParen {
                 self.next_token_span(); // consume (
-                let (args, tail_comments) = self.parse_call_args(token::Type::RParen)?;
+                let args = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end; // end of )
                 expr = Expr::Call(CallExpr {
                     callee: Box::new(expr),
                     args,
-                    tail_comments,
                     span: Span { start, end },
                 });
                 self.assert_next_token(&[token::Type::RParen])?;
@@ -534,12 +546,12 @@ impl Parser<'_> {
             token::Type::LBracket => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume [
-                let (members, trailing_comma) = self.parse_array_members()?;
+                let (entries, trailing_comma) = self.parse_array_entries()?;
                 let end = self.current_token_end; // end of ]
                 self.next_token_span(); // consume ]
 
                 Ok(Expr::Array(ArrayExpr {
-                    members,
+                    entries,
                     trailing_comma,
                     span: Span { start, end },
                 }))
@@ -547,12 +559,12 @@ impl Parser<'_> {
             token::Type::LBrace => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume {
-                let (members, trailing_comma) = self.parse_dict_members()?;
+                let (entries, trailing_comma) = self.parse_dict_entries()?;
                 let end = self.current_token_end; // end of }
                 self.next_token_span(); // consume }
 
                 Ok(Expr::Dict(DictExpr {
-                    members,
+                    entries,
                     trailing_comma,
                     span: Span { start, end },
                 }))
@@ -596,14 +608,13 @@ impl Parser<'_> {
                 }
 
                 self.assert_next_token(&[token::Type::LParen])?;
-                let (args, tail_comments) = self.parse_call_args(token::Type::RParen)?;
+                let args = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end;
                 self.assert_next_token(&[token::Type::RParen])?;
 
                 Ok(Expr::New(NewExpr {
                     class,
                     args,
-                    tail_comments,
                     span: Span { start, end },
                 }))
             }
@@ -618,46 +629,23 @@ impl Parser<'_> {
     pub(crate) fn parse_call_args(
         &mut self,
         close: token::Type,
-    ) -> Result<(Vec<CallArg>, Vec<Stmt>), ParserError> {
+    ) -> Result<Vec<CallArg>, ParserError> {
         let mut args: Vec<CallArg> = Vec::new();
-        let mut tail_comments: Vec<Stmt> = Vec::new();
 
         loop {
-            let pending = self.consume_trailing_comments();
-
             if self.current_token == close {
-                if let Some(last) = args.last_mut() {
-                    last.trailing_comments.extend(pending);
-                } else {
-                    tail_comments = pending;
-                }
                 break;
             }
 
-            if let Some(last) = args.last_mut() {
-                last.trailing_comments.extend(pending);
-            } else if !pending.is_empty() {
-                tail_comments.extend(pending);
-            }
-
             let value = self.parse_expression()?;
-            let mut arg = CallArg {
-                value,
-                trailing_comments: Vec::new(),
-            };
-            arg.trailing_comments
-                .extend(self.consume_trailing_comments());
+            args.push(CallArg { value });
 
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
-                arg.trailing_comments
-                    .extend(self.consume_trailing_comments());
-                args.push(arg);
                 if self.current_token == close {
                     break;
                 }
             } else if self.current_token == close {
-                args.push(arg);
                 break;
             } else {
                 return Err(self.parse_error(format!(
@@ -667,184 +655,72 @@ impl Parser<'_> {
             }
         }
 
-        Ok((args, tail_comments))
+        Ok(args)
     }
 
-    /// Parse the body of an array literal, producing an interleaved member
-    /// list. Mirrors [`parse_dict_members`](Self::parse_dict_members) — see
-    /// there for the line-awareness rules.
-    fn parse_array_members(&mut self) -> Result<(Vec<ArrayMember>, bool), ParserError> {
-        let mut members: Vec<ArrayMember> = Vec::new();
+    /// Parse the body of an array literal. The opening `[` has already been
+    /// consumed; the closing `]` is left for the caller. Comments are entirely
+    /// ignored — they live in the comment table and attach to entries (or to
+    /// the array span as dangling-inside) via `attach_comments`.
+    fn parse_array_entries(&mut self) -> Result<(Vec<ArrayEntry>, bool), ParserError> {
+        let mut entries: Vec<ArrayEntry> = Vec::new();
         let mut trailing_comma = false;
-        let mut last_end = self.current_token_start;
 
         loop {
-            if !members.is_empty() {
-                let blanks = self
-                    .line_index
-                    .blank_lines_between(last_end as u32, self.current_token_start as u32);
-                if blanks > 0 && !matches!(members.last(), Some(ArrayMember::BlankLine)) {
-                    members.push(ArrayMember::BlankLine);
-                }
-            }
-
             if self.current_token == token::Type::RBracket {
                 break;
             }
 
-            if matches!(
-                self.current_token,
-                token::Type::Comment(_) | token::Type::BlockComment(_)
-            ) {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                let span = Span { start, end };
-                let member = match self.current_token.clone() {
-                    token::Type::Comment(text) => ArrayMember::Comment(CommentStmt {
-                        text,
-                        is_block: false,
-                        span,
-                    }),
-                    token::Type::BlockComment(text) => ArrayMember::Comment(CommentStmt {
-                        text,
-                        is_block: true,
-                        span,
-                    }),
-                    _ => unreachable!(),
-                };
-                self.next_token_span();
-                last_end = end;
-                members.push(member);
-                continue;
-            }
-
             let value = self.parse_expression()?;
-            let value_line_end = self.current_token_start;
+            let entry = ArrayEntry { value };
 
-            let mut entry = ArrayEntry {
-                value,
-                trailing_comments: Vec::new(),
-            };
-
-            self.collect_same_line_comments(value_line_end, &mut entry.trailing_comments);
-
-            let pivot;
             if self.current_token == token::Type::Comma {
-                let comma_end = self.current_token_end;
                 self.next_token_span();
-                self.collect_same_line_comments(comma_end, &mut entry.trailing_comments);
-                pivot = comma_end;
-                members.push(ArrayMember::Entry(entry));
+                entries.push(entry);
                 if self.current_token == token::Type::RBracket {
                     trailing_comma = true;
                     break;
                 }
             } else if self.current_token == token::Type::RBracket {
-                members.push(ArrayMember::Entry(entry));
+                entries.push(entry);
                 break;
             } else {
                 return Err(
                     self.parse_error(format!("Expected ',' or ']', got {:?}", self.current_token))
                 );
             }
-
-            last_end = members
-                .last()
-                .and_then(|m| match m {
-                    ArrayMember::Entry(e) => e.trailing_comments.last().map(|c| c.span().end),
-                    _ => None,
-                })
-                .unwrap_or(pivot);
         }
 
-        Ok((members, trailing_comma))
+        Ok((entries, trailing_comma))
     }
 
-    /// Parse the body of a dict literal, producing an interleaved member
-    /// list. Returns the members and whether a trailing comma appeared after
-    /// the last entry. The opening `{` has already been consumed; the
-    /// closing `}` is left for the caller.
-    fn parse_dict_members(&mut self) -> Result<(Vec<DictMember>, bool), ParserError> {
-        let mut members: Vec<DictMember> = Vec::new();
+    /// Parse the body of a dict literal. The opening `{` has already been
+    /// consumed; the closing `}` is left for the caller. Comments are ignored
+    /// for the same reason as in [`parse_array_entries`](Self::parse_array_entries).
+    fn parse_dict_entries(&mut self) -> Result<(Vec<DictEntry>, bool), ParserError> {
+        let mut entries: Vec<DictEntry> = Vec::new();
         let mut trailing_comma = false;
-        // Byte offset of the last consumed token's end, used to detect blank
-        // lines and same-line attachment.
-        let mut last_end = self.current_token_start;
 
         loop {
-            // Blank-line detection between previous member and the next thing.
-            if !members.is_empty() {
-                let blanks = self
-                    .line_index
-                    .blank_lines_between(last_end as u32, self.current_token_start as u32);
-                if blanks > 0 && !matches!(members.last(), Some(DictMember::BlankLine)) {
-                    members.push(DictMember::BlankLine);
-                }
-            }
-
             if self.current_token == token::Type::RBrace {
                 break;
-            }
-
-            // A comment at the *start* of an iteration sits on its own line
-            // (otherwise it would have been a trailing comment of the
-            // previous entry). Promote it to a standalone member.
-            if matches!(
-                self.current_token,
-                token::Type::Comment(_) | token::Type::BlockComment(_)
-            ) {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                let span = Span { start, end };
-                let member = match self.current_token.clone() {
-                    token::Type::Comment(text) => DictMember::Comment(CommentStmt {
-                        text,
-                        is_block: false,
-                        span,
-                    }),
-                    token::Type::BlockComment(text) => DictMember::Comment(CommentStmt {
-                        text,
-                        is_block: true,
-                        span,
-                    }),
-                    _ => unreachable!(),
-                };
-                self.next_token_span();
-                last_end = end;
-                members.push(member);
-                continue;
             }
 
             // Key-value entry.
             let key = self.parse_primary()?;
             self.assert_next_token(&[token::Type::FatArrow])?;
             let value = self.parse_expression()?;
-            // `value`'s span ends where the next token starts (current_token).
-            let value_line_end = self.current_token_start;
+            let entry = DictEntry { key, value };
 
-            let mut entry = DictEntry {
-                key,
-                value,
-                trailing_comments: Vec::new(),
-            };
-
-            // Same-line comments between the value and the next token.
-            self.collect_same_line_comments(value_line_end, &mut entry.trailing_comments);
-
-            let pivot;
             if self.current_token == token::Type::Comma {
-                let comma_end = self.current_token_end;
                 self.next_token_span();
-                // Same-line comments after the comma — still trailing.
-                self.collect_same_line_comments(comma_end, &mut entry.trailing_comments);
-                pivot = comma_end;
-                members.push(DictMember::Entry(entry));
+                entries.push(entry);
                 if self.current_token == token::Type::RBrace {
                     trailing_comma = true;
                     break;
                 }
             } else if self.current_token == token::Type::RBrace {
-                members.push(DictMember::Entry(entry));
+                entries.push(entry);
                 break;
             } else {
                 return Err(self.parse_error(format!(
@@ -852,60 +728,9 @@ impl Parser<'_> {
                     self.current_token
                 )));
             }
-
-            // Position for blank-line detection on the next iteration is the
-            // end of the comma we just consumed, or the end of the last
-            // same-line trailing comment if one was attached.
-            last_end = members
-                .last()
-                .and_then(|m| match m {
-                    DictMember::Entry(e) => e.trailing_comments.last().map(|c| c.span().end),
-                    _ => None,
-                })
-                .unwrap_or(pivot);
         }
 
-        Ok((members, trailing_comma))
-    }
-
-    /// Consume comment tokens at the current position as long as they sit
-    /// on the same source line as `anchor_end`. Stops at the first non-
-    /// comment token or comment on a later line.
-    fn collect_same_line_comments(&mut self, anchor_end: usize, out: &mut Vec<Stmt>) {
-        loop {
-            let same_line = matches!(
-                self.current_token,
-                token::Type::Comment(_) | token::Type::BlockComment(_)
-            ) && self
-                .line_index
-                .line_col(anchor_end.saturating_sub(1) as u32)
-                .line
-                == self
-                    .line_index
-                    .line_col(self.current_token_start as u32)
-                    .line;
-            if !same_line {
-                return;
-            }
-            let start = self.current_token_start;
-            let end = self.current_token_end;
-            let span = Span { start, end };
-            let stmt = match self.current_token.clone() {
-                token::Type::Comment(text) => Stmt::Comment(CommentStmt {
-                    text,
-                    is_block: false,
-                    span,
-                }),
-                token::Type::BlockComment(text) => Stmt::Comment(CommentStmt {
-                    text,
-                    is_block: true,
-                    span,
-                }),
-                _ => unreachable!(),
-            };
-            self.next_token_span();
-            out.push(stmt);
-        }
+        Ok((entries, trailing_comma))
     }
 
     /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new`

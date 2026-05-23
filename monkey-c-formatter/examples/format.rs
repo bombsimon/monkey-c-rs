@@ -17,14 +17,14 @@ fn main() -> io::Result<()> {
         io::stdin().read_to_string(&mut source)?;
     }
 
-    let mut parser = monkey_c_parser::parser::Parser::new(&source);
+    let parser = monkey_c_parser::parser::Parser::new(&source);
     match parser.parse() {
-        Ok(ast) => {
+        Ok(output) => {
             let formatter = Formatter::new(&source)
                 .with_line_width(80)
                 .with_aligned_dict_pairs();
 
-            print!("{}", formatter.format(&ast));
+            print!("{}", formatter.format(&output));
             Ok(())
         }
         Err(e) => {

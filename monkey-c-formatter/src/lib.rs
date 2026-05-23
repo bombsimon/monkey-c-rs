@@ -3,12 +3,14 @@ mod operators;
 
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
-    ArrayEntry, ArrayMember, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, ConstDecl,
-    DictEntry, DictMember, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit,
-    FunctionDecl, IfStmt, LiteralValue, Stmt, SwitchStmt, TryStmt, Type, TypeKind, VarDecl,
-    Visibility,
+    ArrayExpr, Ast, BinaryOperator, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
+    DictExpr, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl,
+    IfStmt, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt, TryStmt, Type, TypeKind,
+    UnaryOperator, VarDecl, Visibility,
 };
+use monkey_c_parser::comments::{attach_comments, CommentsMap, DanglingPlacement};
 use monkey_c_parser::line_index::LineIndex;
+use std::cell::RefCell;
 
 /// An item in a delimited list (array entry, dict pair, call arg, etc.) along
 /// with any comments that trail it inside the bracketed list. Used by
@@ -16,6 +18,15 @@ use monkey_c_parser::line_index::LineIndex;
 struct ListItem {
     content: Doc,
     trailing_comments: Vec<Doc>,
+}
+
+/// Sortable item used by [`Formatter::stmts_to_doc`] /
+/// [`Formatter::decls_to_doc`] to interleave block-level standalone comments
+/// with statements / declarations in source order.
+enum BodyItem<'a> {
+    Decl(&'a Ast, Span),
+    Stmt(&'a Stmt, Span),
+    Comment(CommentStmt),
 }
 
 /// Whether `expr` is a binary expression — any top-level binary operator
@@ -69,6 +80,10 @@ pub struct Formatter {
     /// When `true`, dict key-value pairs are rendered multi-line with their
     /// `=>` operators column-aligned.
     align_dict_pairs: bool,
+    /// Built once at the start of [`Self::format`] from the [`ParseOutput`]'s
+    /// comment table. Render methods query it via
+    /// [`Self::leading_doc`] / [`Self::trailing_doc`] / [`Self::dangling`].
+    comments: RefCell<CommentsMap>,
 }
 
 impl Formatter {
@@ -83,6 +98,7 @@ impl Formatter {
             line_index: LineIndex::new(source),
             line_width: 100,
             align_dict_pairs: false,
+            comments: RefCell::new(CommentsMap::new()),
         }
     }
 
@@ -101,16 +117,143 @@ impl Formatter {
         self
     }
 
-    /// Format `ast` and return the result as a `String`.
-    pub fn format(&self, ast: &Ast) -> String {
-        let doc = self.ast_to_doc(ast);
+    /// Format a parsed file and return the result as a `String`.
+    pub fn format(&self, output: &ParseOutput) -> String {
+        *self.comments.borrow_mut() =
+            attach_comments(&output.ast, &output.comments, &self.line_index);
 
+        let doc = self.ast_to_doc(&output.ast);
         render(&doc, self.line_width)
+    }
+
+    /// True if any attached comment — line or block, in any role — has a span
+    /// strictly inside `span`. When the source spans multiple lines and has
+    /// any comment, the array/dict renderer refuses to collapse to one line.
+    fn has_comments_in(&self, span: Span) -> bool {
+        self.comments
+            .borrow()
+            .iter()
+            .any(|c| c.span.start >= span.start && c.span.end <= span.end)
+    }
+
+    /// True if `span` covers more than one source line.
+    fn spans_multiple_lines(&self, span: Span) -> bool {
+        self.line_index.line(span.start as u32) != self.line_index.line(span.end as u32)
+    }
+
+    /// Comments attached to render just *before* the node at `span`. Returns
+    /// owned `CommentStmt`s so the caller can format them as line or block
+    /// comments without holding a borrow on `self.comments`.
+    fn leading(&self, span: Span) -> Vec<CommentStmt> {
+        self.comments.borrow().leading(span).cloned().collect()
+    }
+
+    /// Comments attached to render just *after* the node at `span`.
+    fn trailing(&self, span: Span) -> Vec<CommentStmt> {
+        self.comments.borrow().trailing(span).cloned().collect()
+    }
+
+    /// Comments dangling in the "between the header and `{`" slot of `span`.
+    /// Returns `Doc::Empty` when there are no such comments. When non-empty
+    /// the output ends with a space, so it slots into `header + bb + block_body`
+    /// without double-spacing (`if (x) ` + `/* C */ ` + `{body}`).
+    fn before_bracket_doc(&self, span: Span) -> Doc {
+        let comments = self.dangling(span, DanglingPlacement::BeforeBracket);
+        if comments.is_empty() {
+            return Doc::Empty;
+        }
+        let mut parts = Vec::new();
+        for c in &comments {
+            parts.push(self.comment_to_doc(c));
+            parts.push(Doc::text(" "));
+        }
+        Doc::Concat(parts)
+    }
+
+    /// Comments inside the node at `span` but not adjacent to any direct
+    /// child — emitted at a kind-specific position by the render method.
+    fn dangling(&self, span: Span, placement: DanglingPlacement) -> Vec<CommentStmt> {
+        self.comments
+            .borrow()
+            .dangling(span, placement)
+            .cloned()
+            .collect()
+    }
+
+    /// Render a comment as a [`Doc`]. Line comments become `// text`; block
+    /// comments are routed through [`Self::block_comment_to_doc`] so
+    /// multi-line `/* … */` blocks align their closing delimiter.
+    fn comment_to_doc(&self, c: &CommentStmt) -> Doc {
+        if c.is_block {
+            self.block_comment_to_doc(&c.text)
+        } else {
+            Doc::text(format!("//{}", c.text))
+        }
+    }
+
+    /// Render leading comments as a prefix. For inline block comments adjacent
+    /// to the node on the same source line we emit `<comment> <node>`; for
+    /// every other case (line comments, block comments on a separate line) we
+    /// emit `<comment>\n<node>`.
+    fn leading_doc(&self, span: Span) -> Doc {
+        let comments = self.leading(span);
+        if comments.is_empty() {
+            return Doc::Empty;
+        }
+
+        let node_line = self.line_index.line_col(span.start as u32).line;
+        let mut parts = Vec::new();
+        for c in &comments {
+            let comment_end_line = self
+                .line_index
+                .line_col(c.span.end.saturating_sub(1) as u32)
+                .line;
+            parts.push(self.comment_to_doc(c));
+            if c.is_block && comment_end_line == node_line {
+                parts.push(Doc::text(" "));
+            } else {
+                parts.push(Doc::HardLine);
+            }
+        }
+        Doc::Concat(parts)
+    }
+
+    /// Render trailing comments as a suffix. Inline block comments on the
+    /// same source line emit as ` <comment>`; everything else emits on a new
+    /// line.
+    fn trailing_doc(&self, span: Span) -> Doc {
+        let comments = self.trailing(span);
+        if comments.is_empty() {
+            return Doc::Empty;
+        }
+
+        let node_end_line = self
+            .line_index
+            .line_col(span.end.saturating_sub(1) as u32)
+            .line;
+        let mut parts = Vec::new();
+        let mut last_line = node_end_line;
+        for c in &comments {
+            let comment_start_line = self.line_index.line_col(c.span.start as u32).line;
+            if comment_start_line == last_line {
+                parts.push(Doc::text(" "));
+            } else {
+                parts.push(Doc::HardLine);
+            }
+
+            parts.push(self.comment_to_doc(c));
+            last_line = self
+                .line_index
+                .line_col(c.span.end.saturating_sub(1) as u32)
+                .line;
+        }
+
+        Doc::Concat(parts)
     }
 
     fn ast_to_doc(&self, ast: &Ast) -> Doc {
         match ast {
-            Ast::Document(nodes) => self.decls_to_doc(nodes),
+            Ast::Document(nodes, span) => self.decls_to_doc(nodes, *span),
             Ast::Import(decl) => Doc::concat(vec![
                 Doc::text("import "),
                 Doc::text(&decl.name),
@@ -131,32 +274,42 @@ impl Formatter {
                 Doc::text(";"),
             ]),
             Ast::Module(decl) => {
-                let header = Doc::text(format!("module {} {{", decl.name));
-                if decl.body.is_empty() {
+                let before_bracket = self.before_bracket_doc(decl.span);
+                let header = Doc::concat(vec![
+                    Doc::text(format!("module {} ", decl.name)),
+                    before_bracket,
+                    Doc::text("{"),
+                ]);
+                let inner = self.decls_to_doc(&decl.body, decl.span);
+                if decl.body.is_empty() && matches!(inner, Doc::Empty) {
                     return Doc::concat(vec![header, Doc::text("}")]);
                 }
                 Doc::concat(vec![
                     header,
-                    Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
+                    Doc::Indent(vec![Doc::HardLine, inner]),
                     Doc::HardLine,
                     Doc::text("}"),
                 ])
             }
             Ast::Class(decl) => {
+                let before_bracket = self.before_bracket_doc(decl.span);
                 let header = Doc::concat(vec![
                     Doc::text(format!("class {}", decl.name)),
                     decl.extends
                         .as_ref()
                         .map(|e| Doc::text(format!(" extends {}", e)))
                         .unwrap_or(Doc::Empty),
+                    Doc::text(" "),
+                    before_bracket,
+                    Doc::text("{"),
                 ]);
-                if decl.body.is_empty() {
-                    return Doc::concat(vec![header, Doc::text(" {}")]);
+                let inner = self.decls_to_doc(&decl.body, decl.span);
+                if decl.body.is_empty() && matches!(inner, Doc::Empty) {
+                    return Doc::concat(vec![header, Doc::text("}")]);
                 }
                 Doc::concat(vec![
                     header,
-                    Doc::text(" {"),
-                    Doc::Indent(vec![Doc::HardLine, self.decls_to_doc(&decl.body)]),
+                    Doc::Indent(vec![Doc::HardLine, inner]),
                     Doc::HardLine,
                     Doc::text("}"),
                 ])
@@ -165,8 +318,6 @@ impl Formatter {
             Ast::Enum(decl) => self.enum_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
-            Ast::Comment(text, _) => Doc::text(format!("//{}", text)),
-            Ast::BlockComment(text, _) => self.block_comment_to_doc(text),
             Ast::Annotation(names, _) => {
                 let joined = names
                     .iter()
@@ -179,17 +330,50 @@ impl Formatter {
         }
     }
 
-    /// Render a sequence of declarations, inserting a [`Doc::BlankLine`] wherever
-    /// the original source had one.
-    fn decls_to_doc(&self, decls: &[Ast]) -> Doc {
-        let mut docs = Vec::new();
+    /// Render a sequence of declarations interleaved with any standalone
+    /// comments dangling on the surrounding `container` (top-level document,
+    /// module body, class body). Blank lines between adjacent items are
+    /// preserved via [`Self::gap_between_spans`]. Returns [`Doc::Empty`] when
+    /// the body has neither declarations nor dangling comments so callers can
+    /// short-circuit to `{}` rendering.
+    fn decls_to_doc(&self, decls: &[Ast], container: Span) -> Doc {
+        let dangling_comments = self.all_dangling(container);
+        if decls.is_empty() && dangling_comments.is_empty() {
+            return Doc::Empty;
+        }
 
-        for (i, decl) in decls.iter().enumerate() {
-            if i > 0 {
-                let prev = &decls[i - 1];
-                docs.push(self.gap_between_spans(prev.span(), decl.span()));
+        let mut items: Vec<BodyItem> = decls
+            .iter()
+            .filter_map(|d| d.span().map(|s| BodyItem::Decl(d, *s)))
+            .collect();
+        for c in dangling_comments {
+            items.push(BodyItem::Comment(c));
+        }
+        // Sort by the leading-comment-extended start so an item's leading
+        // comments slot ahead of a previous item's trailing-end in the gap math.
+        items.sort_by_key(|i| self.effective_start(i));
+
+        let mut docs = Vec::new();
+        let mut prev_end: Option<usize> = None;
+        for item in &items {
+            let start = self.effective_start(item);
+            if let Some(end) = prev_end {
+                let prev_span = Span { start: 0, end };
+                let next_span = Span { start, end: start };
+                docs.push(self.gap_between_spans(Some(&prev_span), Some(&next_span)));
             }
-            docs.push(self.ast_to_doc(decl));
+            match item {
+                BodyItem::Decl(decl, decl_span) => {
+                    docs.push(self.leading_doc(*decl_span));
+                    docs.push(self.ast_to_doc(decl));
+                    docs.push(self.trailing_doc(*decl_span));
+                }
+                BodyItem::Comment(c) => {
+                    docs.push(self.comment_to_doc(c));
+                }
+                BodyItem::Stmt(_, _) => unreachable!("decls_to_doc only contains Decl items"),
+            }
+            prev_end = Some(self.effective_end(item));
         }
 
         Doc::Concat(docs)
@@ -199,33 +383,106 @@ impl Formatter {
     /// and never collapse to a single line. A trailing comma in source is
     /// preserved on the last variant.
     fn enum_to_doc(&self, decl: &EnumDecl) -> Doc {
+        let body_before_comments = self.dangling(decl.span, DanglingPlacement::BeforeFirstChild);
+        let after_last_comments = self.dangling(decl.span, DanglingPlacement::AfterLastChild);
+        let before_bracket = self.before_bracket_doc(decl.span);
+
+        let header_with = |close: &str| {
+            Doc::concat(vec![
+                Doc::text("enum "),
+                before_bracket.clone(),
+                Doc::text(close.to_string()),
+            ])
+        };
+
+        let header = header_with("{");
+
         if decl.variants.is_empty() {
-            return Doc::text("enum {}");
+            let body_comments: Vec<_> = body_before_comments
+                .into_iter()
+                .chain(after_last_comments.clone())
+                .collect();
+
+            if body_comments.is_empty() {
+                return header_with("{}");
+            }
+
+            let mut inner = Vec::new();
+            for (i, c) in body_comments.iter().enumerate() {
+                if i > 0 {
+                    inner.push(Doc::HardLine);
+                }
+
+                inner.push(self.comment_to_doc(c));
+            }
+
+            return Doc::concat(vec![
+                header,
+                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+                Doc::HardLine,
+                Doc::text("}"),
+            ]);
         }
 
         let last_idx = decl.variants.len() - 1;
         let mut inner = Vec::new();
+        // Body-level `BeforeFirstChild` comments (e.g. a `// header` line
+        // between `{` and the first variant) render on their own lines before
+        // the variants.
+        for (i, c) in body_before_comments.iter().enumerate() {
+            if i > 0 {
+                inner.push(Doc::HardLine);
+            }
+
+            inner.push(self.comment_to_doc(c));
+        }
+
+        if !body_before_comments.is_empty() {
+            inner.push(Doc::HardLine);
+        }
+
         for (i, v) in decl.variants.iter().enumerate() {
             if i > 0 {
                 inner.push(Doc::HardLine);
             }
-            let mut parts = vec![Doc::text(&v.name)];
+
+            let mut parts = Vec::new();
+
+            // Leading comments on the variant (`/* X */ Variant,`).
+            let leading = self.leading_doc(v.span);
+            if !matches!(leading, Doc::Empty) {
+                parts.push(leading);
+            }
+
+            parts.push(Doc::text(&v.name));
             if let Some(value) = &v.value {
                 parts.push(Doc::text(" = "));
                 parts.push(self.expr_to_doc(value));
             }
+
             if i != last_idx || decl.trailing_comma {
                 parts.push(Doc::text(","));
             }
-            for c in &v.trailing_comments {
+
+            // Trailing comments on the variant (`Variant, /* X */`).
+            for c in self.trailing(v.span) {
                 parts.push(Doc::text(" "));
-                parts.push(self.stmt_to_doc(c));
+                parts.push(self.comment_to_doc(&c));
             }
+
             inner.push(Doc::Concat(parts));
         }
 
+        // Standalone comments between the last variant and `}` — they don't
+        // belong to any variant, so render them on their own lines at the
+        // variant indent.
+        for c in &after_last_comments {
+            inner.push(Doc::HardLine);
+            inner.push(self.comment_to_doc(c));
+        }
+
         Doc::concat(vec![
-            Doc::text("enum {"),
+            header,
             Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
             Doc::HardLine,
             Doc::text("}"),
@@ -248,30 +505,38 @@ impl Formatter {
             .args
             .iter()
             .map(|arg| {
-                let mut arg_parts = vec![Doc::text(&arg.name)];
+                let mut arg_parts = Vec::new();
+                let leading = self.leading_doc(arg.span);
+                if !matches!(leading, Doc::Empty) {
+                    arg_parts.push(leading);
+                }
+
+                arg_parts.push(Doc::text(&arg.name));
                 if let Some(ty) = &arg.type_ {
                     arg_parts.push(Doc::text(" as "));
                     arg_parts.push(Self::type_to_doc(ty));
                 }
                 ListItem {
                     content: Doc::Concat(arg_parts),
-                    trailing_comments: arg
-                        .trailing_comments
-                        .iter()
-                        .map(|c| self.stmt_to_doc(c))
+                    trailing_comments: self
+                        .trailing(arg.span)
+                        .into_iter()
+                        .map(|c| self.comment_to_doc(&c))
                         .collect(),
                 }
             })
             .collect();
 
-        parts.push(self.format_list("(", ")", items, &decl.args_tail_comments, false));
+        parts.push(self.format_list("(", ")", items, &[], false));
 
         if let Some(ret) = &decl.returns {
             parts.push(Doc::text(" as "));
             parts.push(Self::type_to_doc(ret));
         }
 
-        parts.push(self.block_to_doc(&decl.body));
+        parts.push(Doc::text(" "));
+        parts.push(self.before_bracket_doc(decl.span));
+        parts.push(self.block_body_to_doc(&decl.body));
 
         Doc::Concat(parts)
     }
@@ -389,8 +654,8 @@ impl Formatter {
     }
 
     /// Render an inline dict type `{ :k as T, "k" as U }`. A source-level
-    /// trailing comma forces multi-line (magic-trailing-comma rule); otherwise
-    /// fits on one line when it can.
+    /// trailing comma forces multi-line; otherwise fits on one line when it
+    /// can.
     fn inline_dict_type_to_doc(
         entries: &[DictTypeEntry],
         trailing_comma: bool,
@@ -474,22 +739,22 @@ impl Formatter {
     }
 
     fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {
-        let header = self.paren_condition_header("if", &s.condition);
-        let mut parts = vec![header, self.block_body_to_doc(&s.then_branch)];
+        let header = self.paren_condition_header("if", &s.condition.inner);
+        let mut parts = vec![
+            header,
+            self.before_bracket_doc(s.span),
+            self.block_body_to_doc(&s.then_branch),
+        ];
 
-        for (i, comment) in s.trailing_comments.iter().enumerate() {
-            if i == 0 {
-                parts.push(Doc::text(" "));
-            } else {
-                parts.push(Doc::HardLine);
-            }
-            parts.push(self.stmt_to_doc(comment));
-        }
+        // block_body_to_doc already emits the trailing on then_branch.span.
+        // We only need to know whether a trailing was present so the `else`
+        // clause moves to its own line.
+        let has_trailing = !self.trailing(s.then_branch.span).is_empty();
 
         match &s.else_branch {
             None => {}
             Some(ElseBranch::Block(b)) => {
-                if s.trailing_comments.is_empty() {
+                if !has_trailing {
                     parts.push(Doc::text(" else"));
                 } else {
                     parts.push(Doc::HardLine);
@@ -498,7 +763,7 @@ impl Formatter {
                 parts.push(self.block_to_doc(b));
             }
             Some(ElseBranch::If(inner)) => {
-                if s.trailing_comments.is_empty() {
+                if !has_trailing {
                     parts.push(Doc::text(" else "));
                 } else {
                     parts.push(Doc::HardLine);
@@ -571,8 +836,9 @@ impl Formatter {
                 body.push(Doc::HardLine);
             }
 
-            for c in &case.leading_comments {
-                body.push(self.stmt_to_doc(c));
+            // Leading comments on the case via the CommentsMap.
+            for c in self.leading(case.span) {
+                body.push(self.comment_to_doc(&c));
                 body.push(Doc::HardLine);
             }
 
@@ -592,21 +858,21 @@ impl Formatter {
             header.push(Doc::text(":"));
             body.push(Doc::Concat(header));
 
-            if !case.stmts.is_empty() {
-                body.push(Doc::Indent(vec![
-                    Doc::HardLine,
-                    self.stmts_to_doc(&case.stmts),
-                ]));
+            let case_inner = self.stmts_to_doc(&case.stmts, case.span);
+            if !case.stmts.is_empty() || !matches!(case_inner, Doc::Empty) {
+                body.push(Doc::Indent(vec![Doc::HardLine, case_inner]));
             }
         }
 
-        for c in &s.tail_comments {
+        // Dangling comments after the last case but before `}` of the switch.
+        for c in self.dangling(s.span, DanglingPlacement::AfterLastChild) {
             body.push(Doc::HardLine);
-            body.push(self.stmt_to_doc(c));
+            body.push(self.comment_to_doc(&c));
         }
 
         Doc::concat(vec![
-            self.paren_condition_header("switch", &s.discriminant),
+            self.paren_condition_header("switch", &s.discriminant.inner),
+            self.before_bracket_doc(s.span),
             Doc::text("{"),
             Doc::Indent(vec![Doc::HardLine, Doc::Concat(body)]),
             Doc::HardLine,
@@ -615,7 +881,11 @@ impl Formatter {
     }
 
     fn try_stmt_to_doc(&self, s: &TryStmt) -> Doc {
-        let mut parts = vec![Doc::text("try"), self.block_to_doc(&s.body)];
+        let mut parts = vec![
+            Doc::text("try "),
+            self.before_bracket_doc(s.span),
+            self.block_body_to_doc(&s.body),
+        ];
 
         for catch in &s.catches {
             let mut header = vec![Doc::text(" catch ("), Doc::text(&catch.binding)];
@@ -637,61 +907,146 @@ impl Formatter {
     }
 
     fn block_body_to_doc(&self, block: &BlockStmt) -> Doc {
-        if block.stmts.is_empty() {
-            return Doc::text("{}");
+        let trailing = self.trailing_doc(block.span);
+        let inner = self.stmts_to_doc(&block.stmts, block.span);
+        if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
+            return Doc::concat(vec![Doc::text("{}"), trailing]);
         }
 
         Doc::concat(vec![
             Doc::text("{"),
-            Doc::Indent(vec![Doc::HardLine, self.stmts_to_doc(&block.stmts)]),
+            Doc::Indent(vec![Doc::HardLine, inner]),
             Doc::HardLine,
             Doc::text("}"),
+            trailing,
         ])
     }
 
     /// Render a block as ` {\n    …\n}` with the opening brace on the same line.
     fn block_to_doc(&self, block: &BlockStmt) -> Doc {
-        if block.stmts.is_empty() {
-            return Doc::text(" {}");
+        let trailing = self.trailing_doc(block.span);
+        let inner = self.stmts_to_doc(&block.stmts, block.span);
+        if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
+            return Doc::concat(vec![Doc::text(" {}"), trailing]);
         }
 
         Doc::concat(vec![
             Doc::text(" {"),
-            Doc::Indent(vec![Doc::HardLine, self.stmts_to_doc(&block.stmts)]),
+            Doc::Indent(vec![Doc::HardLine, inner]),
             Doc::HardLine,
             Doc::text("}"),
+            trailing,
         ])
     }
 
-    /// Render a sequence of statements, inserting a [`Doc::BlankLine`] wherever
-    /// the original source had one.
-    fn stmts_to_doc(&self, stmts: &[Stmt]) -> Doc {
-        let mut docs = Vec::new();
+    /// Render a sequence of statements interleaved with any standalone
+    /// comments dangling on the surrounding `container` block. Blank lines
+    /// between adjacent items are preserved via [`Self::gap_between_spans`].
+    /// Returns [`Doc::Empty`] when both lists are empty.
+    fn stmts_to_doc(&self, stmts: &[Stmt], container: Span) -> Doc {
+        let dangling_comments = self.all_dangling(container);
+        if stmts.is_empty() && dangling_comments.is_empty() {
+            return Doc::Empty;
+        }
 
-        for (i, stmt) in stmts.iter().enumerate() {
-            if i > 0 {
-                let prev = &stmts[i - 1];
-                docs.push(self.gap_between_spans(Some(prev.span()), Some(stmt.span())));
+        let mut items: Vec<BodyItem> = stmts.iter().map(|s| BodyItem::Stmt(s, *s.span())).collect();
+        for c in dangling_comments {
+            items.push(BodyItem::Comment(c));
+        }
+
+        items.sort_by_key(|i| self.effective_start(i));
+
+        let mut docs = Vec::new();
+        let mut prev_end: Option<usize> = None;
+        for item in &items {
+            let start = self.effective_start(item);
+            if let Some(end) = prev_end {
+                let prev_span = Span { start: 0, end };
+                let next_span = Span { start, end: start };
+                docs.push(self.gap_between_spans(Some(&prev_span), Some(&next_span)));
             }
-            docs.push(self.stmt_to_doc(stmt));
+
+            match item {
+                BodyItem::Stmt(stmt, _) => {
+                    docs.push(self.stmt_to_doc(stmt));
+                }
+                BodyItem::Comment(c) => {
+                    docs.push(self.comment_to_doc(c));
+                }
+                BodyItem::Decl(_, _) => unreachable!("stmts_to_doc only contains Stmt items"),
+            }
+
+            prev_end = Some(self.effective_end(item));
         }
 
         Doc::Concat(docs)
     }
 
+    /// All standalone comments attached to `container` regardless of dangling
+    /// placement. Used by `stmts_to_doc` / `decls_to_doc` to interleave
+    /// orphan comments with their sibling nodes by source position.
+    fn all_dangling(&self, container: Span) -> Vec<CommentStmt> {
+        let mut out = Vec::new();
+        out.extend(self.dangling(container, DanglingPlacement::BeforeFirstChild));
+        out.extend(self.dangling(container, DanglingPlacement::Inside));
+        out.extend(self.dangling(container, DanglingPlacement::AfterLastChild));
+
+        out
+    }
+
+    /// Start offset of `item` including any leading comments attached to it
+    /// — used for ordering and for blank-line gap calculation so a leading
+    /// comment shifts the "next item" earlier in source.
+    fn effective_start(&self, item: &BodyItem) -> usize {
+        match item {
+            BodyItem::Decl(_, s) | BodyItem::Stmt(_, s) => self
+                .leading(*s)
+                .first()
+                .map(|c| c.span.start)
+                .unwrap_or(s.start),
+            BodyItem::Comment(c) => c.span.start,
+        }
+    }
+
+    /// End offset of `item` including any trailing comments attached to it.
+    fn effective_end(&self, item: &BodyItem) -> usize {
+        match item {
+            BodyItem::Decl(_, s) | BodyItem::Stmt(_, s) => self
+                .trailing(*s)
+                .last()
+                .map(|c| c.span.end)
+                .unwrap_or(s.end),
+            BodyItem::Comment(c) => c.span.end,
+        }
+    }
+
     fn stmt_to_doc(&self, stmt: &Stmt) -> Doc {
+        let span = *stmt.span();
+        let leading = self.leading_doc(span);
+        let inner = self.stmt_inner_to_doc(stmt);
+        let trailing = self.trailing_doc(span);
+
+        match (&leading, &trailing) {
+            (Doc::Empty, Doc::Empty) => inner,
+            _ => Doc::concat(vec![leading, inner, trailing]),
+        }
+    }
+
+    fn stmt_inner_to_doc(&self, stmt: &Stmt) -> Doc {
         match stmt {
             Stmt::Block(block) => Doc::concat(vec![Doc::text("{"), self.block_inner_to_doc(block)]),
 
             Stmt::If(s) => self.if_stmt_to_doc(s),
 
             Stmt::While(s) => Doc::concat(vec![
-                self.paren_condition_header("while", &s.condition),
+                self.paren_condition_header("while", &s.condition.inner),
+                self.before_bracket_doc(s.span),
                 self.block_body_to_doc(&s.body),
             ]),
 
             Stmt::DoWhile(s) => Doc::concat(vec![
                 Doc::text("do "),
+                self.before_bracket_doc(s.span),
                 self.block_body_to_doc(&s.body),
                 Doc::text(" while ("),
                 self.expr_to_doc(&s.condition),
@@ -699,17 +1054,21 @@ impl Formatter {
             ]),
 
             Stmt::For(s) => {
-                let init_doc = match &s.init {
+                let init_doc = match &s.header.inner.init {
                     None => Doc::Empty,
                     Some(ForInit::Var(v)) => self.var_decl_to_doc(v),
                     Some(ForInit::Expr(e)) => self.expr_to_doc(e),
                 };
                 let cond_doc = s
+                    .header
+                    .inner
                     .condition
                     .as_ref()
                     .map(|e| self.expr_to_doc(e))
                     .unwrap_or(Doc::Empty);
                 let update_doc = s
+                    .header
+                    .inner
                     .update
                     .as_ref()
                     .map(|e| self.expr_to_doc(e))
@@ -722,8 +1081,9 @@ impl Formatter {
                     cond_doc,
                     Doc::text("; "),
                     update_doc,
-                    Doc::text(")"),
-                    self.block_to_doc(&s.body),
+                    Doc::text(") "),
+                    self.before_bracket_doc(s.span),
+                    self.block_body_to_doc(&s.body),
                 ])
             }
 
@@ -746,26 +1106,57 @@ impl Formatter {
             Stmt::Switch(s) => self.switch_stmt_to_doc(s),
             Stmt::Try(s) => self.try_stmt_to_doc(s),
             Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
-            Stmt::Comment(c) if c.is_block => self.block_comment_to_doc(&c.text),
-            Stmt::Comment(c) => Doc::text(format!("//{}", c.text)),
-            Stmt::Expr(e) => Doc::concat(vec![self.expr_to_doc(e), Doc::text(";")]),
+            Stmt::Expr(e) => Doc::concat(vec![self.expr_inner_to_doc(e), Doc::text(";")]),
         }
     }
 
     /// Render the interior of a standalone `{ … }` block statement.
     fn block_inner_to_doc(&self, block: &BlockStmt) -> Doc {
-        if block.stmts.is_empty() {
+        let inner = self.stmts_to_doc(&block.stmts, block.span);
+        if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
             return Doc::text("}");
         }
 
         Doc::concat(vec![
-            Doc::Indent(vec![Doc::HardLine, self.stmts_to_doc(&block.stmts)]),
+            Doc::Indent(vec![Doc::HardLine, inner]),
             Doc::HardLine,
             Doc::text("}"),
         ])
     }
 
+    /// Render an expression and prepend/append any leading or trailing
+    /// comments attached to it via [`CommentsMap`]. Empty when there are no
+    /// attached comments, so the common case has no overhead in the output.
     fn expr_to_doc(&self, expr: &Expr) -> Doc {
+        let span = *expr.span();
+        let leading = self.leading_doc(span);
+        let inner = self.expr_inner_to_doc(expr);
+        let trailing = self.trailing_doc(span);
+
+        match (&leading, &trailing) {
+            (Doc::Empty, Doc::Empty) => inner,
+            _ => Doc::concat(vec![leading, inner, trailing]),
+        }
+    }
+
+    /// Render an expression with leading comments but *without* trailing
+    /// comments. Used by container renderers (dicts, arrays, call args) that
+    /// need to emit a comma between the value and its trailing comments —
+    /// otherwise an own-line trailing comment leaves an orphan comma on the
+    /// next line.
+    fn expr_with_leading(&self, expr: &Expr) -> Doc {
+        let span = *expr.span();
+        let leading = self.leading_doc(span);
+        let inner = self.expr_inner_to_doc(expr);
+
+        if matches!(&leading, Doc::Empty) {
+            inner
+        } else {
+            Doc::concat(vec![leading, inner])
+        }
+    }
+
+    fn expr_inner_to_doc(&self, expr: &Expr) -> Doc {
         match expr {
             Expr::Binary(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.left),
@@ -774,10 +1165,10 @@ impl Formatter {
             ]),
 
             Expr::Unary(e) => match e.operator {
-                monkey_c_parser::ast::UnaryOperator::PostInc => {
+                UnaryOperator::PostInc => {
                     Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("++")])
                 }
-                monkey_c_parser::ast::UnaryOperator::PostDec => {
+                UnaryOperator::PostDec => {
                     Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("--")])
                 }
                 _ => Doc::concat(vec![
@@ -806,13 +1197,7 @@ impl Formatter {
 
             Expr::Call(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.callee),
-                self.format_list(
-                    "(",
-                    ")",
-                    self.call_args_to_items(&e.args),
-                    &e.tail_comments,
-                    false,
-                ),
+                self.format_list("(", ")", self.call_args_to_items(&e.args), &[], false),
             ]),
 
             Expr::Member(e) => Doc::concat(vec![
@@ -829,13 +1214,7 @@ impl Formatter {
 
             Expr::New(e) => Doc::concat(vec![
                 Doc::text(format!("new {}", e.class)),
-                self.format_list(
-                    "(",
-                    ")",
-                    self.call_args_to_items(&e.args),
-                    &e.tail_comments,
-                    false,
-                ),
+                self.format_list("(", ")", self.call_args_to_items(&e.args), &[], false),
             ]),
 
             Expr::NewArray(e) => {
@@ -892,113 +1271,75 @@ impl Formatter {
         args.iter()
             .map(|a| ListItem {
                 content: self.expr_to_doc(&a.value),
-                trailing_comments: a
-                    .trailing_comments
-                    .iter()
-                    .map(|c| self.stmt_to_doc(c))
-                    .collect(),
+                trailing_comments: Vec::new(),
             })
             .collect()
     }
 
-    /// Format an array literal. Mirrors [`format_dict`](Self::format_dict):
-    /// walks `members` so free-floating comments and blank lines between
-    /// entries are preserved.
-    fn format_array(&self, e: &monkey_c_parser::ast::ArrayExpr) -> Doc {
-        if e.members.is_empty() {
-            return Doc::text("[]");
-        }
-
-        let only_entries = e.members.iter().all(|m| matches!(m, ArrayMember::Entry(_)));
-        let any_inline_comments = e.members.iter().any(|m| {
-            if let ArrayMember::Entry(entry) = m {
-                !entry.trailing_comments.is_empty()
-            } else {
-                false
+    /// Format an array literal.
+    /// - source has trailing comma → multi-line, blank lines preserved
+    /// - source spans multiple lines and contains any comment → multi-line
+    ///   (because `//` can't be inlined into `[…]`, and standalone block
+    ///   comments between entries have no meaningful single-line position)
+    /// - otherwise → try one-line, fall back to break-at-width
+    fn format_array(&self, e: &ArrayExpr) -> Doc {
+        if e.entries.is_empty() {
+            let dangling_comments = self.all_dangling(e.span);
+            if dangling_comments.is_empty() {
+                return Doc::text("[]");
             }
-        });
 
-        if only_entries && !e.trailing_comma && !any_inline_comments {
-            let items: Vec<ListItem> = e
-                .entries()
-                .map(|entry| ListItem {
-                    content: self.expr_to_doc(&entry.value),
-                    trailing_comments: Vec::new(),
-                })
-                .collect();
-            return self.format_list("[", "]", items, &[], false);
+            let mut inner = Vec::new();
+            for (i, c) in dangling_comments.iter().enumerate() {
+                if i > 0 {
+                    inner.push(Doc::HardLine);
+                }
+
+                inner.push(self.comment_to_doc(c));
+            }
+
+            return Doc::concat(vec![
+                Doc::text("["),
+                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+                Doc::HardLine,
+                Doc::text("]"),
+            ]);
         }
 
-        self.format_array_multiline(e)
+        let must_break =
+            e.trailing_comma || (self.spans_multiple_lines(e.span) && self.has_comments_in(e.span));
+
+        if must_break {
+            return self.format_array_multiline(e);
+        }
+
+        let items: Vec<ListItem> = e
+            .entries
+            .iter()
+            .map(|entry| ListItem {
+                content: self.expr_to_doc(&entry.value),
+                trailing_comments: Vec::new(),
+            })
+            .collect();
+
+        self.format_list("[", "]", items, &[], false)
     }
 
-    /// Multi-line array body. Walks `members` interleaving entries, comments,
-    /// and blank lines, the same shape as [`format_dict_multiline`].
-    fn format_array_multiline(&self, e: &monkey_c_parser::ast::ArrayExpr) -> Doc {
-        let entries: Vec<&ArrayEntry> = e.entries().collect();
-        let last_entry_idx = entries.len().saturating_sub(1);
-        let mut entry_seen = 0usize;
-
-        let mut inner: Vec<Doc> = Vec::new();
-        let mut pending_blank = false;
-        let mut first = true;
-
-        for member in &e.members {
-            match member {
-                ArrayMember::BlankLine => {
-                    pending_blank = true;
-                }
-                ArrayMember::Comment(c) => {
-                    if !first {
-                        inner.push(if pending_blank {
-                            Doc::BlankLine
-                        } else {
-                            Doc::HardLine
-                        });
-                    }
-                    pending_blank = false;
-                    inner.push(if c.is_block {
-                        self.block_comment_to_doc(&c.text)
-                    } else {
-                        Doc::text(format!("//{}", c.text))
-                    });
-                    first = false;
-                }
-                ArrayMember::Entry(entry) => {
-                    if !first {
-                        inner.push(if pending_blank {
-                            Doc::BlankLine
-                        } else {
-                            Doc::HardLine
-                        });
-                    }
-                    pending_blank = false;
-
-                    let mut parts = vec![self.expr_to_doc(&entry.value)];
-                    let is_last = entry_seen == last_entry_idx;
-                    if !is_last || e.trailing_comma {
-                        parts.push(Doc::text(","));
-                    }
-                    for c in &entry.trailing_comments {
-                        parts.push(Doc::text(" "));
-                        parts.push(self.stmt_to_doc(c));
-                    }
-                    inner.push(Doc::Concat(parts));
-                    entry_seen += 1;
-                    first = false;
-                }
-            }
-        }
-
-        Doc::concat(vec![
-            Doc::text("["),
-            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-            Doc::HardLine,
-            Doc::text("]"),
-        ])
+    /// Multi-line array body. See [`Self::format_collection_multiline`].
+    fn format_array_multiline(&self, e: &ArrayExpr) -> Doc {
+        self.format_collection_multiline(
+            e.span,
+            &e.entries,
+            e.trailing_comma,
+            "[",
+            "]",
+            |entry| entry.value.span().start,
+            |entry| &entry.value,
+            |_| Doc::Empty,
+        )
     }
 
-    /// Format a bracketed list with the magic trailing comma rule:
+    /// Format a bracketed list of items.
     /// - trailing comma → always multi-line, comma preserved after last item
     /// - no trailing comma → try flat; break only if the line would exceed [`self.line_width`]
     ///
@@ -1091,40 +1432,47 @@ impl Formatter {
     ///
     /// When [`align_dict_pairs`](Self::align_dict_pairs) is on, key columns
     /// are padded so `=>` operators line up across all entries.
-    fn format_dict(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
-        // Empty dict — single token.
-        if e.members.is_empty() {
-            return Doc::text("{}");
+    fn format_dict(&self, e: &DictExpr) -> Doc {
+        // Empty dict — single token unless there are dangling comments
+        // inside the braces.
+        if e.entries.is_empty() {
+            let dangling_comments = self.all_dangling(e.span);
+            if dangling_comments.is_empty() {
+                return Doc::text("{}");
+            }
+            let mut inner = Vec::new();
+            for (i, c) in dangling_comments.iter().enumerate() {
+                if i > 0 {
+                    inner.push(Doc::HardLine);
+                }
+                inner.push(self.comment_to_doc(c));
+            }
+            return Doc::concat(vec![
+                Doc::text("{"),
+                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+                Doc::HardLine,
+                Doc::text("}"),
+            ]);
         }
 
-        // Inline shortcut: only key-value entries, no trailing comma, no
-        // comments. Wadler-Lindig group decides flat vs break.
-        let only_entries = e.members.iter().all(|m| matches!(m, DictMember::Entry(_)));
-        let any_inline_comments = e.members.iter().any(|m| {
-            if let DictMember::Entry(entry) = m {
-                !entry.trailing_comments.is_empty()
-            } else {
-                false
-            }
-        });
-        if only_entries && !e.trailing_comma && !any_inline_comments {
-            if self.align_dict_pairs {
-                // Aligned mode: fit on one line if possible, otherwise break
-                // multi-line with column-padded keys.
-                return self.format_dict_aligned_or_inline(e);
-            }
-            return self.format_dict_inline_or_break(e);
+        let must_break =
+            e.trailing_comma || (self.spans_multiple_lines(e.span) && self.has_comments_in(e.span));
+
+        if must_break {
+            return self.format_dict_multiline(e);
         }
 
-        self.format_dict_multiline(e)
+        if self.align_dict_pairs {
+            return self.format_dict_aligned_or_inline(e);
+        }
+        self.format_dict_inline_or_break(e)
     }
 
     /// Aligned-mode dict with no comments / trailing comma. Renders inline
     /// if it fits, otherwise breaks multi-line with `=>` columns aligned.
-    fn format_dict_aligned_or_inline(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
-        let entries: Vec<&DictEntry> = e.entries().collect();
+    fn format_dict_aligned_or_inline(&self, e: &DictExpr) -> Doc {
         let mut flat_inner = Vec::new();
-        for (i, entry) in entries.iter().enumerate() {
+        for (i, entry) in e.entries.iter().enumerate() {
             if i > 0 {
                 flat_inner.push(Doc::text(", "));
             }
@@ -1144,119 +1492,161 @@ impl Formatter {
         Doc::Group(vec![Doc::flat_or_break(flat_doc, break_doc)])
     }
 
-    /// Multi-line dict body. Walks `members` interleaving entries, comments,
-    /// and blank lines.
-    fn format_dict_multiline(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
-        let entries: Vec<&DictEntry> = e
-            .members
-            .iter()
-            .filter_map(|m| match m {
-                DictMember::Entry(entry) => Some(entry),
-                _ => None,
-            })
-            .collect();
-        let last_entry_idx = entries.len().saturating_sub(1);
-        let mut entry_seen = 0usize;
-
-        // Pre-compute key docs and (for alignment) the max flat key width.
-        let aligned = self.align_dict_pairs && !entries.is_empty();
+    /// Multi-line dict body. See [`Self::format_collection_multiline`].
+    fn format_dict_multiline(&self, e: &DictExpr) -> Doc {
+        let aligned = self.align_dict_pairs && !e.entries.is_empty();
         let max_key_width = if aligned {
-            entries
+            e.entries
                 .iter()
-                .filter_map(|entry| doc::flat_width(&self.expr_to_doc(&entry.key)))
+                .filter_map(|entry| doc::flat_width(&self.expr_inner_to_doc(&entry.key)))
                 .max()
                 .unwrap_or(0)
         } else {
             0
         };
 
+        self.format_collection_multiline(
+            e.span,
+            &e.entries,
+            e.trailing_comma,
+            "{",
+            "}",
+            |entry| entry.key.span().start,
+            |entry| &entry.value,
+            |entry| {
+                let key_doc = self.expr_to_doc(&entry.key);
+                let padding = if aligned {
+                    doc::flat_width(&self.expr_inner_to_doc(&entry.key))
+                        .map(|w| " ".repeat(max_key_width.saturating_sub(w)))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+
+                Doc::concat(vec![key_doc, Doc::Text(padding), Doc::text(" => ")])
+            },
+        )
+    }
+
+    /// Render an array- or dict-style multi-line collection body. Merges
+    /// `entries` with `self.all_dangling(span)` in source order, emits
+    /// blank-line-preserving gaps when `trailing_comma` is `true`, and wraps
+    /// the result in `open` … `close`.
+    ///
+    /// `start_of` returns the entry's source-start (used for ordering against
+    /// standalone comments). `value_of` returns the expression that carries
+    /// trailing comments and is wrapped with leading comments. `head_of`
+    /// returns the prefix emitted before the value (empty for arrays, the
+    /// `key padding => ` text for dicts).
+    #[allow(clippy::too_many_arguments)]
+    fn format_collection_multiline<E>(
+        &self,
+        span: Span,
+        entries: &[E],
+        trailing_comma: bool,
+        open: &str,
+        close: &str,
+        start_of: impl Fn(&E) -> usize,
+        value_of: impl Fn(&E) -> &Expr,
+        head_of: impl Fn(&E) -> Doc,
+    ) -> Doc {
+        let mut inside_comments = self.all_dangling(span);
+        inside_comments.sort_by_key(|c| c.span.start);
+        let mut comments_iter = inside_comments.iter().peekable();
+
+        let last_idx = entries.len().saturating_sub(1);
         let mut inner: Vec<Doc> = Vec::new();
-        let mut pending_blank = false;
-        let mut first = true;
+        let mut prev_end: Option<usize> = None;
 
-        for member in &e.members {
-            match member {
-                DictMember::BlankLine => {
-                    pending_blank = true;
-                }
-                DictMember::Comment(c) => {
-                    if !first {
-                        inner.push(if pending_blank {
-                            Doc::BlankLine
-                        } else {
-                            Doc::HardLine
-                        });
-                    }
-                    pending_blank = false;
-                    inner.push(if c.is_block {
-                        self.block_comment_to_doc(&c.text)
-                    } else {
-                        Doc::text(format!("//{}", c.text))
-                    });
-                    first = false;
-                }
-                DictMember::Entry(entry) => {
-                    if !first {
-                        inner.push(if pending_blank {
-                            Doc::BlankLine
-                        } else {
-                            Doc::HardLine
-                        });
-                    }
-                    pending_blank = false;
+        for (i, entry) in entries.iter().enumerate() {
+            let entry_start = start_of(entry);
 
-                    let key_doc = self.expr_to_doc(&entry.key);
-                    let padding = if aligned {
-                        doc::flat_width(&key_doc)
-                            .map(|w| " ".repeat(max_key_width - w))
-                            .unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-
-                    let mut parts = vec![
-                        key_doc,
-                        Doc::Text(padding),
-                        Doc::text(" => "),
-                        self.expr_to_doc(&entry.value),
-                    ];
-
-                    let is_last = entry_seen == last_entry_idx;
-                    if !is_last || e.trailing_comma {
-                        parts.push(Doc::text(","));
-                    }
-                    for c in &entry.trailing_comments {
-                        parts.push(Doc::text(" "));
-                        parts.push(self.stmt_to_doc(c));
-                    }
-                    inner.push(Doc::Concat(parts));
-                    entry_seen += 1;
-                    first = false;
-                }
+            // Emit any standalone comments that come before this entry.
+            while comments_iter
+                .peek()
+                .is_some_and(|c| c.span.start < entry_start)
+            {
+                let c = comments_iter.next().unwrap();
+                self.push_gap(&mut inner, prev_end, c.span.start, trailing_comma);
+                inner.push(self.comment_to_doc(c));
+                prev_end = Some(c.span.end);
             }
+
+            self.push_gap(&mut inner, prev_end, entry_start, trailing_comma);
+
+            let value = value_of(entry);
+            let value_span = *value.span();
+            let mut parts = vec![head_of(entry), self.expr_with_leading(value)];
+            if i != last_idx || trailing_comma {
+                parts.push(Doc::text(","));
+            }
+
+            let value_trailing = self.trailing_doc(value_span);
+            if !matches!(value_trailing, Doc::Empty) {
+                parts.push(value_trailing);
+            }
+
+            // Effective end includes a same-line trailing comment so the next
+            // gap is measured from past it.
+            let eff_end = self
+                .trailing(value_span)
+                .last()
+                .map(|c| c.span.end)
+                .unwrap_or(value_span.end);
+
+            inner.push(Doc::Concat(parts));
+            prev_end = Some(eff_end);
+        }
+
+        // Drain any standalone comments after the last entry.
+        for c in comments_iter {
+            self.push_gap(&mut inner, prev_end, c.span.start, trailing_comma);
+            inner.push(self.comment_to_doc(c));
+            prev_end = Some(c.span.end);
         }
 
         Doc::concat(vec![
-            Doc::text("{"),
+            Doc::text(open.to_string()),
             Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
             Doc::HardLine,
-            Doc::text("}"),
+            Doc::text(close.to_string()),
         ])
+    }
+
+    /// Push the inter-item gap to `inner`. When `preserve_blanks` is `true`,
+    /// the source's blank-line count between `prev_end` and `next_start`
+    /// drives whether to emit [`Doc::BlankLine`] or [`Doc::HardLine`];
+    /// otherwise always [`Doc::HardLine`].
+    fn push_gap(
+        &self,
+        inner: &mut Vec<Doc>,
+        prev_end: Option<usize>,
+        next_start: usize,
+        preserve_blanks: bool,
+    ) {
+        let Some(prev) = prev_end else { return };
+
+        if preserve_blanks {
+            let prev_span = Span {
+                start: 0,
+                end: prev,
+            };
+            let next_span = Span {
+                start: next_start,
+                end: next_start,
+            };
+
+            inner.push(self.gap_between_spans(Some(&prev_span), Some(&next_span)));
+        } else {
+            inner.push(Doc::HardLine);
+        }
     }
 
     /// Render an all-entries, no-comment dict either inline or broken via
     /// Wadler-Lindig group decision.
-    fn format_dict_inline_or_break(&self, e: &monkey_c_parser::ast::DictExpr) -> Doc {
-        let entries: Vec<&DictEntry> = e
-            .members
-            .iter()
-            .filter_map(|m| match m {
-                DictMember::Entry(entry) => Some(entry),
-                _ => None,
-            })
-            .collect();
-
-        let items: Vec<ListItem> = entries
+    fn format_dict_inline_or_break(&self, e: &DictExpr) -> Doc {
+        let items: Vec<ListItem> = e
+            .entries
             .iter()
             .map(|entry| ListItem {
                 content: Doc::concat(vec![
@@ -1273,11 +1663,7 @@ impl Formatter {
 
     /// Return a [`Doc::BlankLine`] if the original source had at least one blank
     /// line between these two spans, otherwise [`Doc::HardLine`].
-    fn gap_between_spans(
-        &self,
-        prev_span: Option<&monkey_c_parser::ast::Span>,
-        next_span: Option<&monkey_c_parser::ast::Span>,
-    ) -> Doc {
+    fn gap_between_spans(&self, prev_span: Option<&Span>, next_span: Option<&Span>) -> Doc {
         let blanks = match (prev_span, next_span) {
             (Some(prev), Some(next)) if prev.end > 0 && next.start > prev.end => self
                 .line_index

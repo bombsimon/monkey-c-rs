@@ -1,11 +1,10 @@
 use monkey_c_parser::ast::{
-    Ast, CaseLabel, ClassDecl, ConstDecl, DictMember, ElseBranch, Expr, FunctionDecl, Stmt,
-    VarDecl, Visibility,
+    Ast, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
 fn parse(src: &str) -> Ast {
-    Parser::new(src).parse().expect("should parse")
+    Parser::new(src).parse().expect("should parse").ast
 }
 
 fn parse_err(src: &str) -> ParserError {
@@ -13,7 +12,7 @@ fn parse_err(src: &str) -> ParserError {
 }
 
 fn document_nodes(src: &str) -> Vec<Ast> {
-    let Ast::Document(nodes) = parse(src) else {
+    let Ast::Document(nodes, _) = parse(src) else {
         panic!("expected Document");
     };
 
@@ -396,13 +395,23 @@ fn test_nested_module() {
 }
 
 #[test]
-fn test_comment_and_annotation_are_separate_nodes() {
-    let nodes = document_nodes("// a comment\nvar x = 1;");
-    assert!(matches!(nodes[0], Ast::Comment(_, _)));
-    assert!(matches!(nodes[1], Ast::Variable(_)));
-
+fn test_annotation_is_a_separate_node() {
     let nodes = document_nodes("(:test)\nfunction foo() {}");
     assert!(matches!(nodes[0], Ast::Annotation(_, _)));
+}
+
+#[test]
+fn test_comments_live_in_side_table_not_in_ast() {
+    let out = Parser::new("// a comment\nvar x = 1;")
+        .parse()
+        .expect("parse");
+    let Ast::Document(nodes, _) = &out.ast else {
+        panic!("expected Document");
+    };
+    assert_eq!(nodes.len(), 1);
+    assert!(matches!(nodes[0], Ast::Variable(_)));
+    assert_eq!(out.comments.comments.len(), 1);
+    assert_eq!(out.comments.comments[0].text, " a comment");
 }
 
 #[test]
@@ -452,11 +461,14 @@ fn test_if_condition_with_member_access() {
     let Stmt::If(s) = &f.body.stmts[0] else {
         panic!("expected if");
     };
-    assert!(matches!(s.condition, Expr::Member(_)));
+    assert!(matches!(s.condition.inner, Expr::Member(_)));
 }
 
 #[test]
+#[allow(dead_code)]
 fn test_dict_entry_trailing_comments_parse() {
+    // Comment-slot fields have been removed; comments live in the CommentsMap.
+    // This test is preserved as a structural sanity check on dict parsing.
     let f = first_function("function f() { var x = {:a => 1, :b => 2, // note\n}; }");
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
@@ -467,12 +479,8 @@ fn test_dict_entry_trailing_comments_parse() {
     let Expr::Dict(d) = init.as_ref() else {
         panic!("expected dict");
     };
-    let entries: Vec<_> = d.entries().collect();
+    let entries: Vec<_> = d.entries.iter().collect();
     assert_eq!(entries.len(), 2);
-    assert!(entries[0].trailing_comments.is_empty());
-    // `// note` sits on the same source line as the comma after `:b => 2,`,
-    // so it stays attached as a trailing comment.
-    assert_eq!(entries[1].trailing_comments.len(), 1);
 }
 
 #[test]
@@ -487,9 +495,9 @@ fn test_empty_dict_with_tail_comment_parse() {
     let Expr::Dict(d) = init.as_ref() else {
         panic!("expected dict");
     };
-    assert_eq!(d.entries().count(), 0);
-    // The comment lives as a standalone member of the dict.
-    assert!(matches!(d.members.as_slice(), [DictMember::Comment(_)]));
+    // Standalone interior comments live in the CommentsMap, not in the
+    // entries list — empty dict has zero entries, comment is in the table.
+    assert!(d.entries.is_empty());
 }
 
 #[test]
@@ -505,15 +513,15 @@ fn test_dict_standalone_comment_between_entries() {
     let Expr::Dict(d) = init.as_ref() else {
         panic!("expected dict");
     };
-    // Members: Entry(a), Comment(// mid), Entry(b)
-    assert_eq!(d.members.len(), 3);
-    assert!(matches!(d.members[0], DictMember::Entry(_)));
-    assert!(matches!(d.members[1], DictMember::Comment(_)));
-    assert!(matches!(d.members[2], DictMember::Entry(_)));
+    // The standalone `// mid` comment lives in the CommentsMap; the dict only
+    // sees two entries.
+    assert_eq!(d.entries.len(), 2);
 }
 
 #[test]
-fn test_dict_blank_line_between_entries() {
+fn test_dict_blank_line_between_entries_does_not_add_members() {
+    // Blank lines are detected by the formatter from source spans, not by an
+    // AST marker. The parser sees two entries.
     let src = "function f() {\n    var x = {\n        :a => 1,\n\n        :b => 2,\n    };\n}";
     let f = first_function(src);
     let Stmt::Var(v) = &f.body.stmts[0] else {
@@ -525,13 +533,14 @@ fn test_dict_blank_line_between_entries() {
     let Expr::Dict(d) = init.as_ref() else {
         panic!("expected dict");
     };
-    // Members: Entry(a), BlankLine, Entry(b)
-    assert_eq!(d.members.len(), 3);
-    assert!(matches!(d.members[1], DictMember::BlankLine));
+    assert_eq!(d.entries.len(), 2);
 }
 
 #[test]
-fn test_if_else_with_trailing_comments() {
+fn test_if_else_chain_parses() {
+    // Comments between `}` and `else` live in the CommentsMap now (attached
+    // as trailing on the previous block's span). This test just makes sure
+    // the structural parse succeeds.
     let src = "function f() {\n\
                   if (a) { return 1; } // first\n\
                   else if (b) { return 2; } // second\n\
@@ -541,11 +550,7 @@ fn test_if_else_with_trailing_comments() {
     let Stmt::If(outer) = &f.body.stmts[0] else {
         panic!("expected if");
     };
-    assert_eq!(outer.trailing_comments.len(), 1);
-    let Some(ElseBranch::If(middle)) = &outer.else_branch else {
-        panic!("expected else-if");
-    };
-    assert_eq!(middle.trailing_comments.len(), 1);
+    assert!(matches!(outer.else_branch, Some(ElseBranch::If(_))));
 }
 
 #[test]
@@ -640,4 +645,44 @@ function f3() {
         Parser::new(program).parse().is_ok(),
         "failed to parse program"
     );
+}
+
+#[test]
+fn test_comment_table_collects_all_comments_in_source_order() {
+    let src = "\
+// a leading line comment
+var x = 1; // trailing
+/* a standalone block */
+function f() {
+    // inside
+    /* and here */ var y = 2; // tail
+}
+";
+    let output = Parser::new(src).parse().expect("should parse");
+    let texts: Vec<&str> = output
+        .comments
+        .comments
+        .iter()
+        .map(|c| c.text.as_str())
+        .collect();
+    assert_eq!(
+        texts,
+        vec![
+            " a leading line comment",
+            " trailing",
+            " a standalone block ",
+            " inside",
+            " and here ",
+            " tail",
+        ],
+        "comment table should contain every comment in source order",
+    );
+    // Sanity: block comments are marked as such.
+    let blocks: Vec<bool> = output
+        .comments
+        .comments
+        .iter()
+        .map(|c| c.is_block)
+        .collect();
+    assert_eq!(blocks, vec![false, false, true, false, true, false]);
 }
