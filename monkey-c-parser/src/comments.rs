@@ -234,14 +234,17 @@ fn attach_one(
     }
 
     // Nearest preceding node — latest-ending span entirely before the comment.
+    // Among same-end spans, prefer the *largest* (outermost) so a trailing
+    // comment attaches to the span the statement/clause renderer queries
+    // (e.g. `Stmt::Expr` for `x = 0; // C`, not the inner `LitExpr 0`).
+    // Mirrors the `next` selection's tiebreak below.
     let prev = spans
         .iter()
         .filter(|s| s.end <= comment.span.start)
-        // Among same-end spans, prefer the smallest (deepest).
         .min_by(|a, b| {
             b.end
                 .cmp(&a.end)
-                .then_with(|| (a.end - a.start).cmp(&(b.end - b.start)))
+                .then_with(|| (b.end - b.start).cmp(&(a.end - a.start)))
         })
         .copied();
 
@@ -744,19 +747,5 @@ mod tests {
             end: doy_end,
         };
         assert_eq!(comment_texts(map.leading(span)), vec![" step 2"]);
-    }
-
-    #[test]
-    fn trailing_on_left_subexpr_between_op_and_next_op() {
-        // `LEVEL == 0 /* INFO */ || LEVEL > 10` — comment is on same line as
-        // the `LEVEL == 0` subexpr's end, so it attaches as trailing on `0`.
-        let src = "function f() { if (a == 0 /* INFO */ || b > 10) {} }";
-        let map = attach(src);
-        let start = src.find("0 /*").unwrap();
-        let span = Span {
-            start,
-            end: start + 1,
-        };
-        assert_eq!(comment_texts(map.trailing(span)), vec![" INFO "]);
     }
 }

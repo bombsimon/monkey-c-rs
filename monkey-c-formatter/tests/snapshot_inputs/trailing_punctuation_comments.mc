@@ -1,0 +1,22 @@
+function f() {
+    x = 0; // tail of assign stmt
+    return 1; // tail of return
+    g(); // tail of call stmt
+}
+
+function g(a, b) {
+    h(
+        a, // tail of arg a
+        b,
+    );
+}
+
+function cond() {
+    if (LEVEL == 0 /* TRAILING */) {
+        x();
+    }
+
+    if (LEVEL == 0 /* INFO */ || LEVEL > 10) {
+        x();
+    }
+}

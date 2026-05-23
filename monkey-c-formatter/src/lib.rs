@@ -789,6 +789,16 @@ impl Formatter {
                 parts.push(self.expr_to_doc(operand));
             }
 
+            // The chain-flattening loop above emits each operand individually
+            // and bypasses the outer Binary's `expr_to_doc` wrap — so any
+            // trailing comment attached to the outer Binary's span needs to
+            // be appended here. (`if (a == 0 /* T */)`: comment attaches to
+            // `a == 0`, not `0`.)
+            let trailing = self.trailing_doc(*expr.span());
+            if !matches!(trailing, Doc::Empty) {
+                parts.push(trailing);
+            }
+
             return Doc::Concat(parts);
         }
 
@@ -1244,8 +1254,15 @@ impl Formatter {
     fn call_args_to_items(&self, args: &[CallArg]) -> Vec<ListItem> {
         args.iter()
             .map(|a| ListItem {
-                content: self.expr_to_doc(&a.value),
-                trailing_comments: Vec::new(),
+                content: self.expr_with_leading(&a.value),
+                // Trailing comments go in the slot rendered after the `,`,
+                // so `f(x, // tail\n  y)` doesn't put `// tail` before the
+                // comma (which would swallow it).
+                trailing_comments: self
+                    .trailing(*a.value.span())
+                    .into_iter()
+                    .map(|c| self.comment_to_doc(&c))
+                    .collect(),
             })
             .collect()
     }
