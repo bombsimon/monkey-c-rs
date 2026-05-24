@@ -1,0 +1,8 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/bling_prefixed_paths.mc
+---
+function f(x as $.Toybox.Lang.Number) as $.Lang.Boolean {
+    var log = new $.LogMonkey.Logger();
+    return log != null;
+}

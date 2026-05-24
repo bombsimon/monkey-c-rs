@@ -167,8 +167,14 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
-        let mut name = self.parse_identifier()?;
-        self.next_token_span();
+        let mut name = if self.current_token == token::Type::Bling {
+            self.next_token_span();
+            "$".to_string()
+        } else {
+            let n = self.parse_identifier()?;
+            self.next_token_span();
+            n
+        };
 
         while self.current_token == token::Type::Dot {
             self.next_token_span(); // consume dot
