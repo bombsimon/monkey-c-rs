@@ -1,11 +1,13 @@
 [package]
 name = "monkey-c-formatter"
-version = "0.2.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
-monkey-c-parser = { path = "../monkey-c-parser" }
+monkey-c-parser.workspace = true
 
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }

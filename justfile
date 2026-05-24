@@ -1,22 +1,14 @@
-crates := "monkey-c-formatter monkey-c-parser"
-
 _default:
   @just --list
 
-clippy: (_cmd 'cargo clippy --all-features --tests -- -D warnings')
+clippy:
+    cargo clippy --workspace --all-features --tests -- -D warnings
 
-doc: (_cmd 'RUSTDOCFLAGS="-D warnings" cargo doc --all-features --workspace --keep-going')
+doc:
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --keep-going
 
-format: (_cmd 'cargo fmt --all')
+format:
+    cargo fmt --all
 
-test: (_cmd 'cargo test --all-features')
-
-_cmd *args='':
-    #!/bin/sh
-    for f in {{crates}}
-    do
-      cd $f
-      {{args}}
-      cd -
-    done
-
+test:
+    cargo test --workspace --all-features
