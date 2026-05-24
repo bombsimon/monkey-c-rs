@@ -190,6 +190,20 @@ fn test_hex_literal() {
 }
 
 #[test]
+fn test_char_literal() {
+    assert_eq!(
+        tokens(r#"'a' 'B' '\n' '\'' '°'"#),
+        vec![
+            Type::Char("a".into()),
+            Type::Char("B".into()),
+            Type::Char("\n".into()),
+            Type::Char("'".into()),
+            Type::Char("°".into()),
+        ]
+    );
+}
+
+#[test]
 fn test_hex_long_literal() {
     assert_eq!(
         tokens("0x800l 0xCAFEl"),

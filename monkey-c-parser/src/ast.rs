@@ -220,6 +220,9 @@ pub enum LiteralValue {
     /// 64-bit floating point number (`d` suffix in source).
     Double(f64),
     String(String),
+    /// A character literal: `'a'`. Stores the decoded character(s) between
+    /// the single quotes.
+    Char(String),
     Boolean(bool),
     /// A symbol literal, e.g. `:mySymbol`.
     Symbol(String),

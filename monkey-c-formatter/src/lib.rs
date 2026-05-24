@@ -1287,6 +1287,7 @@ impl Formatter {
                 LiteralValue::Float(v) => with_decimal_point(&v.to_string()),
                 LiteralValue::Double(v) => format!("{}d", with_decimal_point(&v.to_string())),
                 LiteralValue::String(v) => format!("\"{}\"", escape_string(v)),
+                LiteralValue::Char(v) => format!("'{}'", escape_char(v)),
                 LiteralValue::Boolean(v) => v.to_string(),
                 LiteralValue::Symbol(v) => format!(":{v}"),
                 LiteralValue::Null => "null".to_string(),
@@ -1759,15 +1760,28 @@ fn with_decimal_point(s: &str) -> String {
 /// newline, etc.), so emitting the stored value verbatim would produce invalid
 /// source. Re-encode the same set the lexer recognises.
 fn escape_string(s: &str) -> String {
+    escape_quoted(s, '"')
+}
+
+/// Same as [`escape_string`] but escapes single quotes — used for character
+/// literals (`'a'`).
+fn escape_char(s: &str) -> String {
+    escape_quoted(s, '\'')
+}
+
+fn escape_quoted(s: &str, quote: char) -> String {
     let mut out = String::with_capacity(s.len() + 2);
 
     for c in s.chars() {
         match c {
             '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            _ if c == quote => {
+                out.push('\\');
+                out.push(c);
+            }
             _ => out.push(c),
         }
     }

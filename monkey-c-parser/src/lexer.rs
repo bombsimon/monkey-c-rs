@@ -159,6 +159,36 @@ impl<'a> Lexer<'a> {
         String::from_utf8(bytes).unwrap_or_default()
     }
 
+    fn read_char_literal(&mut self) -> String {
+        let mut bytes: Vec<u8> = Vec::new();
+
+        loop {
+            match self.ch {
+                b'\'' => break,
+                0 => break,
+                b'\\' => {
+                    self.read_char();
+
+                    match self.ch {
+                        b'n' => bytes.push(b'\n'),
+                        b'r' => bytes.push(b'\r'),
+                        b't' => bytes.push(b'\t'),
+                        b'\\' => bytes.push(b'\\'),
+                        b'\'' => bytes.push(b'\''),
+                        _ => bytes.push(self.ch),
+                    }
+                }
+                _ => bytes.push(self.ch),
+            }
+
+            self.read_char();
+        }
+
+        self.read_char(); // advance past closing quote
+
+        String::from_utf8(bytes).unwrap_or_default()
+    }
+
     fn read_comment(&mut self) -> String {
         let position = self.position;
 
@@ -339,6 +369,11 @@ impl<'a> Lexer<'a> {
                 self.read_char(); // Move past opening quote
                 let content = self.read_string();
                 return (start, token::Type::String(content), self.position);
+            }
+            b'\'' => {
+                self.read_char(); // Move past opening quote
+                let content = self.read_char_literal();
+                return (start, token::Type::Char(content), self.position);
             }
             b'$' => (token::Type::Bling, 1),
             0 => (token::Type::Eof, 0),

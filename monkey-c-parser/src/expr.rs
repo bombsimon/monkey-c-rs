@@ -526,6 +526,15 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
+            token::Type::Char(value) => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Lit(LitExpr {
+                    value: LiteralValue::Char(value),
+                    span: Span { start, end },
+                }))
+            }
             token::Type::Boolean(value) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;

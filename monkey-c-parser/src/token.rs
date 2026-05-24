@@ -43,6 +43,7 @@ pub enum Type {
     // Literals
     /// A hex integer literal, stored as a string to support preserving casing.
     Boolean(bool),
+    Char(String),
     Double(f64),
     Float(f32),
     Hex(String),
@@ -164,6 +165,7 @@ impl std::fmt::Display for Type {
 
             // Literals
             Type::Boolean(b) => write!(f, "{b}"),
+            Type::Char(s) => write!(f, "'{s}'"),
             Type::Double(n) => write!(f, "{n}d"),
             Type::Float(n) => write!(f, "{n}"),
             Type::Hex(s) => write!(f, "0x{s}"),
