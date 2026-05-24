@@ -134,17 +134,17 @@ impl Parser<'_> {
 
     fn parse_bitwise_or(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_bitwise_xor()?;
-        self.handle_binary_operator(expr, &[token::Type::BitOr])
+        self.handle_binary_operator(expr, &[token::Type::BitOr], Self::parse_bitwise_xor)
     }
 
     fn parse_bitwise_xor(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_bitwise_and()?;
-        self.handle_binary_operator(expr, &[token::Type::BitXor])
+        self.handle_binary_operator(expr, &[token::Type::BitXor], Self::parse_bitwise_and)
     }
 
     fn parse_bitwise_and(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_equality()?;
-        self.handle_binary_operator(expr, &[token::Type::BitAnd])
+        self.handle_binary_operator(expr, &[token::Type::BitAnd], Self::parse_equality)
     }
 
     fn handle_equality_operator(
@@ -225,13 +225,23 @@ impl Parser<'_> {
 
     fn parse_shift(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_term()?;
-        self.handle_binary_operator(expr, &[token::Type::LeftShift, token::Type::RightShift])
+        self.handle_binary_operator(
+            expr,
+            &[token::Type::LeftShift, token::Type::RightShift],
+            Self::parse_term,
+        )
     }
 
+    /// Build a left-associative chain at one precedence level: keeps folding
+    /// `<left> <op> <right>` while the current token is in `operators`. The
+    /// right-hand side is parsed by `parse_operand` — typically the parser
+    /// for the next-tighter precedence level. Passing the same-level parser
+    /// would yield right-associative parsing.
     fn handle_binary_operator(
         &mut self,
         left: Expr,
         operators: &[token::Type],
+        parse_operand: fn(&mut Self) -> Result<Expr, ParserError>,
     ) -> Result<Expr, ParserError> {
         let mut expr = left;
         while self.current_token_is(operators) {
@@ -253,7 +263,7 @@ impl Parser<'_> {
                 _ => unreachable!(),
             };
 
-            let right = self.parse_factor()?;
+            let right = parse_operand(self)?;
             let end = right.span().end;
 
             expr = Expr::Binary(BinaryExpr {
@@ -269,7 +279,11 @@ impl Parser<'_> {
 
     fn parse_term(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_factor()?;
-        self.handle_binary_operator(expr, &[token::Type::Plus, token::Type::Minus])
+        self.handle_binary_operator(
+            expr,
+            &[token::Type::Plus, token::Type::Minus],
+            Self::parse_factor,
+        )
     }
 
     fn parse_factor(&mut self) -> Result<Expr, ParserError> {
@@ -277,6 +291,7 @@ impl Parser<'_> {
         self.handle_binary_operator(
             expr,
             &[token::Type::Star, token::Type::Slash, token::Type::Percent],
+            Self::parse_unary,
         )
     }
 

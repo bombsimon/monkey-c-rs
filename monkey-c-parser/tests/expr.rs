@@ -364,3 +364,57 @@ fn test_complex_expressions_parse() {
         assert!(Parser::new(src).parse().is_ok(), "failed to parse: {src}");
     }
 }
+
+/// Pin down precedence between adjacent levels: an outer operator with a
+/// tighter operator on the RHS should nest the tighter one inside. Together
+/// with the existing `1 + 2 * 3` case in `test_operator_precedence`, this
+/// covers each adjacent pair in the Java-style chain.
+#[test]
+fn test_operator_precedence_chain() {
+    let cases = [
+        // (src, outer op, inner op)
+        ("a + b * c", BinaryOperator::Add, BinaryOperator::Mul),
+        ("a << b + c", BinaryOperator::LeftShift, BinaryOperator::Add),
+        ("a > b << c", BinaryOperator::Gt, BinaryOperator::LeftShift),
+        ("a == b > c", BinaryOperator::Eq, BinaryOperator::Gt),
+        ("a & b == c", BinaryOperator::BitAnd, BinaryOperator::Eq),
+        ("a ^ b & c", BinaryOperator::BitXor, BinaryOperator::BitAnd),
+        ("a | b ^ c", BinaryOperator::BitOr, BinaryOperator::BitXor),
+        ("a && b | c", BinaryOperator::And, BinaryOperator::BitOr),
+        ("a || b && c", BinaryOperator::Or, BinaryOperator::And),
+    ];
+
+    for (src, outer_op, inner_op) in cases {
+        let expr = parse_expr(src);
+        let Expr::Binary(outer) = &expr else {
+            panic!("`{src}`: expected outer Binary");
+        };
+        assert_eq!(outer.operator, outer_op, "outer op for `{src}`");
+        let Expr::Binary(rhs) = &*outer.right else {
+            panic!("`{src}`: expected RHS Binary");
+        };
+        assert_eq!(rhs.operator, inner_op, "inner op for `{src}`");
+    }
+}
+
+/// Left-associative operators should nest the leftmost pair deepest.
+#[test]
+fn test_left_associativity() {
+    for (src, op) in [
+        ("a - b - c", BinaryOperator::Sub),
+        ("a / b / c", BinaryOperator::Div),
+        ("a << b << c", BinaryOperator::LeftShift),
+        ("a & b & c", BinaryOperator::BitAnd),
+        ("a | b | c", BinaryOperator::BitOr),
+    ] {
+        let expr = parse_expr(src);
+        let Expr::Binary(outer) = &expr else {
+            panic!("`{src}`: expected outer Binary");
+        };
+        assert_eq!(outer.operator, op);
+        let Expr::Binary(lhs) = &*outer.left else {
+            panic!("`{src}`: expected LHS Binary (right-assoc would put it on the right)");
+        };
+        assert_eq!(lhs.operator, op);
+    }
+}
