@@ -17,8 +17,8 @@ struct Cli {
     #[arg(short, long, requires = "path")]
     write: bool,
 
-    /// Target line width before wrapping. Default 80.
-    #[arg(short = 'l', long, default_value_t = 80)]
+    /// Target line width before wrapping.
+    #[arg(short = 'l', long, default_value_t = 111)]
     line_width: usize,
 }
 
