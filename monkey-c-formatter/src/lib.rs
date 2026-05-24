@@ -5,8 +5,8 @@ use doc::{render, Doc};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
     DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, Expr, FloatLit, ForInit,
-    FunctionDecl, IfStmt, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt, TryStmt, Type,
-    TypeKind, UnaryOperator, VarDecl, Visibility,
+    FunctionDecl, IfStmt, InterfaceMember, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt,
+    TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::{attach_comments, CommentsMap, DanglingPlacement};
 use monkey_c_parser::line_index::LineIndex;
@@ -660,6 +660,7 @@ impl Formatter {
                 entries,
                 trailing_comma,
             } => Self::inline_dict_type_to_doc(entries, *trailing_comma, suffix),
+            TypeKind::Interface { members } => Self::interface_type_to_doc(members, suffix),
         };
 
         if ty.alternatives.is_empty() {
@@ -733,6 +734,63 @@ impl Formatter {
             Doc::SoftLine,
             Doc::text(format!("}}{suffix}")),
         ])
+    }
+
+    /// Render an inline `interface { … }` type. Always multi-line; each
+    /// member is followed by `;`.
+    fn interface_type_to_doc(members: &[InterfaceMember], suffix: &str) -> Doc {
+        if members.is_empty() {
+            return Doc::text(format!("interface {{}}{suffix}"));
+        }
+
+        let mut inner = Vec::new();
+        for (i, member) in members.iter().enumerate() {
+            if i > 0 {
+                inner.push(Doc::HardLine);
+            }
+            inner.push(Self::interface_member_to_doc(member));
+        }
+
+        Doc::concat(vec![
+            Doc::text("interface {"),
+            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+            Doc::HardLine,
+            Doc::text(format!("}}{suffix}")),
+        ])
+    }
+
+    fn interface_member_to_doc(member: &InterfaceMember) -> Doc {
+        match member {
+            InterfaceMember::Function(m) => {
+                let mut parts = vec![
+                    Doc::text("function "),
+                    Doc::text(m.name.clone()),
+                    Doc::text("("),
+                ];
+                for (i, arg) in m.args.iter().enumerate() {
+                    if i > 0 {
+                        parts.push(Doc::text(", "));
+                    }
+                    parts.push(Doc::text(arg.name.clone()));
+                    if let Some(ty) = &arg.type_ {
+                        parts.push(Doc::text(" as "));
+                        parts.push(Self::type_to_doc(ty));
+                    }
+                }
+                parts.push(Doc::text(")"));
+                if let Some(ret) = &m.returns {
+                    parts.push(Doc::text(" as "));
+                    parts.push(Self::type_to_doc(ret));
+                }
+                parts.push(Doc::text(";"));
+                Doc::Concat(parts)
+            }
+            InterfaceMember::Variable(v) => Doc::concat(vec![
+                Doc::text(format!("var {} as ", v.name)),
+                Self::type_to_doc(&v.type_),
+                Doc::text(";"),
+            ]),
+        }
     }
 
     /// Render `<keyword> (cond)` followed by either a space (when `cond` fits

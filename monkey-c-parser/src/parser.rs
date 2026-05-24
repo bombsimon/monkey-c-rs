@@ -1,9 +1,10 @@
 use crate::ast::{
     Ast, Binding, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, CommentTable,
     ConstDecl, DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant,
-    ForHeader, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, ModuleDecl, Parens, ParseOutput,
-    ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind,
-    TypedefDecl, UsingDecl, VarDecl, Variable, Visibility, WhileStmt,
+    ForHeader, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, InterfaceMember,
+    InterfaceMethod, InterfaceVar, ModuleDecl, Parens, ParseOutput, ReturnStmt, Span, Stmt,
+    SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl,
+    Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -243,6 +244,10 @@ impl<'a> Parser<'a> {
                 entries,
                 trailing_comma,
             }
+        } else if self.current_token == token::Type::Interface {
+            TypeKind::Interface {
+                members: self.parse_interface_members()?,
+            }
         } else {
             let ident = self.parse_dotted_identifier()?;
 
@@ -280,6 +285,72 @@ impl<'a> Parser<'a> {
             kind,
             alternatives: Vec::new(),
             optional,
+        })
+    }
+
+    /// Parse the body of an `interface { … }` type — a `{`-delimited list of
+    /// function signatures and/or `var name as Type;` declarations, each
+    /// terminated by `;`. Consumes the surrounding braces.
+    fn parse_interface_members(&mut self) -> Result<Vec<InterfaceMember>, ParserError> {
+        self.assert_next_token(&[token::Type::Interface])?;
+        self.assert_next_token(&[token::Type::LBrace])?;
+
+        let mut members = Vec::new();
+        while self.current_token != token::Type::RBrace {
+            let member = match self.current_token {
+                token::Type::Function => InterfaceMember::Function(self.parse_interface_method()?),
+                token::Type::Var => InterfaceMember::Variable(self.parse_interface_var()?),
+                _ => {
+                    return Err(self.parse_error(format!(
+                        "Expected `function` or `var` in interface body, got {:?}",
+                        self.current_token
+                    )));
+                }
+            };
+            members.push(member);
+        }
+
+        self.assert_next_token(&[token::Type::RBrace])?;
+        Ok(members)
+    }
+
+    fn parse_interface_method(&mut self) -> Result<InterfaceMethod, ParserError> {
+        let start = self.current_token_start;
+        self.assert_next_token(&[token::Type::Function])?;
+        let name = self.parse_identifier()?;
+        self.next_token_span();
+        let args = self.parse_function_args()?;
+        let returns = if self.current_token == token::Type::As {
+            self.next_token_span();
+            Some(self.parse_type()?)
+        } else {
+            None
+        };
+        let end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(InterfaceMethod {
+            name,
+            args: args.inner,
+            returns,
+            span: Span { start, end },
+        })
+    }
+
+    fn parse_interface_var(&mut self) -> Result<InterfaceVar, ParserError> {
+        let start = self.current_token_start;
+        self.assert_next_token(&[token::Type::Var])?;
+        let name = self.parse_identifier()?;
+        self.next_token_span();
+        self.assert_next_token(&[token::Type::As])?;
+        let type_ = self.parse_type()?;
+        let end = self.current_token_end;
+        self.assert_next_token(&[token::Type::Semicolon])?;
+
+        Ok(InterfaceVar {
+            name,
+            type_,
+            span: Span { start, end },
         })
     }
 

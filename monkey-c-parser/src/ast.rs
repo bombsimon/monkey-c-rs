@@ -55,6 +55,38 @@ pub enum TypeKind {
         entries: Vec<DictTypeEntry>,
         trailing_comma: bool,
     },
+    /// An inline interface type: `interface { function foo() as X; var bar as Y; … }`.
+    /// Members are function signatures and/or `var` declarations — see
+    /// [`InterfaceMember`]. Used as a `typedef` right-hand side and as an
+    /// inline type annotation on function parameters.
+    Interface { members: Vec<InterfaceMember> },
+}
+
+/// One member inside an `interface { … }` type — either a function
+/// signature or a typed variable declaration.
+#[derive(Debug, PartialEq)]
+pub enum InterfaceMember {
+    Function(InterfaceMethod),
+    Variable(InterfaceVar),
+}
+
+/// One method signature inside an `interface { … }` type. Mirrors
+/// [`FunctionDecl`] minus the body.
+#[derive(Debug, PartialEq)]
+pub struct InterfaceMethod {
+    pub name: Ident,
+    pub args: Vec<Variable>,
+    pub returns: Option<Type>,
+    pub span: Span,
+}
+
+/// One variable declaration inside an `interface { … }` type. The type
+/// annotation is required since the variable has no initializer.
+#[derive(Debug, PartialEq)]
+pub struct InterfaceVar {
+    pub name: Ident,
+    pub type_: Type,
+    pub span: Span,
 }
 
 /// A single `key as Type` entry in an inline dictionary type.
@@ -78,7 +110,7 @@ impl Type {
     pub fn ident(&self) -> Option<&str> {
         match &self.kind {
             TypeKind::Named { ident, .. } => Some(ident),
-            TypeKind::Dict { .. } => None,
+            TypeKind::Dict { .. } | TypeKind::Interface { .. } => None,
         }
     }
 
@@ -87,7 +119,7 @@ impl Type {
     pub fn generic_params(&self) -> &[Type] {
         match &self.kind {
             TypeKind::Named { generic_params, .. } => generic_params,
-            TypeKind::Dict { .. } => &[],
+            TypeKind::Dict { .. } | TypeKind::Interface { .. } => &[],
         }
     }
 }
