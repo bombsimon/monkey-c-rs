@@ -26,6 +26,8 @@ pub(crate) fn binary_op(op: &BinaryOperator) -> &'static str {
         BinaryOperator::BitAnd => "&",
         BinaryOperator::BitOr => "|",
         BinaryOperator::BitXor => "^",
+        BinaryOperator::LeftShift => "<<",
+        BinaryOperator::RightShift => ">>",
     }
 }
 
@@ -55,5 +57,7 @@ pub(crate) fn assign_op(op: &AssignOperator) -> &'static str {
         AssignOperator::BitAndAssign => "&=",
         AssignOperator::BitOrAssign => "|=",
         AssignOperator::BitXorAssign => "^=",
+        AssignOperator::LeftShiftAssign => "<<=",
+        AssignOperator::RightShiftAssign => ">>=",
     }
 }

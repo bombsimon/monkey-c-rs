@@ -86,6 +86,24 @@ fn test_string_escape_sequences() {
 }
 
 #[test]
+fn test_shift_operators() {
+    assert_eq!(
+        tokens("x << 1 >> 2 <<= 3 >>= 4"),
+        vec![
+            Type::Identifier("x".into()),
+            Type::LeftShift,
+            Type::Number(1),
+            Type::RightShift,
+            Type::Number(2),
+            Type::LeftShiftAssign,
+            Type::Number(3),
+            Type::RightShiftAssign,
+            Type::Number(4),
+        ]
+    );
+}
+
+#[test]
 fn test_string_multibyte_utf8() {
     assert_eq!(
         tokens(r#"x = "°😀";"#),

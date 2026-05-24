@@ -155,6 +155,27 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Consume the `>` that closes a generic argument list, splitting a
+    /// greedy `>>` (`RightShift`) token in half so nested generics like
+    /// `Array<List<T>>` close correctly. The remaining `>` becomes the new
+    /// `current_token` for the outer level to consume.
+    pub(crate) fn consume_generic_close(&mut self) -> Result<(), ParserError> {
+        match self.current_token {
+            token::Type::Greater => {
+                self.next_token_span();
+                Ok(())
+            }
+            token::Type::RightShift => {
+                let mid = self.current_token_start + 1;
+                self.prev_token_end = mid;
+                self.current_token = token::Type::Greater;
+                self.current_token_start = mid;
+                Ok(())
+            }
+            _ => Err(self.parse_error(format!("Expected '>', got {:?}", self.current_token))),
+        }
+    }
+
     /// Build a [`ParserError`] pointing at the start of `current_token`.
     pub(crate) fn parse_error(&self, message: impl Into<String>) -> ParserError {
         let lc = self.line_index.line_col(self.current_token_start as u32);
@@ -237,7 +258,7 @@ impl<'a> Parser<'a> {
                     }
                 }
 
-                self.assert_next_token(&[token::Type::Greater])?;
+                self.consume_generic_close()?;
 
                 params
             } else {

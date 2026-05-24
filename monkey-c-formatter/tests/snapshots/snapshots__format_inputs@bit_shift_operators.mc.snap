@@ -1,0 +1,11 @@
+---
+source: tests/snapshots.rs
+input_file: tests/snapshot_inputs/bit_shift_operators.mc
+---
+function f() {
+    var x = 1 << 2;
+    var y = 8 >> 1;
+    x <<= 3;
+    y >>= 2;
+    var z = (a << b) | c;
+}

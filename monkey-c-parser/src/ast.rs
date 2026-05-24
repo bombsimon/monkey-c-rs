@@ -170,6 +170,8 @@ pub enum BinaryOperator {
     BitAnd,     // &
     BitOr,      // |
     BitXor,     // ^
+    LeftShift,  // <<
+    RightShift, // >>
 }
 
 /// A unary (single-operand) operator.
@@ -187,15 +189,17 @@ pub enum UnaryOperator {
 /// A compound assignment operator.
 #[derive(Debug, PartialEq)]
 pub enum AssignOperator {
-    Assign,       // =
-    AddAssign,    // +=
-    SubAssign,    // -=
-    MulAssign,    // *=
-    DivAssign,    // /=
-    ModAssign,    // %=
-    BitAndAssign, // &=
-    BitOrAssign,  // |=
-    BitXorAssign, // ^=
+    Assign,           // =
+    AddAssign,        // +=
+    SubAssign,        // -=
+    MulAssign,        // *=
+    DivAssign,        // /=
+    ModAssign,        // %=
+    BitAndAssign,     // &=
+    BitOrAssign,      // |=
+    BitXorAssign,     // ^=
+    LeftShiftAssign,  // <<=
+    RightShiftAssign, // >>=
 }
 
 /// A compile-time constant value.

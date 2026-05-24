@@ -46,10 +46,15 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek_char(&self) -> u8 {
-        if self.read_position >= self.input.len() {
+        self.peek_char_at(1)
+    }
+
+    fn peek_char_at(&self, offset: usize) -> u8 {
+        let pos = self.read_position + offset - 1;
+        if pos >= self.input.len() {
             0
         } else {
-            self.input.as_bytes()[self.read_position]
+            self.input.as_bytes()[pos]
         }
     }
 
@@ -254,6 +259,12 @@ impl<'a> Lexer<'a> {
             b'<' => {
                 if self.peek_char() == b'=' {
                     (token::Type::LessEqual, 2)
+                } else if self.peek_char() == b'<' {
+                    if self.peek_char_at(2) == b'=' {
+                        (token::Type::LeftShiftAssign, 3)
+                    } else {
+                        (token::Type::LeftShift, 2)
+                    }
                 } else {
                     (token::Type::Less, 1)
                 }
@@ -261,6 +272,12 @@ impl<'a> Lexer<'a> {
             b'>' => {
                 if self.peek_char() == b'=' {
                     (token::Type::GreaterEqual, 2)
+                } else if self.peek_char() == b'>' {
+                    if self.peek_char_at(2) == b'=' {
+                        (token::Type::RightShiftAssign, 3)
+                    } else {
+                        (token::Type::RightShift, 2)
+                    }
                 } else {
                     (token::Type::Greater, 1)
                 }

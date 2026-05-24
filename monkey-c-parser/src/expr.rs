@@ -28,7 +28,9 @@ impl Parser<'_> {
             | token::Type::ModAssign
             | token::Type::BitAndAssign
             | token::Type::BitOrAssign
-            | token::Type::BitXorAssign => {
+            | token::Type::BitXorAssign
+            | token::Type::LeftShiftAssign
+            | token::Type::RightShiftAssign => {
                 let operator_token = self.current_token.clone();
                 let start = expr.span().start;
                 self.next_token_span();
@@ -42,6 +44,8 @@ impl Parser<'_> {
                     token::Type::BitAndAssign => AssignOperator::BitAndAssign,
                     token::Type::BitOrAssign => AssignOperator::BitOrAssign,
                     token::Type::BitXorAssign => AssignOperator::BitXorAssign,
+                    token::Type::LeftShiftAssign => AssignOperator::LeftShiftAssign,
+                    token::Type::RightShiftAssign => AssignOperator::RightShiftAssign,
                     _ => unreachable!(),
                 };
                 let value = self.parse_expression()?;
@@ -181,7 +185,7 @@ impl Parser<'_> {
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_term()?;
+        let mut expr = self.parse_shift()?;
         while matches!(
             self.current_token,
             token::Type::Less
@@ -205,7 +209,7 @@ impl Parser<'_> {
                 _ => unreachable!(),
             };
 
-            let right = self.parse_term()?;
+            let right = self.parse_shift()?;
             let end = right.span().end;
 
             expr = Expr::Binary(BinaryExpr {
@@ -217,6 +221,11 @@ impl Parser<'_> {
         }
 
         Ok(expr)
+    }
+
+    fn parse_shift(&mut self) -> Result<Expr, ParserError> {
+        let expr = self.parse_term()?;
+        self.handle_binary_operator(expr, &[token::Type::LeftShift, token::Type::RightShift])
     }
 
     fn handle_binary_operator(
@@ -239,6 +248,8 @@ impl Parser<'_> {
                 token::Type::BitOr => BinaryOperator::BitOr,
                 token::Type::BitXor => BinaryOperator::BitXor,
                 token::Type::BitAnd => BinaryOperator::BitAnd,
+                token::Type::LeftShift => BinaryOperator::LeftShift,
+                token::Type::RightShift => BinaryOperator::RightShift,
                 _ => unreachable!(),
             };
 
@@ -766,7 +777,7 @@ impl Parser<'_> {
                 params.push(self.parse_type()?);
             }
         }
-        self.assert_next_token(&[token::Type::Greater])?;
+        self.consume_generic_close()?;
 
         Ok(params)
     }
