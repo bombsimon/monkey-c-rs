@@ -16,6 +16,10 @@ struct Cli {
     /// Rewrite the file in place instead of printing to stdout. Requires PATH.
     #[arg(short, long, requires = "path")]
     write: bool,
+
+    /// Target line width before wrapping. Default 80.
+    #[arg(short = 'l', long, default_value_t = 80)]
+    line_width: usize,
 }
 
 fn main() -> ExitCode {
@@ -46,7 +50,7 @@ fn run(cli: &Cli) -> io::Result<()> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("error: {e}")))?;
 
     let formatter = Formatter::new(&source)
-        .with_line_width(80)
+        .with_line_width(cli.line_width)
         .with_aligned_dict_pairs();
     let formatted = formatter.format(&output);
 
