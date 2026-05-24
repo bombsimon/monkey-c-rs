@@ -1,4 +1,4 @@
-use monkey_c_formatter::doc::{render, Doc};
+use monkey_c_formatter::doc::{Doc, render};
 
 #[test]
 fn test_text() {

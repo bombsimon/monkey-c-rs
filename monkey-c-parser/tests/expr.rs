@@ -10,9 +10,10 @@ fn parse_expr(src: &str) -> Expr {
     let ast = Parser::new(&wrapped).parse().expect("should parse").ast;
     if let Ast::Document(nodes, _) = ast
         && let Ast::Function(f) = nodes.into_iter().next().unwrap()
-            && let Stmt::Return(r) = f.body.stmts.into_iter().next().unwrap() {
-                return r.value.unwrap();
-            }
+        && let Stmt::Return(r) = f.body.stmts.into_iter().next().unwrap()
+    {
+        return r.value.unwrap();
+    }
     panic!("could not extract expression");
 }
 

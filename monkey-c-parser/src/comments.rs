@@ -121,23 +121,23 @@ pub fn attach_comments(ast: &Ast, table: &CommentTable, line_index: &LineIndex) 
 
         if let Some((prev_end_line, ref target)) = cluster
             && comment_start_line <= prev_end_line + 1
-                && is_own_line_comment(comment, &spans, line_index)
-            {
-                match target {
-                    AttachTarget::Trailing(span) => {
-                        map.trailing.entry(*span).or_default().push(i);
-                    }
-                    AttachTarget::Leading(span) => {
-                        map.leading.entry(*span).or_default().push(i);
-                    }
-                    AttachTarget::Dangling(span, placement) => {
-                        map.dangling.entry((*span, *placement)).or_default().push(i);
-                    }
+            && is_own_line_comment(comment, &spans, line_index)
+        {
+            match target {
+                AttachTarget::Trailing(span) => {
+                    map.trailing.entry(*span).or_default().push(i);
                 }
-
-                cluster = Some((comment_end_line, target.clone()));
-                continue;
+                AttachTarget::Leading(span) => {
+                    map.leading.entry(*span).or_default().push(i);
+                }
+                AttachTarget::Dangling(span, placement) => {
+                    map.dangling.entry((*span, *placement)).or_default().push(i);
+                }
             }
+
+            cluster = Some((comment_end_line, target.clone()));
+            continue;
+        }
 
         let outcome = attach_one(
             i,
@@ -233,17 +233,19 @@ fn attach_one(
     // grabbed as leading on the first body child.
     if let Some(c) = containing
         && let Some(&(header_end, brace)) = brace_starts.get(&c)
-            && comment.span.start >= header_end && comment.span.end <= brace {
-                map.dangling
-                    .entry((c, DanglingPlacement::BeforeBracket))
-                    .or_default()
-                    .push(i);
+        && comment.span.start >= header_end
+        && comment.span.end <= brace
+    {
+        map.dangling
+            .entry((c, DanglingPlacement::BeforeBracket))
+            .or_default()
+            .push(i);
 
-                return Some(AttachOutcome {
-                    target: AttachTarget::Dangling(c, DanglingPlacement::BeforeBracket),
-                    own_line: false,
-                });
-            }
+        return Some(AttachOutcome {
+            target: AttachTarget::Dangling(c, DanglingPlacement::BeforeBracket),
+            own_line: false,
+        });
+    }
 
     // Nearest preceding node — latest-ending span entirely before the comment.
     // Among same-end spans, prefer the *largest* (outermost) so a trailing

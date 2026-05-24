@@ -1,14 +1,14 @@
 pub mod doc;
 mod operators;
 
-use doc::{render, Doc};
+use doc::{Doc, render};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
     DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, Expr, FloatLit, ForInit,
     FunctionDecl, IfStmt, InterfaceMember, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt,
     TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
-use monkey_c_parser::comments::{attach_comments, CommentsMap, DanglingPlacement};
+use monkey_c_parser::comments::{CommentsMap, DanglingPlacement, attach_comments};
 use monkey_c_parser::line_index::LineIndex;
 use std::cell::RefCell;
 
@@ -1952,12 +1952,13 @@ fn escape_quoted(s: &str, quote: char) -> String {
 /// separators between siblings.
 fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<&'a Expr>) {
     if let Expr::Binary(be) = expr
-        && be.operator == *op {
-            collect_logical_chain(&be.left, op, out);
-            collect_logical_chain(&be.right, op, out);
+        && be.operator == *op
+    {
+        collect_logical_chain(&be.left, op, out);
+        collect_logical_chain(&be.right, op, out);
 
-            return;
-        }
+        return;
+    }
 
     out.push(expr);
 }
