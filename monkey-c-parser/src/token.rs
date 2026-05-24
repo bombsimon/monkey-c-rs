@@ -1,3 +1,5 @@
+use crate::ast::{DoubleLit, FloatLit};
+
 /// Language specification <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference>
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -44,8 +46,8 @@ pub enum Type {
     /// A hex integer literal, stored as a string to support preserving casing.
     Boolean(bool),
     Char(String),
-    Double(f64),
-    Float(f32),
+    Double(DoubleLit),
+    Float(FloatLit),
     Hex(String),
     HexLong(String),
     Long(i64),

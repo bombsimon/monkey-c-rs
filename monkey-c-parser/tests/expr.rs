@@ -1,5 +1,6 @@
 use monkey_c_parser::ast::{
-    AssignOperator, Ast, BinaryOperator, Expr, FunctionDecl, LiteralValue, Stmt, UnaryOperator,
+    AssignOperator, Ast, BinaryOperator, DoubleLit, Expr, FloatLit, FunctionDecl, LiteralValue,
+    Stmt, UnaryOperator,
 };
 use monkey_c_parser::parser::Parser;
 
@@ -38,8 +39,23 @@ fn test_literals() {
     for (src, expected) in [
         ("42", LiteralValue::Number(42)),
         ("42l", LiteralValue::Long(42)),
-        ("1.5", LiteralValue::Float(1.5)),
-        ("1.5d", LiteralValue::Double(1.5)),
+        (
+            "1.5",
+            LiteralValue::Float(FloatLit {
+                value: 1.5,
+                has_dot: true,
+                leading_dot: false,
+                has_suffix: false,
+            }),
+        ),
+        (
+            "1.5d",
+            LiteralValue::Double(DoubleLit {
+                value: 1.5,
+                has_dot: true,
+                leading_dot: false,
+            }),
+        ),
         ("true", LiteralValue::Boolean(true)),
         ("false", LiteralValue::Boolean(false)),
         ("null", LiteralValue::Null),

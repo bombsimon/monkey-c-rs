@@ -202,6 +202,46 @@ pub enum AssignOperator {
     RightShiftAssign, // >>=
 }
 
+/// A 32-bit floating point literal together with the source-form flags
+/// needed to round-trip it. The lexer parses `value` from the written digits;
+/// flags capture which surface form the user wrote so the formatter can
+/// re-emit the same shape (`0f`, `0.5`, `0.5f`, `.978`, `.5f`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct FloatLit {
+    pub value: f32,
+    /// Source contained a `.` (`0.5`, `.978`). False for integer-form
+    /// literals that gain Float-ness only through the `f` suffix (`0f`).
+    pub has_dot: bool,
+    /// Source omitted the leading zero (`.5`, `.5f`). Implies `has_dot`.
+    pub leading_dot: bool,
+    /// Source had an explicit `f` suffix.
+    pub has_suffix: bool,
+}
+
+/// A 64-bit floating point literal. Unlike [`FloatLit`], the `d` suffix is
+/// always required in source, so there is no `has_suffix` flag.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DoubleLit {
+    pub value: f64,
+    /// Source contained a `.` (`78.0d`). False for integer-form Double
+    /// literals (`78d`).
+    pub has_dot: bool,
+    /// Source omitted the leading zero (`.5d`). Implies `has_dot`.
+    pub leading_dot: bool,
+}
+
+impl std::fmt::Display for FloatLit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
+impl std::fmt::Display for DoubleLit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
 /// A compile-time constant value.
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
@@ -215,10 +255,12 @@ pub enum LiteralValue {
     /// A hex-formatted 64-bit integer literal (`0x…l`). Stores the raw digits
     /// so the formatter can preserve the original casing.
     HexLong(String),
-    /// 32-bit floating point number (no suffix on a decimal literal).
-    Float(f32),
-    /// 64-bit floating point number (`d` suffix in source).
-    Double(f64),
+    /// 32-bit floating point number. Source-form flags let the formatter
+    /// round-trip the exact written form (`0f`, `0.5`, `0.5f`, `.978`, `.5f`).
+    Float(FloatLit),
+    /// 64-bit floating point number. Source-form flags let the formatter
+    /// round-trip the exact written form (`78d`, `78.0d`, `.5d`).
+    Double(DoubleLit),
     String(String),
     /// A character literal: `'a'`. Stores the decoded character(s) between
     /// the single quotes.

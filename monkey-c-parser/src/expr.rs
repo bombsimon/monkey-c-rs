@@ -514,21 +514,21 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
-            token::Type::Float(value) => {
+            token::Type::Float(lit) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Float(value),
+                    value: LiteralValue::Float(lit),
                     span: Span { start, end },
                 }))
             }
-            token::Type::Double(value) => {
+            token::Type::Double(lit) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;
                 self.next_token_span();
                 Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Double(value),
+                    value: LiteralValue::Double(lit),
                     span: Span { start, end },
                 }))
             }

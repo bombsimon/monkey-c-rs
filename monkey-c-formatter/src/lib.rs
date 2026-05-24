@@ -4,9 +4,9 @@ mod operators;
 use doc::{render, Doc};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
-    DictExpr, DictTypeEntry, DictTypeKey, ElseBranch, EnumDecl, Expr, ForInit, FunctionDecl,
-    IfStmt, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt, TryStmt, Type, TypeKind,
-    UnaryOperator, VarDecl, Visibility,
+    DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, Expr, FloatLit, ForInit,
+    FunctionDecl, IfStmt, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt, TryStmt, Type,
+    TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::{attach_comments, CommentsMap, DanglingPlacement};
 use monkey_c_parser::line_index::LineIndex;
@@ -1284,8 +1284,8 @@ impl Formatter {
                 LiteralValue::Long(v) => format!("{v}l"),
                 LiteralValue::Hex(s) => format!("0x{s}"),
                 LiteralValue::HexLong(s) => format!("0x{s}l"),
-                LiteralValue::Float(v) => with_decimal_point(&v.to_string()),
-                LiteralValue::Double(v) => format!("{}d", with_decimal_point(&v.to_string())),
+                LiteralValue::Float(lit) => format_float_lit(lit),
+                LiteralValue::Double(lit) => format_double_lit(lit),
                 LiteralValue::String(v) => format!("\"{}\"", escape_string(v)),
                 LiteralValue::Char(v) => format!("'{}'", escape_char(v)),
                 LiteralValue::Boolean(v) => v.to_string(),
@@ -1754,6 +1754,56 @@ fn with_decimal_point(s: &str) -> String {
     } else {
         format!("{s}.0")
     }
+}
+
+/// Turn the canonical `0.978` form into the leading-dot `.978` form. The
+/// lexer only flags `leading_dot` on positive literals (a leading `-` is
+/// parsed as a unary expression), so stripping `0.` is sufficient.
+fn strip_leading_zero(s: &str) -> String {
+    s.strip_prefix("0.")
+        .map(|rest| format!(".{rest}"))
+        .unwrap_or_else(|| s.to_string())
+}
+
+/// Re-emit a [`FloatLit`] in the exact source form recorded by the lexer.
+/// Combines `has_dot`/`leading_dot`/`has_suffix` to reconstruct `0f`, `0.5`,
+/// `0.5f`, `.978`, `.5f`, etc.
+fn format_float_lit(lit: &FloatLit) -> String {
+    let body = if lit.has_dot {
+        let with_dot = with_decimal_point(&lit.value.to_string());
+        if lit.leading_dot {
+            strip_leading_zero(&with_dot)
+        } else {
+            with_dot
+        }
+    } else {
+        // Source had no `.`, so the literal is integer-valued — drop the
+        // trailing `.0` that `f32::to_string()` includes for whole numbers.
+        (lit.value as i64).to_string()
+    };
+
+    if lit.has_suffix {
+        format!("{body}f")
+    } else {
+        body
+    }
+}
+
+/// Re-emit a [`DoubleLit`] preserving its source style. Mirrors
+/// [`format_float_lit`] but the `d` suffix is always present.
+fn format_double_lit(lit: &DoubleLit) -> String {
+    let body = if lit.has_dot {
+        let with_dot = with_decimal_point(&lit.value.to_string());
+        if lit.leading_dot {
+            strip_leading_zero(&with_dot)
+        } else {
+            with_dot
+        }
+    } else {
+        (lit.value as i64).to_string()
+    };
+
+    format!("{body}d")
 }
 
 /// The lexer decodes escape sequences in string literals (`\"` → `"`, `\n` →

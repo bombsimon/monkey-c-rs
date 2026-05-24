@@ -1,3 +1,4 @@
+use monkey_c_parser::ast::FloatLit;
 use monkey_c_parser::lexer::Lexer;
 use monkey_c_parser::token::Type;
 
@@ -35,7 +36,12 @@ fn test_var_declaration() {
             Type::Var,
             Type::Identifier("x".into()),
             Type::Assign,
-            Type::Float(5.0),
+            Type::Float(FloatLit {
+                value: 5.0,
+                has_dot: true,
+                leading_dot: false,
+                has_suffix: false,
+            }),
             Type::Semicolon,
         ]
     );
@@ -190,6 +196,54 @@ fn test_hex_literal() {
 }
 
 #[test]
+fn test_float_suffix() {
+    assert_eq!(
+        tokens("0f 5f 0.5f"),
+        vec![
+            Type::Float(FloatLit {
+                value: 0.0,
+                has_dot: false,
+                leading_dot: false,
+                has_suffix: true,
+            }),
+            Type::Float(FloatLit {
+                value: 5.0,
+                has_dot: false,
+                leading_dot: false,
+                has_suffix: true,
+            }),
+            Type::Float(FloatLit {
+                value: 0.5,
+                has_dot: true,
+                leading_dot: false,
+                has_suffix: true,
+            }),
+        ]
+    );
+}
+
+#[test]
+fn test_leading_dot_float() {
+    assert_eq!(
+        tokens(".978 .5f"),
+        vec![
+            Type::Float(FloatLit {
+                value: 0.978,
+                has_dot: true,
+                leading_dot: true,
+                has_suffix: false,
+            }),
+            Type::Float(FloatLit {
+                value: 0.5,
+                has_dot: true,
+                leading_dot: true,
+                has_suffix: true,
+            }),
+        ]
+    );
+}
+
+#[test]
 fn test_char_literal() {
     assert_eq!(
         tokens(r#"'a' 'B' '\n' '\'' '°'"#),
@@ -326,7 +380,15 @@ fn test_integer_literal() {
 
 #[test]
 fn test_float_literal() {
-    assert_eq!(tokens("1.5"), vec![Type::Float(1.5)]);
+    assert_eq!(
+        tokens("1.5"),
+        vec![Type::Float(FloatLit {
+            value: 1.5,
+            has_dot: true,
+            leading_dot: false,
+            has_suffix: false,
+        })]
+    );
 }
 
 #[test]

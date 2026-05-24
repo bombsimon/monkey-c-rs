@@ -1,10 +1,11 @@
+use crate::ast::{DoubleLit, FloatLit};
 use crate::token;
 
 enum NumberLiteral {
     Number(String),
     Long(String),
-    Float(String),
-    Double(String),
+    Float(FloatLit),
+    Double(DoubleLit),
     Hex(String),
     HexLong(String),
 }
@@ -85,6 +86,7 @@ impl<'a> Lexer<'a> {
 
     fn read_number(&mut self) -> NumberLiteral {
         let start_position = self.position;
+        let leading_dot = self.ch == b'.';
 
         if self.ch == b'0' && matches!(self.peek_char(), b'x' | b'X') {
             self.read_n_chars(2); // consume `0x`
@@ -102,10 +104,10 @@ impl<'a> Lexer<'a> {
             return NumberLiteral::Hex(digits);
         }
 
-        let mut is_float = false;
+        let mut has_dot = false;
         while self.ch.is_ascii_digit() || self.ch == b'.' {
             if self.ch == b'.' {
-                is_float = true;
+                has_dot = true;
             }
             self.read_char();
         }
@@ -118,9 +120,27 @@ impl<'a> Lexer<'a> {
             }
             b'd' => {
                 self.read_char();
-                NumberLiteral::Double(text)
+                NumberLiteral::Double(DoubleLit {
+                    value: text.parse().unwrap_or(0.0),
+                    has_dot,
+                    leading_dot,
+                })
             }
-            _ if is_float => NumberLiteral::Float(text),
+            b'f' => {
+                self.read_char();
+                NumberLiteral::Float(FloatLit {
+                    value: text.parse().unwrap_or(0.0),
+                    has_dot,
+                    leading_dot,
+                    has_suffix: true,
+                })
+            }
+            _ if has_dot => NumberLiteral::Float(FloatLit {
+                value: text.parse().unwrap_or(0.0),
+                has_dot,
+                leading_dot,
+                has_suffix: false,
+            }),
             _ => NumberLiteral::Number(text),
         }
     }
@@ -358,7 +378,20 @@ impl<'a> Lexer<'a> {
             }
             b';' => (token::Type::Semicolon, 1),
             b',' => (token::Type::Comma, 1),
-            b'.' => (token::Type::Dot, 1),
+            b'.' => {
+                // `.978` — leading-zero-omitted float literal. `read_number`
+                // sets the `leading_dot` flag from `self.ch == b'.'` so we
+                // re-use the same path here.
+                if self.peek_char().is_ascii_digit() {
+                    let token_type = match self.read_number() {
+                        NumberLiteral::Float(lit) => token::Type::Float(lit),
+                        NumberLiteral::Double(lit) => token::Type::Double(lit),
+                        _ => unreachable!("leading `.` always produces a float-class literal"),
+                    };
+                    return (start, token_type, self.position);
+                }
+                (token::Type::Dot, 1)
+            }
             b'(' => (token::Type::LParen, 1),
             b')' => (token::Type::RParen, 1),
             b'{' => (token::Type::LBrace, 1),
@@ -389,8 +422,8 @@ impl<'a> Lexer<'a> {
                     let token_type = match self.read_number() {
                         NumberLiteral::Number(s) => token::Type::Number(s.parse().unwrap_or(0)),
                         NumberLiteral::Long(s) => token::Type::Long(s.parse().unwrap_or(0)),
-                        NumberLiteral::Float(s) => token::Type::Float(s.parse().unwrap_or(0.0)),
-                        NumberLiteral::Double(s) => token::Type::Double(s.parse().unwrap_or(0.0)),
+                        NumberLiteral::Float(lit) => token::Type::Float(lit),
+                        NumberLiteral::Double(lit) => token::Type::Double(lit),
                         NumberLiteral::Hex(s) => token::Type::Hex(s),
                         NumberLiteral::HexLong(s) => token::Type::HexLong(s),
                     };
