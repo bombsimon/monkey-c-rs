@@ -1,13 +1,11 @@
 [package]
-name = "monkey-c-formatter"
+name = "monkey-c-linter"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ariadne = "0.6"
 clap.workspace = true
 monkey-c-parser.workspace = true
-
-[dev-dependencies]
-insta = { version = "1", features = ["glob"] }

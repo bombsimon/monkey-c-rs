@@ -26,6 +26,16 @@ that produces a deterministic formatting experience similar to [ruff] and
 > inconsistencies but also input on the formatting algorithm. Please create an
 > issue for any bug or feature request.
 
+### `monkey-c-linter`
+
+A linter for [Monkey C] with machine-applicable fixes. See
+[`monkey-c-linter`][linter]
+
+Rules walk the AST produced by `monkey-c-parser` and emit diagnostics with
+optional `--fix` suggestions that patch source byte ranges directly. The
+linter is independent of the formatter and fixes don't reformat unrelated code.
+Run the formatter after `--fix` if you want whitespace normalised.
+
 ## Notes on AI
 
 For transparency: this project uses AI. Implementations are suggested by me,
@@ -38,6 +48,7 @@ This repository is licensed under the [MIT License][license]
 [Monkey C]: https://developer.garmin.com/connect-iq/monkey-c/
 [formatter]: monkey-c-formatter
 [license]: LICENSE
+[linter]: monkey-c-linter
 [parser]: monkey-c-parser
 [ruff]: https://github.com/astral-sh/ruff
 [rustfmt]: https://github.com/rust-lang/rustfmt
