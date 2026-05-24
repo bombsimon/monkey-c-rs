@@ -722,11 +722,15 @@ pub struct ClassDecl {
     pub span: Span,
 }
 
-/// An `enum { … }` declaration. Anonymous in Monkey C — each variant
-/// becomes a top-level constant mapping a [`Ident`] to a `Number`. Values
-/// are auto-incremented from the last explicit value (or 0 if none yet).
+/// An `enum [Name] { … }` declaration. The name is optional — anonymous
+/// enums simply introduce each variant as a top-level constant; named enums
+/// (`enum Dog { SPOT = "Spot", … }`) introduce a type that the variants
+/// belong to. Values are auto-incremented from the last explicit value
+/// (or 0 if none yet) for variants without an explicit `= value`.
 #[derive(Debug, PartialEq)]
 pub struct EnumDecl {
+    /// `Some` when the source had `enum Name {`; `None` for `enum {`.
+    pub name: Option<Ident>,
     pub variants: Vec<EnumVariant>,
     pub trailing_comma: bool,
     /// Byte offset of the body's opening `{`.

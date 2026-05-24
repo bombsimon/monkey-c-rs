@@ -365,8 +365,12 @@ impl Formatter {
         let before_bracket = self.before_bracket_doc(decl.span);
 
         let header_with = |close: &str| {
+            let prefix = match &decl.name {
+                Some(name) => format!("enum {name} "),
+                None => "enum ".to_string(),
+            };
             Doc::concat(vec![
-                Doc::text("enum "),
+                Doc::text(prefix),
                 before_bracket.clone(),
                 Doc::text(close.to_string()),
             ])

@@ -516,6 +516,15 @@ impl<'a> Parser<'a> {
 
     fn parse_enum_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `enum`
+
+        let name = if matches!(self.current_token, token::Type::Identifier(_)) {
+            let n = self.parse_identifier()?;
+            self.next_token_span();
+            Some(n)
+        } else {
+            None
+        };
+
         let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
 
@@ -572,6 +581,7 @@ impl<'a> Parser<'a> {
         self.assert_next_token(&[token::Type::RBrace])?;
 
         Ok(Ast::Enum(EnumDecl {
+            name,
             variants,
             trailing_comma,
             brace_start,
