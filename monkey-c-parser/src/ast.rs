@@ -618,6 +618,11 @@ pub struct SwitchCase {
     /// Statements until the next `case`/`default` or the closing `}`.
     /// Empty when the case immediately falls through to the next.
     pub stmts: Vec<Stmt>,
+    /// Span from `case`/`default` through the `:`. Used by the comment
+    /// attachment pass as the anchor for trailing comments that sit on the
+    /// same source line as `case X:` so they don't accidentally attach to
+    /// the inner `X` and render before the colon.
+    pub label_span: Span,
     pub span: Span,
 }
 

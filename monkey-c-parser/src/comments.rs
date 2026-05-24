@@ -602,6 +602,7 @@ fn collect_spans_stmt(
             collect_spans_expr(&s.discriminant.inner, out);
             for case in &s.cases {
                 out.push(case.span);
+                out.push(case.label_span);
 
                 if let CaseLabel::Value(e) = &case.label {
                     collect_spans_expr(e, out);

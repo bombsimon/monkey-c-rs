@@ -1179,6 +1179,8 @@ impl<'a> Parser<'a> {
                 )));
             }
         };
+
+        let colon_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Colon])?;
 
         let mut stmts = Vec::new();
@@ -1197,6 +1199,10 @@ impl<'a> Parser<'a> {
         Ok(SwitchCase {
             label,
             stmts,
+            label_span: Span {
+                start,
+                end: colon_end,
+            },
             span: Span { start, end },
         })
     }
