@@ -212,6 +212,9 @@ pub enum LiteralValue {
     /// A hex-formatted integer literal (`0x…`). Stores the raw digits so the
     /// formatter can preserve the original casing.
     Hex(String),
+    /// A hex-formatted 64-bit integer literal (`0x…l`). Stores the raw digits
+    /// so the formatter can preserve the original casing.
+    HexLong(String),
     /// 32-bit floating point number (no suffix on a decimal literal).
     Float(f32),
     /// 64-bit floating point number (`d` suffix in source).

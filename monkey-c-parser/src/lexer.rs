@@ -6,6 +6,7 @@ enum NumberLiteral {
     Float(String),
     Double(String),
     Hex(String),
+    HexLong(String),
 }
 
 pub struct Lexer<'a> {
@@ -92,7 +93,13 @@ impl<'a> Lexer<'a> {
                 self.read_char();
             }
 
-            return NumberLiteral::Hex(self.input[digits_start..self.position].to_string());
+            let digits = self.input[digits_start..self.position].to_string();
+            if self.ch == b'l' {
+                self.read_char();
+                return NumberLiteral::HexLong(digits);
+            }
+
+            return NumberLiteral::Hex(digits);
         }
 
         let mut is_float = false;
@@ -350,6 +357,7 @@ impl<'a> Lexer<'a> {
                         NumberLiteral::Float(s) => token::Type::Float(s.parse().unwrap_or(0.0)),
                         NumberLiteral::Double(s) => token::Type::Double(s.parse().unwrap_or(0.0)),
                         NumberLiteral::Hex(s) => token::Type::Hex(s),
+                        NumberLiteral::HexLong(s) => token::Type::HexLong(s),
                     };
                     (token_type, 0)
                 } else {

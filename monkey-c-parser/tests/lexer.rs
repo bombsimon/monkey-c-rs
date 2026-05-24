@@ -190,6 +190,14 @@ fn test_hex_literal() {
 }
 
 #[test]
+fn test_hex_long_literal() {
+    assert_eq!(
+        tokens("0x800l 0xCAFEl"),
+        vec![Type::HexLong("800".into()), Type::HexLong("CAFE".into()),]
+    );
+}
+
+#[test]
 fn test_annotation() {
     assert_eq!(
         tokens("(:test)\nfunction foo() {}"),

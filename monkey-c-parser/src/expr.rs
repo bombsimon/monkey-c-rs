@@ -490,6 +490,15 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
+            token::Type::HexLong(digits) => {
+                let start = self.current_token_start;
+                let end = self.current_token_end;
+                self.next_token_span();
+                Ok(Expr::Lit(LitExpr {
+                    value: LiteralValue::HexLong(digits),
+                    span: Span { start, end },
+                }))
+            }
             token::Type::Float(value) => {
                 let start = self.current_token_start;
                 let end = self.current_token_end;

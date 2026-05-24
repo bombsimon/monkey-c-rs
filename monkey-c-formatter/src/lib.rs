@@ -1283,6 +1283,7 @@ impl Formatter {
                 LiteralValue::Number(v) => v.to_string(),
                 LiteralValue::Long(v) => format!("{v}l"),
                 LiteralValue::Hex(s) => format!("0x{s}"),
+                LiteralValue::HexLong(s) => format!("0x{s}l"),
                 LiteralValue::Float(v) => with_decimal_point(&v.to_string()),
                 LiteralValue::Double(v) => format!("{}d", with_decimal_point(&v.to_string())),
                 LiteralValue::String(v) => format!("\"{}\"", escape_string(v)),
