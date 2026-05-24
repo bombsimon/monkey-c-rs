@@ -119,8 +119,8 @@ pub fn attach_comments(ast: &Ast, table: &CommentTable, line_index: &LineIndex) 
             .line_col(comment.span.end.saturating_sub(1) as u32)
             .line;
 
-        if let Some((prev_end_line, ref target)) = cluster {
-            if comment_start_line <= prev_end_line + 1
+        if let Some((prev_end_line, ref target)) = cluster
+            && comment_start_line <= prev_end_line + 1
                 && is_own_line_comment(comment, &spans, line_index)
             {
                 match target {
@@ -138,7 +138,6 @@ pub fn attach_comments(ast: &Ast, table: &CommentTable, line_index: &LineIndex) 
                 cluster = Some((comment_end_line, target.clone()));
                 continue;
             }
-        }
 
         let outcome = attach_one(
             i,
@@ -232,9 +231,9 @@ fn attach_one(
     // emit it between the header text and the opening `{`. Must run before
     // the same-line-on-next rule below, otherwise the comment would be
     // grabbed as leading on the first body child.
-    if let Some(c) = containing {
-        if let Some(&(header_end, brace)) = brace_starts.get(&c) {
-            if comment.span.start >= header_end && comment.span.end <= brace {
+    if let Some(c) = containing
+        && let Some(&(header_end, brace)) = brace_starts.get(&c)
+            && comment.span.start >= header_end && comment.span.end <= brace {
                 map.dangling
                     .entry((c, DanglingPlacement::BeforeBracket))
                     .or_default()
@@ -245,8 +244,6 @@ fn attach_one(
                     own_line: false,
                 });
             }
-        }
-    }
 
     // Nearest preceding node — latest-ending span entirely before the comment.
     // Among same-end spans, prefer the *largest* (outermost) so a trailing

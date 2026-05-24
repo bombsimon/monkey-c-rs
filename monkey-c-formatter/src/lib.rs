@@ -1951,14 +1951,13 @@ fn escape_quoted(s: &str, quote: char) -> String {
 /// `[a, b, c]` so the formatter can render the chain with breakable
 /// separators between siblings.
 fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<&'a Expr>) {
-    if let Expr::Binary(be) = expr {
-        if be.operator == *op {
+    if let Expr::Binary(be) = expr
+        && be.operator == *op {
             collect_logical_chain(&be.left, op, out);
             collect_logical_chain(&be.right, op, out);
 
             return;
         }
-    }
 
     out.push(expr);
 }
