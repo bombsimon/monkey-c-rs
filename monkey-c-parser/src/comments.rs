@@ -5,7 +5,8 @@
 //! The attachment pass is a pure function of `(Ast, CommentTable)`, so it can
 //! be re-run after a re-parse without drift.
 use crate::ast::{
-    Ast, CaseLabel, CommentStmt, CommentTable, ElseBranch, Expr, ForInit, Span, Stmt,
+    Ast, CaseLabel, CommentStmt, CommentTable, ElseBranch, Expr, ForInit, InterfaceMember, Span,
+    Stmt, Type, TypeKind,
 };
 use crate::line_index::LineIndex;
 use std::collections::{HashMap, HashSet};
@@ -495,9 +496,16 @@ fn collect_spans_ast(
             brace_starts.insert(decl.span, (decl.header_end, decl.body.span.start));
             for arg in &decl.args.inner {
                 out.push(arg.span);
-                if let Some(init) = &arg.initializer {
-                    collect_spans_expr(init, out);
+                if let Some(ty) = &arg.type_ {
+                    collect_spans_type(ty, out, block_spans);
                 }
+
+                if let Some(init) = &arg.initializer {
+                    collect_spans_expr(init, out, block_spans);
+                }
+            }
+            if let Some(ret) = &decl.returns {
+                collect_spans_type(ret, out, block_spans);
             }
 
             for stmt in &decl.body.stmts {
@@ -512,27 +520,36 @@ fn collect_spans_ast(
             for variant in &decl.variants {
                 out.push(variant.span);
                 if let Some(v) = &variant.value {
-                    collect_spans_expr(v, out);
+                    collect_spans_expr(v, out, block_spans);
                 }
             }
         }
         Ast::Variable(decl) => {
             for b in &decl.bindings {
                 out.push(b.span);
+                if let Some(ty) = &b.type_ {
+                    collect_spans_type(ty, out, block_spans);
+                }
+
                 if let Some(init) = &b.initializer {
-                    collect_spans_expr(init, out);
+                    collect_spans_expr(init, out, block_spans);
                 }
             }
         }
         Ast::Const(decl) => {
             for b in &decl.bindings {
                 out.push(b.span);
+                if let Some(ty) = &b.type_ {
+                    collect_spans_type(ty, out, block_spans);
+                }
+
                 if let Some(init) = &b.initializer {
-                    collect_spans_expr(init, out);
+                    collect_spans_expr(init, out, block_spans);
                 }
             }
         }
-        Ast::Typedef(_) | Ast::Import(_) | Ast::Using(_) => {}
+        Ast::Typedef(decl) => collect_spans_type(&decl.type_, out, block_spans),
+        Ast::Import(_) | Ast::Using(_) => {}
         Ast::Annotation(_, _) | Ast::Eof => {}
     }
 }
@@ -554,7 +571,7 @@ fn collect_spans_stmt(
         Stmt::If(s) => collect_spans_if(s, out, brace_starts, block_spans),
         Stmt::While(s) => {
             brace_starts.insert(s.span, (s.condition.close, s.body.span.start));
-            collect_spans_expr(&s.condition.inner, out);
+            collect_spans_expr(&s.condition.inner, out, block_spans);
 
             for sub in &s.body.stmts {
                 collect_spans_stmt(sub, out, brace_starts, block_spans);
@@ -565,7 +582,7 @@ fn collect_spans_stmt(
         }
         Stmt::DoWhile(s) => {
             brace_starts.insert(s.span, (s.header_end, s.body.span.start));
-            collect_spans_expr(&s.condition, out);
+            collect_spans_expr(&s.condition, out, block_spans);
 
             for sub in &s.body.stmts {
                 collect_spans_stmt(sub, out, brace_starts, block_spans);
@@ -578,16 +595,16 @@ fn collect_spans_stmt(
             if let Some(init) = &s.header.inner.init {
                 match init {
                     ForInit::Var(_) => {}
-                    ForInit::Expr(e) => collect_spans_expr(e, out),
+                    ForInit::Expr(e) => collect_spans_expr(e, out, block_spans),
                 }
             }
 
             if let Some(c) = &s.header.inner.condition {
-                collect_spans_expr(c, out);
+                collect_spans_expr(c, out, block_spans);
             }
 
             if let Some(u) = &s.header.inner.update {
-                collect_spans_expr(u, out);
+                collect_spans_expr(u, out, block_spans);
             }
 
             for sub in &s.body.stmts {
@@ -599,13 +616,15 @@ fn collect_spans_stmt(
         }
         Stmt::Switch(s) => {
             brace_starts.insert(s.span, (s.discriminant.close, s.brace_start));
-            collect_spans_expr(&s.discriminant.inner, out);
+            collect_spans_expr(&s.discriminant.inner, out, block_spans);
             for case in &s.cases {
                 out.push(case.span);
                 out.push(case.label_span);
 
-                if let CaseLabel::Value(e) = &case.label {
-                    collect_spans_expr(e, out);
+                match &case.label {
+                    CaseLabel::Value(e) => collect_spans_expr(e, out, block_spans),
+                    CaseLabel::InstanceOf(ty) => collect_spans_type(ty, out, block_spans),
+                    CaseLabel::Default => {}
                 }
 
                 for sub in &case.stmts {
@@ -623,6 +642,10 @@ fn collect_spans_stmt(
             out.push(s.body.span);
 
             for catch in &s.catches {
+                if let Some(ty) = &catch.type_filter {
+                    collect_spans_type(ty, out, block_spans);
+                }
+
                 for sub in &catch.body.stmts {
                     collect_spans_stmt(sub, out, brace_starts, block_spans);
                 }
@@ -641,22 +664,26 @@ fn collect_spans_stmt(
             }
         }
         Stmt::Throw(s) => {
-            collect_spans_expr(&s.value, out);
+            collect_spans_expr(&s.value, out, block_spans);
         }
         Stmt::Return(s) => {
             if let Some(v) = &s.value {
-                collect_spans_expr(v, out);
+                collect_spans_expr(v, out, block_spans);
             }
         }
         Stmt::Var(v) => {
             for b in &v.bindings {
                 out.push(b.span);
+                if let Some(ty) = &b.type_ {
+                    collect_spans_type(ty, out, block_spans);
+                }
+
                 if let Some(init) = &b.initializer {
-                    collect_spans_expr(init, out);
+                    collect_spans_expr(init, out, block_spans);
                 }
             }
         }
-        Stmt::Expr(e) => collect_spans_expr(e, out),
+        Stmt::Expr(e) => collect_spans_expr(e, out, block_spans),
         Stmt::Break(_) | Stmt::Continue(_) => {}
     }
 }
@@ -670,7 +697,7 @@ fn collect_spans_if(
     block_spans: &mut HashSet<Span>,
 ) {
     brace_starts.insert(s.span, (s.condition.close, s.then_branch.span.start));
-    collect_spans_expr(&s.condition.inner, out);
+    collect_spans_expr(&s.condition.inner, out, block_spans);
     block_spans.insert(s.then_branch.span);
     out.push(s.then_branch.span);
 
@@ -695,54 +722,101 @@ fn collect_spans_if(
     }
 }
 
-fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>) {
+/// Register comment-anchor spans for everything inside `ty`. Recurses into
+/// generic parameters and union alternatives so a comment anywhere in a
+/// nested type tree (e.g. an `interface { … }` body) can attach to the
+/// inner node rather than landing on the outermost enclosing scope.
+fn collect_spans_type(ty: &Type, out: &mut Vec<Span>, block_spans: &mut HashSet<Span>) {
+    match &ty.kind {
+        TypeKind::Named { generic_params, .. } => {
+            for p in generic_params {
+                collect_spans_type(p, out, block_spans);
+            }
+        }
+        TypeKind::Dict { .. } => {}
+        TypeKind::Interface { members, body_span } => {
+            block_spans.insert(*body_span);
+            out.push(*body_span);
+            for member in members {
+                match member {
+                    InterfaceMember::Function(m) => {
+                        out.push(m.span);
+                        for arg in &m.args {
+                            out.push(arg.span);
+                            if let Some(t) = &arg.type_ {
+                                collect_spans_type(t, out, block_spans);
+                            }
+                        }
+
+                        if let Some(ret) = &m.returns {
+                            collect_spans_type(ret, out, block_spans);
+                        }
+                    }
+                    InterfaceMember::Variable(v) => {
+                        out.push(v.span);
+                        collect_spans_type(&v.type_, out, block_spans);
+                    }
+                }
+            }
+        }
+    }
+
+    for alt in &ty.alternatives {
+        collect_spans_type(alt, out, block_spans);
+    }
+}
+
+fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>, block_spans: &mut HashSet<Span>) {
     out.push(*expr.span());
 
     match expr {
         Expr::Binary(b) => {
-            collect_spans_expr(&b.left, out);
-            collect_spans_expr(&b.right, out);
+            collect_spans_expr(&b.left, out, block_spans);
+            collect_spans_expr(&b.right, out, block_spans);
         }
-        Expr::Unary(u) => collect_spans_expr(&u.operand, out),
+        Expr::Unary(u) => collect_spans_expr(&u.operand, out, block_spans),
         Expr::Ternary(t) => {
-            collect_spans_expr(&t.cond, out);
-            collect_spans_expr(&t.then_expr, out);
-            collect_spans_expr(&t.else_expr, out);
+            collect_spans_expr(&t.cond, out, block_spans);
+            collect_spans_expr(&t.then_expr, out, block_spans);
+            collect_spans_expr(&t.else_expr, out, block_spans);
         }
         Expr::Assign(a) => {
-            collect_spans_expr(&a.target, out);
-            collect_spans_expr(&a.value, out);
+            collect_spans_expr(&a.target, out, block_spans);
+            collect_spans_expr(&a.value, out, block_spans);
         }
         Expr::Call(c) => {
-            collect_spans_expr(&c.callee, out);
+            collect_spans_expr(&c.callee, out, block_spans);
             for arg in &c.args {
-                collect_spans_expr(&arg.value, out);
+                collect_spans_expr(&arg.value, out, block_spans);
             }
         }
-        Expr::Member(m) => collect_spans_expr(&m.object, out),
+        Expr::Member(m) => collect_spans_expr(&m.object, out, block_spans),
         Expr::Index(i) => {
-            collect_spans_expr(&i.object, out);
-            collect_spans_expr(&i.index, out);
+            collect_spans_expr(&i.object, out, block_spans);
+            collect_spans_expr(&i.index, out, block_spans);
         }
         Expr::New(n) => {
             for arg in &n.args {
-                collect_spans_expr(&arg.value, out);
+                collect_spans_expr(&arg.value, out, block_spans);
             }
         }
-        Expr::NewArray(n) => collect_spans_expr(&n.size, out),
-        Expr::TypeCast(t) => collect_spans_expr(&t.expr, out),
+        Expr::NewArray(n) => collect_spans_expr(&n.size, out, block_spans),
+        Expr::TypeCast(t) => {
+            collect_spans_expr(&t.expr, out, block_spans);
+            collect_spans_type(&t.target_type, out, block_spans);
+        }
         Expr::Array(a) => {
             for entry in &a.entries {
-                collect_spans_expr(&entry.value, out);
+                collect_spans_expr(&entry.value, out, block_spans);
             }
         }
         Expr::Dict(d) => {
             for entry in &d.entries {
-                collect_spans_expr(&entry.key, out);
-                collect_spans_expr(&entry.value, out);
+                collect_spans_expr(&entry.key, out, block_spans);
+                collect_spans_expr(&entry.value, out, block_spans);
             }
         }
-        Expr::Paren(p) => collect_spans_expr(&p.inner, out),
+        Expr::Paren(p) => collect_spans_expr(&p.inner, out, block_spans),
         Expr::Lit(_) | Expr::Ident(_) | Expr::Me(_) | Expr::Self_(_) | Expr::Bling(_) => {}
     }
 }

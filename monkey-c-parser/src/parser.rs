@@ -245,9 +245,8 @@ impl<'a> Parser<'a> {
                 trailing_comma,
             }
         } else if self.current_token == token::Type::Interface {
-            TypeKind::Interface {
-                members: self.parse_interface_members()?,
-            }
+            let (members, body_span) = self.parse_interface_members()?;
+            TypeKind::Interface { members, body_span }
         } else {
             let ident = self.parse_dotted_identifier()?;
 
@@ -290,9 +289,11 @@ impl<'a> Parser<'a> {
 
     /// Parse the body of an `interface { … }` type — a `{`-delimited list of
     /// function signatures and/or `var name as Type;` declarations, each
-    /// terminated by `;`. Consumes the surrounding braces.
-    fn parse_interface_members(&mut self) -> Result<Vec<InterfaceMember>, ParserError> {
+    /// terminated by `;`. Consumes the surrounding braces and returns the
+    /// members together with the byte span of the body (`{` … `}`).
+    fn parse_interface_members(&mut self) -> Result<(Vec<InterfaceMember>, Span), ParserError> {
         self.assert_next_token(&[token::Type::Interface])?;
+        let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
 
         let mut members = Vec::new();
@@ -310,8 +311,16 @@ impl<'a> Parser<'a> {
             members.push(member);
         }
 
+        let brace_end = self.current_token_end;
         self.assert_next_token(&[token::Type::RBrace])?;
-        Ok(members)
+
+        Ok((
+            members,
+            Span {
+                start: brace_start,
+                end: brace_end,
+            },
+        ))
     }
 
     fn parse_interface_method(&mut self) -> Result<InterfaceMethod, ParserError> {

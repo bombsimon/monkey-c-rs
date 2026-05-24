@@ -240,7 +240,7 @@ impl Formatter {
             ]),
             Ast::Typedef(decl) => Doc::concat(vec![
                 Doc::text(format!("typedef {} as ", decl.name)),
-                Self::type_to_doc(&decl.type_),
+                self.type_to_doc(&decl.type_),
                 Doc::text(";"),
             ]),
             Ast::Module(decl) => {
@@ -527,7 +527,7 @@ impl Formatter {
                 arg_parts.push(Doc::text(&arg.name));
                 if let Some(ty) = &arg.type_ {
                     arg_parts.push(Doc::text(" as "));
-                    arg_parts.push(Self::type_to_doc(ty));
+                    arg_parts.push(self.type_to_doc(ty));
                 }
 
                 ListItem {
@@ -545,7 +545,7 @@ impl Formatter {
 
         if let Some(ret) = &decl.returns {
             parts.push(Doc::text(" as "));
-            parts.push(Self::type_to_doc(ret));
+            parts.push(self.type_to_doc(ret));
         }
 
         parts.push(Doc::text(" "));
@@ -608,7 +608,7 @@ impl Formatter {
 
             if let Some(ty) = &b.type_ {
                 parts.push(Doc::text(" as "));
-                parts.push(Self::type_to_doc(ty));
+                parts.push(self.type_to_doc(ty));
             }
 
             if let Some(init) = &b.initializer {
@@ -627,7 +627,7 @@ impl Formatter {
         })
     }
 
-    fn type_to_doc(ty: &Type) -> Doc {
+    fn type_to_doc(&self, ty: &Type) -> Doc {
         let suffix = if ty.optional { "?" } else { "" };
         let base = match &ty.kind {
             TypeKind::Named {
@@ -642,9 +642,9 @@ impl Formatter {
                         .enumerate()
                         .flat_map(|(i, p)| {
                             if i > 0 {
-                                vec![Doc::text(", "), Self::type_to_doc(p)]
+                                vec![Doc::text(", "), self.type_to_doc(p)]
                             } else {
-                                vec![Self::type_to_doc(p)]
+                                vec![self.type_to_doc(p)]
                             }
                         })
                         .collect();
@@ -659,8 +659,10 @@ impl Formatter {
             TypeKind::Dict {
                 entries,
                 trailing_comma,
-            } => Self::inline_dict_type_to_doc(entries, *trailing_comma, suffix),
-            TypeKind::Interface { members } => Self::interface_type_to_doc(members, suffix),
+            } => self.inline_dict_type_to_doc(entries, *trailing_comma, suffix),
+            TypeKind::Interface { members, body_span } => {
+                self.interface_type_to_doc(members, *body_span, suffix)
+            }
         };
 
         if ty.alternatives.is_empty() {
@@ -670,7 +672,7 @@ impl Formatter {
         let mut parts = vec![base];
         for alt in &ty.alternatives {
             parts.push(Doc::text(" or "));
-            parts.push(Self::type_to_doc(alt));
+            parts.push(self.type_to_doc(alt));
         }
 
         Doc::Concat(parts)
@@ -680,6 +682,7 @@ impl Formatter {
     /// trailing comma forces multi-line; otherwise fits on one line when it
     /// can.
     fn inline_dict_type_to_doc(
+        &self,
         entries: &[DictTypeEntry],
         trailing_comma: bool,
         suffix: &str,
@@ -696,7 +699,7 @@ impl Formatter {
             Doc::concat(vec![
                 Doc::text(key),
                 Doc::text(" as "),
-                Self::type_to_doc(&entry.value_type),
+                self.type_to_doc(&entry.value_type),
             ])
         };
 
@@ -737,18 +740,42 @@ impl Formatter {
     }
 
     /// Render an inline `interface { … }` type. Always multi-line; each
-    /// member is followed by `;`.
-    fn interface_type_to_doc(members: &[InterfaceMember], suffix: &str) -> Doc {
-        if members.is_empty() {
+    /// member is followed by `;` and may carry leading/trailing comments
+    /// anchored on its span. Comments between the opening `{` and the first
+    /// member (or between the last member and `}`) attach as dangling
+    /// comments on `body_span` and are interleaved here.
+    fn interface_type_to_doc(
+        &self,
+        members: &[InterfaceMember],
+        body_span: Span,
+        suffix: &str,
+    ) -> Doc {
+        let before = self.dangling(body_span, DanglingPlacement::BeforeFirstChild);
+        let after = self.dangling(body_span, DanglingPlacement::AfterLastChild);
+
+        if members.is_empty() && before.is_empty() && after.is_empty() {
             return Doc::text(format!("interface {{}}{suffix}"));
         }
 
         let mut inner = Vec::new();
-        for (i, member) in members.iter().enumerate() {
+        for (i, c) in before.iter().enumerate() {
             if i > 0 {
                 inner.push(Doc::HardLine);
             }
-            inner.push(Self::interface_member_to_doc(member));
+            inner.push(self.comment_to_doc(c));
+        }
+
+        for (i, member) in members.iter().enumerate() {
+            if i > 0 || !before.is_empty() {
+                inner.push(Doc::HardLine);
+            }
+
+            inner.push(self.interface_member_to_doc(member));
+        }
+
+        for c in &after {
+            inner.push(Doc::HardLine);
+            inner.push(self.comment_to_doc(c));
         }
 
         Doc::concat(vec![
@@ -759,14 +786,15 @@ impl Formatter {
         ])
     }
 
-    fn interface_member_to_doc(member: &InterfaceMember) -> Doc {
-        match member {
+    fn interface_member_to_doc(&self, member: &InterfaceMember) -> Doc {
+        let (span, body) = match member {
             InterfaceMember::Function(m) => {
                 let mut parts = vec![
                     Doc::text("function "),
                     Doc::text(m.name.clone()),
                     Doc::text("("),
                 ];
+
                 for (i, arg) in m.args.iter().enumerate() {
                     if i > 0 {
                         parts.push(Doc::text(", "));
@@ -774,22 +802,34 @@ impl Formatter {
                     parts.push(Doc::text(arg.name.clone()));
                     if let Some(ty) = &arg.type_ {
                         parts.push(Doc::text(" as "));
-                        parts.push(Self::type_to_doc(ty));
+                        parts.push(self.type_to_doc(ty));
                     }
                 }
+
                 parts.push(Doc::text(")"));
                 if let Some(ret) = &m.returns {
                     parts.push(Doc::text(" as "));
-                    parts.push(Self::type_to_doc(ret));
+                    parts.push(self.type_to_doc(ret));
                 }
+
                 parts.push(Doc::text(";"));
-                Doc::Concat(parts)
+                (m.span, Doc::Concat(parts))
             }
-            InterfaceMember::Variable(v) => Doc::concat(vec![
-                Doc::text(format!("var {} as ", v.name)),
-                Self::type_to_doc(&v.type_),
-                Doc::text(";"),
-            ]),
+            InterfaceMember::Variable(v) => (
+                v.span,
+                Doc::concat(vec![
+                    Doc::text(format!("var {} as ", v.name)),
+                    self.type_to_doc(&v.type_),
+                    Doc::text(";"),
+                ]),
+            ),
+        };
+
+        let leading = self.leading_doc(span);
+        let trailing = self.trailing_doc(span);
+        match (&leading, &trailing) {
+            (Doc::Empty, Doc::Empty) => body,
+            _ => Doc::concat(vec![leading, body, trailing]),
         }
     }
 
@@ -942,7 +982,7 @@ impl Formatter {
                 }
                 CaseLabel::InstanceOf(ty) => {
                     header.push(Doc::text("instanceof "));
-                    header.push(Self::type_to_doc(ty));
+                    header.push(self.type_to_doc(ty));
                 }
                 CaseLabel::Default => {
                     header = vec![Doc::text("default")];
@@ -988,7 +1028,7 @@ impl Formatter {
             let mut header = vec![Doc::text(" catch ("), Doc::text(&catch.binding)];
             if let Some(ty) = &catch.type_filter {
                 header.push(Doc::text(" instanceof "));
-                header.push(Self::type_to_doc(ty));
+                header.push(self.type_to_doc(ty));
             }
 
             header.push(Doc::text(")"));
@@ -1327,7 +1367,7 @@ impl Formatter {
                 let mut parts = vec![Doc::text("new")];
                 if let Some(ty) = &e.element_type {
                     parts.push(Doc::text(" "));
-                    parts.push(Self::type_to_doc(ty));
+                    parts.push(self.type_to_doc(ty));
                 } else {
                     parts.push(Doc::text(" "));
                 }
@@ -1340,7 +1380,7 @@ impl Formatter {
             Expr::TypeCast(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.expr),
                 Doc::text(" as "),
-                Self::type_to_doc(&e.target_type),
+                self.type_to_doc(&e.target_type),
             ]),
             Expr::Array(e) => self.format_array(e),
             Expr::Dict(e) => self.format_dict(e),

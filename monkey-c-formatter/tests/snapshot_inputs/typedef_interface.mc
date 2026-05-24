@@ -15,6 +15,19 @@ typedef Mixed as interface {
     function greet(other as String) as String;
 };
 
+typedef ModelUpdater as interface {
+    //! Function that provides an updated status
+    //! for the complication
+    function updateModel() as Complicated.Model;
+};
+
+typedef Annotated as interface {
+    //! var docs
+    var name as String;
+    //! function docs
+    function greet() as String;
+};
+
 function example(you as interface {
     var frogs as Array<Frogs>;
 }) {}
