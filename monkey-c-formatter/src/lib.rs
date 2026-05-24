@@ -1268,7 +1268,7 @@ impl Formatter {
                 }
                 parts.push(Doc::text("["));
                 parts.push(self.expr_to_doc(&e.size));
-                parts.push(Doc::text("]"));
+                parts.push(Doc::text(if e.is_byte_array { "]b" } else { "]" }));
 
                 Doc::Concat(parts)
             }
@@ -1326,6 +1326,16 @@ impl Formatter {
     ///   comments between entries have no meaningful single-line position)
     /// - otherwise → try one-line, fall back to break-at-width
     fn format_array(&self, e: &ArrayExpr) -> Doc {
+        let body = self.format_array_body(e);
+
+        if e.is_byte_array {
+            Doc::concat(vec![body, Doc::text("b")])
+        } else {
+            body
+        }
+    }
+
+    fn format_array_body(&self, e: &ArrayExpr) -> Doc {
         if e.entries.is_empty() {
             let dangling_comments = self.all_dangling(e.span);
             if dangling_comments.is_empty() {

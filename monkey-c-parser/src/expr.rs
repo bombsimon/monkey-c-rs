@@ -558,12 +558,22 @@ impl Parser<'_> {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume [
                 let (entries, trailing_comma) = self.parse_array_entries()?;
-                let end = self.current_token_end; // end of ]
+                let mut end = self.current_token_end; // end of ]
                 self.next_token_span(); // consume ]
+
+                let is_byte_array = matches!(
+                    &self.current_token,
+                    token::Type::Identifier(name) if name == "b"
+                );
+                if is_byte_array {
+                    end = self.current_token_end;
+                    self.next_token_span(); // consume `b`
+                }
 
                 Ok(Expr::Array(ArrayExpr {
                     entries,
                     trailing_comma,
+                    is_byte_array,
                     span: Span { start, end },
                 }))
             }
@@ -753,12 +763,22 @@ impl Parser<'_> {
     ) -> Result<Expr, ParserError> {
         self.assert_next_token(&[token::Type::LBracket])?;
         let size = self.parse_expression()?;
-        let end = self.current_token_end;
+        let mut end = self.current_token_end;
         self.assert_next_token(&[token::Type::RBracket])?;
+
+        let is_byte_array = matches!(
+            &self.current_token,
+            token::Type::Identifier(name) if name == "b"
+        );
+        if is_byte_array {
+            end = self.current_token_end;
+            self.next_token_span(); // consume `b`
+        }
 
         Ok(Expr::NewArray(NewArrayExpr {
             element_type,
             size: Box::new(size),
+            is_byte_array,
             span: Span { start, end },
         }))
     }

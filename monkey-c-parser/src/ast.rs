@@ -333,6 +333,8 @@ pub struct NewExpr {
 pub struct NewArrayExpr {
     pub element_type: Option<Type>,
     pub size: Box<Expr>,
+    /// A `]b` suffix marks the allocation as a `Lang.ByteArray` (`new [N]b`).
+    pub is_byte_array: bool,
     pub span: Span,
 }
 
@@ -350,6 +352,9 @@ pub struct ArrayExpr {
     /// comma formatting rule (trailing comma → always multi-line, blank lines
     /// preserved).
     pub trailing_comma: bool,
+    /// A `]b` suffix marks the literal as a `Lang.ByteArray`. The parser
+    /// recognises any `b` identifier immediately following the closing `]`.
+    pub is_byte_array: bool,
     pub span: Span,
 }
 
