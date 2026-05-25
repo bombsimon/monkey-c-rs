@@ -1,0 +1,20 @@
+[book]
+title = "monkey-c-rs"
+description = "Documentation about the Monkey C toolbox written in Rust"
+authors = ["Simon Sawert"]
+language = "en"
+
+[output.html]
+default-theme = "ayu"
+preferred-dark-theme = "ayu"
+smart-punctuation = true
+definition-lists = true
+admonitions = true
+mathjax-support = false
+git-repository-url = "https://github.com/bombsimon/monkey-c-rs"
+git-repository-icon = "fab-github"
+edit-url-template = "https://github.com/bombsimon/monkey-c-rs/edit/main/docs/{path}"
+site-url = "/monkey-c-rs/"
+sidebar-header-nav = true
+
+

@@ -1,14 +1,14 @@
 # `monkey-c-rs`
 
 <p align="center">
-  <img src="./monkey-c-rs-logo.png" alt="monkey-c-rs logo" />
+  <img src="./docs/src/assets/monkey-c-rs-logo.png" alt="monkey-c-rs logo" />
 </p>
 
 ## What's in this project
 
 ### `monkey-c-parser`
 
-A lexer, parser and ast for [Monkey C]. See [`monkey-c-parser`][parser]
+A lexer, parser and AST for [Monkey C]. See [`monkey-c-parser`][parser]
 
 A full representation of the Monkey C AST to support future development of
 tools, for now primarily the `monkey-c-formatter`.
