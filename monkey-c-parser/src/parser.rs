@@ -1,7 +1,7 @@
 use crate::ast::{
-    Ast, Binding, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt, CommentTable,
-    ConstDecl, DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl, EnumVariant,
-    ForHeader, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, InterfaceMember,
+    AnnotationEntry, Ast, Binding, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt,
+    CommentTable, ConstDecl, DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl,
+    EnumVariant, ForHeader, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, InterfaceMember,
     InterfaceMethod, InterfaceVar, ModuleDecl, Parens, ParseOutput, ReturnStmt, Span, Stmt,
     SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl,
     Variable, Visibility, WhileStmt,
@@ -467,7 +467,8 @@ impl<'a> Parser<'a> {
     /// parenthesised symbol expression.
     fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
-        let mut names = Vec::new();
+        let mut entries = Vec::new();
+
         loop {
             let name = match self.current_token.clone() {
                 token::Type::Symbol(name) => name,
@@ -478,9 +479,20 @@ impl<'a> Parser<'a> {
                     )));
                 }
             };
-            names.push(name);
 
             self.next_token_span();
+
+            let args = if self.current_token == token::Type::LParen {
+                self.next_token_span(); // consume `(`
+                let args = self.parse_call_args(token::Type::RParen)?;
+                self.assert_next_token(&[token::Type::RParen])?;
+                args.into_iter().map(|a| a.value).collect()
+            } else {
+                Vec::new()
+            };
+
+            entries.push(AnnotationEntry { name, args });
+
             if self.current_token != token::Type::Comma {
                 break;
             }
@@ -490,7 +502,7 @@ impl<'a> Parser<'a> {
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
 
-        Ok(Ast::Annotation(names, Span { start, end }))
+        Ok(Ast::Annotation(entries, Span { start, end }))
     }
 
     fn parse_class_decl(&mut self, start: usize) -> Result<Ast, ParserError> {

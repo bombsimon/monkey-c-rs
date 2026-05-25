@@ -299,13 +299,34 @@ impl Formatter {
             Ast::Enum(decl) => self.enum_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
-            Ast::Annotation(names, _) => {
-                let joined = names
+            Ast::Annotation(entries, _) => {
+                let parts: Vec<Doc> = entries
                     .iter()
-                    .map(|n| format!(":{n}"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                Doc::text(format!("({joined})"))
+                    .enumerate()
+                    .flat_map(|(i, entry)| {
+                        let mut bits = Vec::new();
+                        if i > 0 {
+                            bits.push(Doc::text(", "));
+                        }
+
+                        bits.push(Doc::text(format!(":{}", entry.name)));
+                        if !entry.args.is_empty() {
+                            bits.push(Doc::text("("));
+                            for (j, arg) in entry.args.iter().enumerate() {
+                                if j > 0 {
+                                    bits.push(Doc::text(", "));
+                                }
+
+                                bits.push(self.expr_to_doc(arg));
+                            }
+
+                            bits.push(Doc::text(")"));
+                        }
+
+                        bits
+                    })
+                    .collect();
+                Doc::concat(vec![Doc::text("("), Doc::Concat(parts), Doc::text(")")])
             }
             Ast::Eof => Doc::Empty,
         }

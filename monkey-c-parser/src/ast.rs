@@ -693,13 +693,23 @@ pub struct VarDecl {
     pub span: Span,
 }
 
+/// One entry inside an annotation group: a symbol name plus an optional
+/// argument list. `(:foo)` parses with empty `args`; `(:typecheck(false))`
+/// gets `args = [false]`.
+#[derive(Debug, PartialEq)]
+pub struct AnnotationEntry {
+    pub name: Symbol,
+    pub args: Vec<Expr>,
+}
+
 /// A top-level AST node. Also used for class and module body members.
 #[derive(Debug, PartialEq)]
 pub enum Ast {
-    /// A `(:Name)` or `(:Name1, :Name2, …)` decorator. Each entry is a symbol
-    /// identifier; Monkey C supports applying multiple annotations in one
-    /// parenthesised group.
-    Annotation(Vec<Symbol>, Span),
+    /// A `(:Name)`, `(:Name(args…))`, or `(:Name1, :Name2(arg), …)` decorator.
+    /// Each entry is a symbol identifier with an optional list of argument
+    /// expressions (`(:typecheck(false))`). Monkey C supports applying multiple
+    /// annotations in one parenthesised group.
+    Annotation(Vec<AnnotationEntry>, Span),
     /// The root of a parsed file. The span covers the entire source so that
     /// top-level standalone comments can attach as `Dangling(Inside)` of the
     /// document.
