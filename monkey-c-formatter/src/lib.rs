@@ -87,7 +87,14 @@ impl Formatter {
             attach_comments(&output.ast, &output.comments, &self.line_index);
 
         let doc = self.ast_to_doc(&output.ast);
-        render(&doc, self.line_width)
+        let mut rendered = render(&doc, self.line_width);
+
+        // Always end with `\n` according to POSIX convention.
+        if !rendered.ends_with('\n') {
+            rendered.push('\n');
+        }
+
+        rendered
     }
 
     /// True if any attached comment — line or block, in any role — has a span
