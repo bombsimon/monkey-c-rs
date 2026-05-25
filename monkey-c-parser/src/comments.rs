@@ -738,6 +738,19 @@ fn collect_spans_type(ty: &Type, out: &mut Vec<Span>, block_spans: &mut HashSet<
                 collect_spans_type(el, out, block_spans);
             }
         }
+        TypeKind::Method { args, returns, .. } => {
+            for arg in args {
+                out.push(arg.span);
+
+                if let Some(t) = &arg.type_ {
+                    collect_spans_type(t, out, block_spans);
+                }
+            }
+
+            if let Some(ret) = returns {
+                collect_spans_type(ret, out, block_spans);
+            }
+        }
         TypeKind::Interface { members, body_span } => {
             block_spans.insert(*body_span);
             out.push(*body_span);

@@ -705,6 +705,38 @@ impl Formatter {
 
                 Doc::Concat(parts)
             }
+            TypeKind::Method {
+                name,
+                args,
+                returns,
+            } => {
+                let mut parts = vec![Doc::text(format!("{name}("))];
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        parts.push(Doc::text(", "));
+                    }
+
+                    parts.push(Doc::text(arg.name.clone()));
+
+                    if let Some(t) = &arg.type_ {
+                        parts.push(Doc::text(" as "));
+                        parts.push(self.type_to_doc(t));
+                    }
+                }
+
+                parts.push(Doc::text(")"));
+
+                if let Some(ret) = returns {
+                    parts.push(Doc::text(" as "));
+                    parts.push(self.type_to_doc(ret));
+                }
+
+                if !suffix.is_empty() {
+                    parts.push(Doc::text(suffix.to_string()));
+                }
+
+                Doc::Concat(parts)
+            }
         };
 
         if ty.alternatives.is_empty() {

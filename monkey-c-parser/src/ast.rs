@@ -71,6 +71,15 @@ pub enum TypeKind {
     /// must match the listed types. Used in `as`-annotations:
     /// `function f() as [StartView, StartDelegate]`.
     Tuple { elements: Vec<Type> },
+    /// A callable / method-reference type: `Method(arg as T, …) as Return`.
+    /// `name` is typically `Method` but the parser accepts any identifier in
+    /// this position so unfamiliar SDK callable types still parse. The return
+    /// is optional — `Method(x as Number)` (no `as`) is allowed.
+    Method {
+        name: Ident,
+        args: Vec<Variable>,
+        returns: Option<Box<Type>>,
+    },
 }
 
 /// One member inside an `interface { … }` type — either a function
@@ -121,6 +130,7 @@ impl Type {
     pub fn ident(&self) -> Option<&str> {
         match &self.kind {
             TypeKind::Named { ident, .. } => Some(ident),
+            TypeKind::Method { name, .. } => Some(name),
             TypeKind::Dict { .. } | TypeKind::Interface { .. } | TypeKind::Tuple { .. } => None,
         }
     }
@@ -130,7 +140,10 @@ impl Type {
     pub fn generic_params(&self) -> &[Type] {
         match &self.kind {
             TypeKind::Named { generic_params, .. } => generic_params,
-            TypeKind::Dict { .. } | TypeKind::Interface { .. } | TypeKind::Tuple { .. } => &[],
+            TypeKind::Dict { .. }
+            | TypeKind::Interface { .. }
+            | TypeKind::Tuple { .. }
+            | TypeKind::Method { .. } => &[],
         }
     }
 }

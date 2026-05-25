@@ -254,28 +254,48 @@ impl<'a> Parser<'a> {
         } else {
             let ident = self.parse_dotted_identifier()?;
 
-            let generic_params = if self.current_token == token::Type::Less {
-                self.next_token_span(); // consume <
-                let mut params = Vec::new();
+            if self.current_token == token::Type::LParen {
+                // `Method(arg as T) as Return` — a callable / method-reference
+                // type. The `as Return` part binds to the method type, not to
+                // any outer position (the outer `parse_type` handles unions
+                // afterwards).
+                let args = self.parse_function_args()?;
+                let returns = if self.current_token == token::Type::As {
+                    self.next_token_span();
+                    Some(Box::new(self.parse_type()?))
+                } else {
+                    None
+                };
 
-                if self.current_token != token::Type::Greater {
-                    params.push(self.parse_type()?);
-                    while self.current_token == token::Type::Comma {
-                        self.next_token_span(); // consume ,
-                        params.push(self.parse_type()?);
-                    }
+                TypeKind::Method {
+                    name: ident,
+                    args: args.inner,
+                    returns,
                 }
-
-                self.consume_generic_close()?;
-
-                params
             } else {
-                Vec::new()
-            };
+                let generic_params = if self.current_token == token::Type::Less {
+                    self.next_token_span(); // consume <
+                    let mut params = Vec::new();
 
-            TypeKind::Named {
-                ident,
-                generic_params,
+                    if self.current_token != token::Type::Greater {
+                        params.push(self.parse_type()?);
+                        while self.current_token == token::Type::Comma {
+                            self.next_token_span(); // consume ,
+                            params.push(self.parse_type()?);
+                        }
+                    }
+
+                    self.consume_generic_close()?;
+
+                    params
+                } else {
+                    Vec::new()
+                };
+
+                TypeKind::Named {
+                    ident,
+                    generic_params,
+                }
             }
         };
 
