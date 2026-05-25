@@ -733,6 +733,11 @@ fn collect_spans_type(ty: &Type, out: &mut Vec<Span>, block_spans: &mut HashSet<
             }
         }
         TypeKind::Dict { .. } => {}
+        TypeKind::Tuple { elements } => {
+            for el in elements {
+                collect_spans_type(el, out, block_spans);
+            }
+        }
         TypeKind::Interface { members, body_span } => {
             block_spans.insert(*body_span);
             out.push(*body_span);

@@ -247,6 +247,10 @@ impl<'a> Parser<'a> {
         } else if self.current_token == token::Type::Interface {
             let (members, body_span) = self.parse_interface_members()?;
             TypeKind::Interface { members, body_span }
+        } else if self.current_token == token::Type::LBracket {
+            TypeKind::Tuple {
+                elements: self.parse_tuple_type_elements()?,
+            }
         } else {
             let ident = self.parse_dotted_identifier()?;
 
@@ -361,6 +365,30 @@ impl<'a> Parser<'a> {
             type_,
             span: Span { start, end },
         })
+    }
+
+    /// Parse the body of a tuple type `[T1, T2, …]`. Consumes the surrounding
+    /// brackets. Each element is a full type, so `or`-unions inside are
+    /// allowed (`[Number, Number or Null]`).
+    fn parse_tuple_type_elements(&mut self) -> Result<Vec<Type>, ParserError> {
+        self.assert_next_token(&[token::Type::LBracket])?;
+        let mut elements = Vec::new();
+        if self.current_token != token::Type::RBracket {
+            elements.push(self.parse_type()?);
+
+            while self.current_token == token::Type::Comma {
+                self.next_token_span();
+                if self.current_token == token::Type::RBracket {
+                    break; // trailing comma allowed
+                }
+
+                elements.push(self.parse_type()?);
+            }
+        }
+
+        self.assert_next_token(&[token::Type::RBracket])?;
+
+        Ok(elements)
     }
 
     /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`.

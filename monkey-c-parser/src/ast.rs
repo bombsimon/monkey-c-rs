@@ -66,6 +66,11 @@ pub enum TypeKind {
         members: Vec<InterfaceMember>,
         body_span: Span,
     },
+    /// A tuple type: `[T1, T2, …]`. Models an array with a positionally-typed
+    /// shape — `[Number, String, Boolean]` is a 3-element array whose entries
+    /// must match the listed types. Used in `as`-annotations:
+    /// `function f() as [StartView, StartDelegate]`.
+    Tuple { elements: Vec<Type> },
 }
 
 /// One member inside an `interface { … }` type — either a function
@@ -116,7 +121,7 @@ impl Type {
     pub fn ident(&self) -> Option<&str> {
         match &self.kind {
             TypeKind::Named { ident, .. } => Some(ident),
-            TypeKind::Dict { .. } | TypeKind::Interface { .. } => None,
+            TypeKind::Dict { .. } | TypeKind::Interface { .. } | TypeKind::Tuple { .. } => None,
         }
     }
 
@@ -125,7 +130,7 @@ impl Type {
     pub fn generic_params(&self) -> &[Type] {
         match &self.kind {
             TypeKind::Named { generic_params, .. } => generic_params,
-            TypeKind::Dict { .. } | TypeKind::Interface { .. } => &[],
+            TypeKind::Dict { .. } | TypeKind::Interface { .. } | TypeKind::Tuple { .. } => &[],
         }
     }
 }

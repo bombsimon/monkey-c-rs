@@ -691,6 +691,20 @@ impl Formatter {
             TypeKind::Interface { members, body_span } => {
                 self.interface_type_to_doc(members, *body_span, suffix)
             }
+            TypeKind::Tuple { elements } => {
+                let mut parts = vec![Doc::text("[")];
+                for (i, el) in elements.iter().enumerate() {
+                    if i > 0 {
+                        parts.push(Doc::text(", "));
+                    }
+
+                    parts.push(self.type_to_doc(el));
+                }
+
+                parts.push(Doc::text(format!("]{suffix}")));
+
+                Doc::Concat(parts)
+            }
         };
 
         if ty.alternatives.is_empty() {
