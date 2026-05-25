@@ -59,19 +59,29 @@ fn dispatch_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext, diags: &mut 
     }
 }
 
+/// Called for each list of sibling [`Ast`] declarations (document body,
+/// module body, class body). Rules that care about *order* or *grouping* of
+/// siblings hook here.
+fn dispatch_ast_seq(seq: &[Ast], ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    diags.extend(rules::import_order::check_ast_seq(seq, ctx));
+}
+
 fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     match ast {
         Ast::Document(nodes, _) => {
+            dispatch_ast_seq(nodes, ctx, diags);
             for n in nodes {
                 walk_ast(n, ctx, diags);
             }
         }
         Ast::Module(decl) => {
+            dispatch_ast_seq(&decl.body, ctx, diags);
             for n in &decl.body {
                 walk_ast(n, ctx, diags);
             }
         }
         Ast::Class(decl) => {
+            dispatch_ast_seq(&decl.body, ctx, diags);
             for n in &decl.body {
                 walk_ast(n, ctx, diags);
             }
