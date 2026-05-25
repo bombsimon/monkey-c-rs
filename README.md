@@ -4,6 +4,15 @@
   <img src="./docs/src/assets/monkey-c-rs-logo.png" alt="monkey-c-rs logo" />
 </p>
 
+<p align="center">
+  <a href="https://github.com/bombsimon/monkey-c-rs/actions/workflows/ci.yml">
+    <img src="https://github.com/bombsimon/monkey-c-rs/actions/workflows/ci.yml/badge.svg" alt="Build status" />
+  </a>
+  <a href="https://github.com/bombsimon/monkey-c-rs/actions/workflows/docs.yml">
+    <img src="https://github.com/bombsimon/monkey-c-rs/actions/workflows/docs.yml/badge.svg" alt="Docs status" />
+  </a>
+</p>
+
 ## What's in this project
 
 ### `monkey-c-parser`
