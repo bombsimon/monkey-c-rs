@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nvar x as Number = 1;\nconst RATE as Float = 1.5;\n\"#.trim())"
 ---
 var x as Number = 1;

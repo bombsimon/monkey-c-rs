@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(\"function f() { var x = {:a => 1, :b => 2, // note\\n}; }\")"
 ---
 function f() {

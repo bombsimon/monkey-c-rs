@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/generic_params_comma_vs_or.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/generic_params_comma_vs_or.mc
 ---
 function f() {
     var d as Dictionary<String, Number> = 1;

@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nenum { Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday }\n\nenum { x = 1337, y, z, a = 0, b, c }\n\"#.trim())"
 ---
 enum {

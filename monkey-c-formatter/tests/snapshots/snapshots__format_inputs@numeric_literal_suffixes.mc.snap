@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/numeric_literal_suffixes.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/numeric_literal_suffixes.mc
 ---
 var int32 = 5;
 var int64 = 9000l;

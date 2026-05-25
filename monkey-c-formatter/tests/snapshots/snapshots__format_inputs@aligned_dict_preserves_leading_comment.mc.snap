@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/aligned_dict_preserves_leading_comment.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/aligned_dict_preserves_leading_comment.mc
 ---
 var icon = {
     // Day icon              Night icon                Description

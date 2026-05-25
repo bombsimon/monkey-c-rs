@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/do_while.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/do_while.mc
 ---
 function doWhile() {
     var i = 0 as Number;

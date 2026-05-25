@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/array_blank_line_between_entries.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/array_blank_line_between_entries.mc
 ---
 var x = [
     1,

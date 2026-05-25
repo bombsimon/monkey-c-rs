@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/array_entry_inline_trailing_comment.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/array_entry_inline_trailing_comment.mc
 ---
 function f() {
     var x = [

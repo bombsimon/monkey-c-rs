@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format_width(\"function f() { switch (computeLong() + somethingElseLong) { case 1: foo(); } }\",\n40,)"
 ---
 function f() {

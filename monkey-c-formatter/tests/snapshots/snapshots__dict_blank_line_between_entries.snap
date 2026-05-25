@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nvar x = {\n    :a => 1,\n\n    :b => 2,\n};\n\"#.trim())"
 ---
 var x = {

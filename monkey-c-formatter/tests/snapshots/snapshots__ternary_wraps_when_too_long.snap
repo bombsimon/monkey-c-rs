@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format_width(\"var x = superLongCondition ? caseIfTrue : caseIfFalse;\", 40)"
 ---
 var x = superLongCondition

@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/multiline_block_comment_aligns_close.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/multiline_block_comment_aligns_close.mc
 ---
 function f() {
     /* line 1

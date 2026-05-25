@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/switch_leading_comment_on_case.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/switch_leading_comment_on_case.mc
 ---
 function f() {
     switch (x) {

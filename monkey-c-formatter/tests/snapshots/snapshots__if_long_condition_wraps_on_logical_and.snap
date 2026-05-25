@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(\"function f() { if (longConditionOne > 1 \\\n             && longConditionTwo > 1 \\\n             && longConditionThree > 1) { return 1; } }\")"
 ---
 function f() {

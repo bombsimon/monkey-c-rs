@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/enum_commented_out_variant.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/enum_commented_out_variant.mc
 ---
 enum {
     FIELD_TYPE_SUNRISE = -1,

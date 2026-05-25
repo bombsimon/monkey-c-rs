@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nfunction f() {\n    var required = (a + b) * c;\n    var redundant = (a - b) - c;\n    var nested = (((a.b) * 91 / 360) * c);\n}\n\"#.trim())"
 ---
 function f() {

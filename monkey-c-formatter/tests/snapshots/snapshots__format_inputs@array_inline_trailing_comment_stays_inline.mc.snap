@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/array_inline_trailing_comment_stays_inline.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/array_inline_trailing_comment_stays_inline.mc
 ---
 var x = [
     1, // first

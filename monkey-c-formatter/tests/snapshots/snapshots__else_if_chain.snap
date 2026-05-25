@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(\"function f() { if (a) { return 1; } else if (b) { return 2; } else { return 3; } }\")"
 ---
 function f() {

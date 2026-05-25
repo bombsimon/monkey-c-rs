@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/var_trailing_comment.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/var_trailing_comment.mc
 ---
 var mBaseWidth = params[:width]; // mCurrentWidth calculated at start of draw(), when DC is available.

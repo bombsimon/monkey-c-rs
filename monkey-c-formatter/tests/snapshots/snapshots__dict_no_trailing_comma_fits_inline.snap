@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"var d = {\"k\" => 1};\"#)"
 ---
 var d = {"k" => 1};

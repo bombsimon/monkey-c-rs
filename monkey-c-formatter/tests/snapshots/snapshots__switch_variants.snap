@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nfunction basic(x) { switch (x) { case 1: foo(); break; case 2: bar(); break; default: baz(); } }\nfunction instance_case(p) { switch (p) { case instanceof Number: ok(); break; default: bad(); } }\nfunction fall_through(x) { switch (x) { case 1: foo(); case 2: bar(); break; } }\n\"#.trim())"
 ---
 function basic(x) {

@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nvar icon = {\n    FIELD_TYPE_SUNRISE => \">\",\n    // FIELD_TYPE_SUNSET => \"?\",\n\n    FIELD_TYPE_HEART_RATE => \"3\",\n    FIELD_TYPE_HR_LIVE_5S => \"3\",\n    // FIELD_TYPE_BATTERY => \"4\",\n    // FIELD_TYPE_BATTERY_HIDE_PERCENT => \"4\",\n    FIELD_TYPE_NOTIFICATIONS => \"5\",\n    FIELD_TYPE_TEMPERATURE => \"<\",\n    // FIELD_TYPE_WEATHER => \"<\",\n    // LIVE_HR_SPOT => \"=\",\n\n    FIELD_TYPE_SUNRISE_SUNSET => \"?\",\n    FIELD_TYPE_PULSE_OX => \"B\", // SG Addition\n    FIELD_BODY_BATTERY => \"E\", // SG Addition\n};\n\"#.trim())"
 ---
 var icon = {

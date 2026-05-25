@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"function f(o as { \"name\" as String, \"value\" as Number }) {}\"#)"
 ---
 function f(o as {"name" as String, "value" as Number}) {}

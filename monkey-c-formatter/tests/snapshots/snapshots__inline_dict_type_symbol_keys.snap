@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(\"function f(opts as { :flag as Boolean, :n as Number }) {}\")"
 ---
 function f(opts as {:flag as Boolean, :n as Number}) {}

@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/class_with_field_and_methods.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/class_with_field_and_methods.mc
 ---
 class MyClass extends Base {
     private var mValue as Number = 0;

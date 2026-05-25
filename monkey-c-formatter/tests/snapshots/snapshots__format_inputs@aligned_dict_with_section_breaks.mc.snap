@@ -1,6 +1,6 @@
 ---
-source: tests/snapshots.rs
-input_file: tests/snapshot_inputs/aligned_dict_with_section_breaks.mc
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/aligned_dict_with_section_breaks.mc
 ---
 var icon = {
     FIELD_TYPE_SUNRISE       => ">",

@@ -1,5 +1,5 @@
 ---
-source: tests/snapshots.rs
+source: monkey-c-formatter/tests/snapshots.rs
 expression: "format(r#\"\nfunction f() {\n    if (a and b or c) { x; }\n    if (a && b || c) { y; }\n}\n\"#.trim())"
 ---
 function f() {
