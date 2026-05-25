@@ -14,8 +14,13 @@ struct Cli {
     path: Option<PathBuf>,
 
     /// Rewrite the file in place instead of printing to stdout. Requires PATH.
-    #[arg(short, long, requires = "path")]
+    #[arg(short, long, requires = "path", conflicts_with = "check")]
     write: bool,
+
+    /// Check whether the file is already formatted. Exits 0 if formatted,
+    /// 1 if not. Prints nothing on success.
+    #[arg(short, long, conflicts_with = "write")]
+    check: bool,
 
     /// Target line width before wrapping.
     #[arg(short = 'l', long, default_value_t = 111)]
@@ -25,19 +30,25 @@ struct Cli {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match run(&cli) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(true) => ExitCode::SUCCESS,
+        Ok(false) => ExitCode::from(1),
         Err(e) => {
             eprintln!("{e}");
-            ExitCode::from(1)
+            ExitCode::from(2)
         }
     }
 }
 
-fn run(cli: &Cli) -> io::Result<()> {
+/// Returns `true` when everything succeeded *and* (for `--check`) the source
+/// was already formatted; `false` when `--check` finds a difference.
+fn run(cli: &Cli) -> io::Result<bool> {
     let source = match &cli.path {
         Some(p) => fs::read_to_string(p)?,
         None => {
-            eprintln!("Reading from stdin");
+            if !cli.check {
+                eprintln!("Reading from stdin");
+            }
+
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
             buf
@@ -54,6 +65,21 @@ fn run(cli: &Cli) -> io::Result<()> {
         .with_aligned_dict_pairs();
     let formatted = formatter.format(&output);
 
+    if cli.check {
+        let formatted_already = formatted == source;
+        if !formatted_already {
+            let label = cli
+                .path
+                .as_deref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "<stdin>".to_string());
+
+            eprintln!("{label}: not formatted");
+        }
+
+        return Ok(formatted_already);
+    }
+
     if cli.write {
         let path = cli.path.as_ref().expect("checked in main");
         if formatted != source {
@@ -63,5 +89,5 @@ fn run(cli: &Cli) -> io::Result<()> {
         print!("{formatted}");
     }
 
-    Ok(())
+    Ok(true)
 }
