@@ -3,9 +3,9 @@ source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/trailing_punctuation_comments.mc
 ---
 function f() {
-    x = 0; // tail of assign stmt
+    x = 0;    // tail of assign stmt
     return 1; // tail of return
-    g(); // tail of call stmt
+    g();      // tail of call stmt
 }
 
 function g(a, b) {

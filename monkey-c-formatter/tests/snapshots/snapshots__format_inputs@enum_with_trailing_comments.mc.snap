@@ -3,7 +3,7 @@ source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/enum_with_trailing_comments.mc
 ---
 enum {
-    Sunday, // 0
-    Monday, // 1
+    Sunday,  // 0
+    Monday,  // 1
     Saturday // 6
 }

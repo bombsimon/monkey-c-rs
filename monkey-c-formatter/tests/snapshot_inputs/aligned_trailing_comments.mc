@@ -1,0 +1,18 @@
+function fn() {
+    var x = 1; // Com
+    var yyyy = 2; // Com
+    var zzzzzzzz = 3; // Com
+
+    var sep = 1; // after blank line, aligns alone
+}
+
+enum {
+    SHORT = 1, // a
+    LONGER_NAME = 22, // b
+    LONGEST_NAME_HERE = 333, // c
+}
+
+function strings() {
+    var s = "//not a comment"; // real comment
+    var t = "hi"; // another
+}

@@ -17,5 +17,5 @@ var icon = {
 
     FIELD_TYPE_SUNRISE_SUNSET => "?",
     FIELD_TYPE_PULSE_OX => "B", // SG Addition
-    FIELD_BODY_BATTERY => "E", // SG Addition
+    FIELD_BODY_BATTERY => "E",  // SG Addition
 };

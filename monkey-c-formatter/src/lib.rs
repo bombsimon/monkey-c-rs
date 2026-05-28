@@ -87,14 +87,15 @@ impl Formatter {
             attach_comments(&output.ast, &output.comments, &self.line_index);
 
         let doc = self.ast_to_doc(&output.ast);
-        let mut rendered = render(&doc, self.line_width);
+        let rendered = render(&doc, self.line_width);
+        let mut aligned = align_trailing_comments(&rendered);
 
         // Always end with `\n` according to POSIX convention.
-        if !rendered.ends_with('\n') {
-            rendered.push('\n');
+        if !aligned.ends_with('\n') {
+            aligned.push('\n');
         }
 
-        rendered
+        aligned
     }
 
     /// True if any attached comment — line or block, in any role — has a span
@@ -2047,4 +2048,115 @@ fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<
     }
 
     out.push(expr);
+}
+
+/// Column-align trailing `//` and `/*` comments across consecutive lines. A
+/// "run" is a sequence of lines that share the same leading-whitespace indent
+/// and each end with a trailing comment. Within a run, the code portion is
+/// padded with spaces so every comment starts at the same column.
+///
+/// Strings (`"…"`) and char literals (`'…'`) are tracked so a `//` inside a
+/// string doesn't get mistaken for a trailing comment.
+fn align_trailing_comments(text: &str) -> String {
+    let lines: Vec<&str> = text.split('\n').collect();
+
+    // For each line: `Some((indent, code_end, comment_start))` when the line
+    // has a trailing comment (code before, comment after), else `None`.
+    let analyzed: Vec<Option<(usize, usize, usize)>> =
+        lines.iter().map(|l| analyze_trailing(l)).collect();
+
+    let mut out: Vec<String> = lines.iter().map(|l| (*l).to_string()).collect();
+
+    let mut i = 0;
+    while i < analyzed.len() {
+        let Some((indent, _, _)) = analyzed[i] else {
+            i += 1;
+            continue;
+        };
+
+        let mut j = i;
+        while j < analyzed.len() && matches!(analyzed[j], Some((ind, _, _)) if ind == indent) {
+            j += 1;
+        }
+
+        if j - i >= 2 {
+            let max_code = (i..j)
+                .filter_map(|k| analyzed[k].map(|(_, code_end, _)| code_end))
+                .max()
+                .unwrap_or(0);
+
+            for k in i..j {
+                let Some((_, code_end, comment_start)) = analyzed[k] else {
+                    continue;
+                };
+                let line = lines[k];
+                let code = &line[..code_end];
+                let comment = &line[comment_start..];
+                let pad = max_code - code_end;
+                out[k] = format!("{code}{} {comment}", " ".repeat(pad));
+            }
+        }
+
+        i = j;
+    }
+
+    out.join("\n")
+}
+
+/// Return `(indent, code_end, comment_start)` when `line` contains a trailing
+/// comment — non-whitespace code followed by `//` or `/*` outside any string
+/// or char literal. `code_end` is the byte offset just past the last
+/// non-whitespace character of the code portion; `comment_start` is the byte
+/// offset of the opening `/`.
+fn analyze_trailing(line: &str) -> Option<(usize, usize, usize)> {
+    let bytes = line.as_bytes();
+    let indent = bytes.iter().take_while(|b| **b == b' ').count();
+
+    let mut i = indent;
+    let mut in_string = false;
+    let mut in_char = false;
+    let mut comment_start: Option<usize> = None;
+
+    while i < bytes.len() {
+        let c = bytes[i];
+        if in_string {
+            if c == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+
+            if c == b'"' {
+                in_string = false;
+            }
+        } else if in_char {
+            if c == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+
+            if c == b'\'' {
+                in_char = false;
+            }
+        } else if c == b'"' {
+            in_string = true;
+        } else if c == b'\'' {
+            in_char = true;
+        } else if c == b'/' && i + 1 < bytes.len() && matches!(bytes[i + 1], b'/' | b'*') {
+            comment_start = Some(i);
+            break;
+        }
+
+        i += 1;
+    }
+
+    let comment_start = comment_start?;
+
+    // Require non-whitespace code before the comment — otherwise it's a
+    // standalone comment, not a trailing one.
+    let code_end = line[..comment_start].trim_end().len();
+    if code_end <= indent {
+        return None;
+    }
+
+    Some((indent, code_end, comment_start))
 }
