@@ -85,11 +85,16 @@ declaration parameters, and function / method call arguments.
 
 </table>
 
-## Aligning fat-commas
+## Column alignment
 
-The formatter will by default align fat-commas (`=>`) when creating dictionaries
-to increase readability of values. Dictionaries have the same rule regarding the
-magic trailing comma.
+When alignment is enabled the formatter pads names so that the separator
+operators (`=>` in dictionaries, `=` in enum variants) line up in a vertical
+column. The intent is purely visual — to make related entries easier to scan.
+
+Alignment only kicks in when an entry is already rendered multi-line. For
+dictionaries that follows the magic trailing comma rule above. For enums the
+formatter looks for runs of two or more consecutive variants that all have an
+explicit value, and pads the names within each run.
 
 <table style="width: 980px">
 <tr>
@@ -106,6 +111,19 @@ magic trailing comma.
         :a => 3
     };
 
+    enum Foo {
+        FIRST = 1,
+        SECOND = 2,
+        THIRD_ONE = 3,
+    }
+
+    enum Mixed {
+        A,
+        B = 5,
+        C = 6,
+        D,
+    }
+
 </td>
 <td>
 
@@ -115,10 +133,27 @@ magic trailing comma.
         :a            => 3
     };
 
+    enum Foo {
+        FIRST     = 1,
+        SECOND    = 2,
+        THIRD_ONE = 3,
+    }
+
+    enum Mixed {
+        A,
+        B = 5,
+        C = 6,
+        D,
+    }
+
 </td>
 </tr>
 
 </table>
+
+In the `Mixed` example the run `[B = 5, C = 6]` is already aligned with itself
+and no padding is needed. The bare variants `A` and `D` break the run and stay
+as-is.
 
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
