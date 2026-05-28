@@ -830,9 +830,7 @@ impl<'a> Parser<'a> {
 
     /// Parse a `(arg, arg, ...)` parameter list, returning the args wrapped
     /// with their parens' source positions.
-    fn parse_function_args(
-        &mut self,
-    ) -> Result<(Parens<Vec<Variable>>, bool), ParserError> {
+    fn parse_function_args(&mut self) -> Result<(Parens<Vec<Variable>>, bool), ParserError> {
         let open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
         let mut args: Vec<Variable> = Vec::new();

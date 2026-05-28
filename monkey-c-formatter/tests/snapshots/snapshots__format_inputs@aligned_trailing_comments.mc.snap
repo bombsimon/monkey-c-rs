@@ -11,8 +11,8 @@ function fn() {
 }
 
 enum {
-    SHORT = 1,               // a
-    LONGER_NAME = 22,        // b
+    SHORT             = 1,   // a
+    LONGER_NAME       = 22,  // b
     LONGEST_NAME_HERE = 333, // c
 }
 

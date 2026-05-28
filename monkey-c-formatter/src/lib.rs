@@ -4,9 +4,9 @@ mod operators;
 use doc::{Doc, render};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
-    DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, Expr, FloatLit, ForInit,
-    FunctionDecl, IfStmt, InterfaceMember, LiteralValue, ParseOutput, Span, Stmt, SwitchStmt,
-    TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
+    DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant, Expr,
+    FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, ParseOutput, Span,
+    Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::{CommentsMap, DanglingPlacement, attach_comments};
 use monkey_c_parser::line_index::LineIndex;
@@ -41,9 +41,11 @@ pub struct Formatter {
     line_index: LineIndex,
     /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
-    /// When `true`, dict key-value pairs are rendered multi-line with their
-    /// `=>` operators column-aligned.
-    align_dict_pairs: bool,
+    /// When `true`, runs of related entries are rendered with their separator
+    /// operators column-aligned. Currently covers:
+    /// - dict literals — `=>` between key and value
+    /// - enum variants — `=` between name and explicit value
+    align_pairs: bool,
     /// Built once at the start of [`Self::format`] from the [`ParseOutput`]'s
     /// comment table. Render methods query it via
     /// [`Self::leading_doc`] / [`Self::trailing_doc`] / [`Self::dangling`].
@@ -61,7 +63,7 @@ impl Formatter {
         Self {
             line_index: LineIndex::new(source),
             line_width: 100,
-            align_dict_pairs: false,
+            align_pairs: false,
             comments: RefCell::new(CommentsMap::new()),
         }
     }
@@ -72,12 +74,16 @@ impl Formatter {
         self
     }
 
-    /// Enable column-aligned `=>` in dict literals (opt-in).
+    /// Enable column-aligned separators across related entries (opt-in).
     ///
-    /// When set, all non-empty dicts are rendered multi-line with their keys
-    /// padded so the `=>` operators form a vertical column.
-    pub fn with_aligned_dict_pairs(mut self) -> Self {
-        self.align_dict_pairs = true;
+    /// Currently covers:
+    /// - dict literals — `=>` between key and value (`{ :a => 1, :bb => 2 }`)
+    /// - enum variants — `=` between name and explicit value
+    ///
+    /// When set, the affected constructs are rendered multi-line with their
+    /// names padded so the separators form a vertical column.
+    pub fn with_alignment(mut self) -> Self {
+        self.align_pairs = true;
         self
     }
 
@@ -454,6 +460,12 @@ impl Formatter {
             prev_end = Some(c.span.end);
         }
 
+        let name_pads = if self.align_pairs {
+            enum_variant_name_pads(&decl.variants)
+        } else {
+            vec![0; decl.variants.len()]
+        };
+
         for (i, v) in decl.variants.iter().enumerate() {
             let leading_comments = self.leading(v.span);
             let v_start = leading_comments
@@ -472,6 +484,10 @@ impl Formatter {
 
             parts.push(Doc::text(&v.name));
             if let Some(value) = &v.value {
+                let pad = name_pads[i].saturating_sub(v.name.len());
+                if pad > 0 {
+                    parts.push(Doc::text(" ".repeat(pad)));
+                }
                 parts.push(Doc::text(" = "));
                 parts.push(self.expr_to_doc(value));
             }
@@ -1681,7 +1697,7 @@ impl Formatter {
     /// Format a dict literal. Walks `members` so free-floating comments and
     /// blank lines between entries are preserved in source order.
     ///
-    /// When [`align_dict_pairs`](Self::align_dict_pairs) is on, key columns
+    /// When [`align_pairs`](Self::align_pairs) is on, key columns
     /// are padded so `=>` operators line up across all entries.
     fn format_dict(&self, e: &DictExpr) -> Doc {
         // Empty dict — single token unless there are dangling comments
@@ -1716,7 +1732,7 @@ impl Formatter {
             return self.format_dict_multiline(e);
         }
 
-        if self.align_dict_pairs {
+        if self.align_pairs {
             return self.format_dict_aligned_or_inline(e);
         }
 
@@ -1750,7 +1766,7 @@ impl Formatter {
 
     /// Multi-line dict body. See [`Self::format_collection_multiline`].
     fn format_dict_multiline(&self, e: &DictExpr) -> Doc {
-        let aligned = self.align_dict_pairs && !e.entries.is_empty();
+        let aligned = self.align_pairs && !e.entries.is_empty();
         let max_key_width = if aligned {
             e.entries
                 .iter()
@@ -2048,6 +2064,34 @@ fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<
     }
 
     out.push(expr);
+}
+
+/// Per-variant padding target for column-aligning the `=` between names and
+/// explicit values. Only contiguous runs of two or more variants that all
+/// have a value get aligned; everything else gets `0` (no padding).
+fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {
+    let mut out = vec![0; variants.len()];
+    let mut i = 0;
+    while i < variants.len() {
+        if variants[i].value.is_none() {
+            i += 1;
+            continue;
+        }
+
+        let run_start = i;
+        let mut max_name = 0;
+        while i < variants.len() && variants[i].value.is_some() {
+            max_name = max_name.max(variants[i].name.len());
+            i += 1;
+        }
+
+        if i - run_start >= 2 {
+            for slot in out.iter_mut().take(i).skip(run_start) {
+                *slot = max_name;
+            }
+        }
+    }
+    out
 }
 
 /// Column-align trailing `//` and `/*` comments across consecutive lines. A

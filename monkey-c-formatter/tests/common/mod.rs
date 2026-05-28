@@ -9,9 +9,7 @@ pub fn format(src: &str) -> String {
 
 pub fn format_aligned(src: &str) -> String {
     let output = Parser::new(src).parse().expect("should parse");
-    Formatter::new(src)
-        .with_aligned_dict_pairs()
-        .format(&output)
+    Formatter::new(src).with_alignment().format(&output)
 }
 
 pub fn format_width(src: &str, width: usize) -> String {
@@ -22,7 +20,7 @@ pub fn format_width(src: &str, width: usize) -> String {
 pub fn format_aligned_width(src: &str, width: usize) -> String {
     let output = Parser::new(src).parse().expect("should parse");
     Formatter::new(src)
-        .with_aligned_dict_pairs()
+        .with_alignment()
         .with_line_width(width)
         .format(&output)
 }

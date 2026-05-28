@@ -3,9 +3,9 @@ source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/enum_named.mc
 ---
 enum Dog {
-    SPOT = "Spot",
-    LUKE = "Luke",
-    POCO = "Poco",
+    SPOT  = "Spot",
+    LUKE  = "Luke",
+    POCO  = "Poco",
     BINGO = "B_I_N_G_O",
 }
 
