@@ -11,7 +11,7 @@ function f() {
 function g(a, b) {
     h(
         a, // tail of arg a
-        b
+        b,
     );
 }
 

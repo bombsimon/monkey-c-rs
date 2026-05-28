@@ -15,11 +15,12 @@ The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
 default width of 111 columns. 111 is chosen because 80 is too little and 222 is
 too much.
 
-## The magic comma
+## The magic trailing comma
 
-`monkey-c-formatter` uses the same trailing magic comma to determine if multiple
-arguments should be wrapped over multiple lines even if they would fit on a
-single line, just like [ruff] does.
+`monkey-c-formatter` uses the same magic trailing comma as [ruff] to determine
+if multiple items should be wrapped over multiple lines even when they would
+fit on a single line. The rule applies to arrays, dictionaries, function
+declaration parameters, and function / method call arguments.
 
 <table style="width: 980px">
 <tr>
@@ -30,24 +31,54 @@ single line, just like [ruff] does.
 <tr>
 <td>
 
-    var no_trailing = [
-        1,
-        2,
-        3
-    ];
+    function SomeFunction(arg1 as String, arg2 as Number,) as Void {
+        var arr = [
+            1,
+            2,
+            3
+        ];
 
-    var trailing = [1, 2, 3,];
+        var arr2 = [1, 2, 3,];
+
+        var dict = {
+            :keyOne => 1,
+            :keyNumberTwo => 2
+        };
+
+        var dict2 = {:keyOne=>1, :keyNumberTwo=>2,};
+
+        AnotherFunction(arr, arr2, dict, dict2,)
+    }
 
 </td>
 <td>
 
-    var no_trailing = [1, 2, 3];
+    function SomeFunction(
+        arg1 as String,
+        arg2 as Number,
+    ) as Void {
+        var arr = [1, 2, 3];
 
-    var trailing = [
-        1,
-        2,
-        3,
-    ];
+        var arr2 = [
+            1,
+            2,
+            3,
+        ];
+
+        var dict = {:keyOne => 1, :keyNumberTwo => 2};
+
+        var dict2 = {
+            :keyOne       => 1,
+            :keyNumberTwo => 2,
+        };
+
+        AnotherFunction(
+            arr,
+            arr2,
+            dict,
+            dict2,
+        )
+    }
 
 </td>
 </tr>
@@ -69,21 +100,19 @@ magic trailing comma.
 <tr>
 <td>
 
-    var no_trailing = {
+    var dict = {
         :keyOne => 1,
         :keyNumberTwo => 2
+        :a => 3
     };
-
-    var trailing = {:keyOne=>1, :keyNumberTwo=>2,};
 
 </td>
 <td>
 
-    var no_trailing = {:keyOne => 1, :keyNumberTwo => 2};
-
-    var trailing = {
+    var dict = {
         :keyOne       => 1,
-        :keyNumberTwo => 2,
+        :keyNumberTwo => 2
+        :a            => 3
     };
 
 </td>

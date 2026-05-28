@@ -399,6 +399,10 @@ pub struct AssignExpr {
 pub struct CallExpr {
     pub callee: Box<Expr>,
     pub args: Vec<CallArg>,
+    /// `true` when the source had a trailing comma after the last argument.
+    /// Drives the magic trailing comma formatting rule — forces multi-line
+    /// rendering even when the call would otherwise fit on a single line.
+    pub args_trailing_comma: bool,
     pub span: Span,
 }
 
@@ -428,6 +432,8 @@ pub struct NewExpr {
     /// Fully qualified class name, e.g. `MyModule.Foo`.
     pub class: Ident,
     pub args: Vec<CallArg>,
+    /// See [`CallExpr::args_trailing_comma`].
+    pub args_trailing_comma: bool,
     pub span: Span,
 }
 
@@ -826,6 +832,8 @@ pub struct EnumVariant {
 pub struct FunctionDecl {
     pub name: Ident,
     pub args: Parens<Vec<Variable>>,
+    /// See [`CallExpr::args_trailing_comma`].
+    pub args_trailing_comma: bool,
     /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
     pub body: BlockStmt,

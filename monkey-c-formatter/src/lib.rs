@@ -569,7 +569,7 @@ impl Formatter {
             })
             .collect();
 
-        parts.push(self.format_list("(", ")", items, &[], false));
+        parts.push(self.format_list("(", ")", items, &[], decl.args_trailing_comma));
 
         if let Some(ret) = &decl.returns {
             parts.push(Doc::text(" as "));
@@ -1421,7 +1421,13 @@ impl Formatter {
             ]),
             Expr::Call(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.callee),
-                self.format_list("(", ")", self.call_args_to_items(&e.args), &[], false),
+                self.format_list(
+                    "(",
+                    ")",
+                    self.call_args_to_items(&e.args),
+                    &[],
+                    e.args_trailing_comma,
+                ),
             ]),
             Expr::Member(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.object),
@@ -1435,7 +1441,13 @@ impl Formatter {
             ]),
             Expr::New(e) => Doc::concat(vec![
                 Doc::text(format!("new {}", e.class)),
-                self.format_list("(", ")", self.call_args_to_items(&e.args), &[], false),
+                self.format_list(
+                    "(",
+                    ")",
+                    self.call_args_to_items(&e.args),
+                    &[],
+                    e.args_trailing_comma,
+                ),
             ]),
             Expr::NewArray(e) => {
                 let mut parts = vec![Doc::text("new")];

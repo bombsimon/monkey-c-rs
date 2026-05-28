@@ -259,7 +259,7 @@ impl<'a> Parser<'a> {
                 // type. The `as Return` part binds to the method type, not to
                 // any outer position (the outer `parse_type` handles unions
                 // afterwards).
-                let args = self.parse_function_args()?;
+                let (args, _trailing) = self.parse_function_args()?;
                 let returns = if self.current_token == token::Type::As {
                     self.next_token_span();
                     Some(Box::new(self.parse_type()?))
@@ -352,7 +352,7 @@ impl<'a> Parser<'a> {
         self.assert_next_token(&[token::Type::Function])?;
         let name = self.parse_identifier()?;
         self.next_token_span();
-        let args = self.parse_function_args()?;
+        let (args, _trailing) = self.parse_function_args()?;
         let returns = if self.current_token == token::Type::As {
             self.next_token_span();
             Some(self.parse_type()?)
@@ -532,7 +532,7 @@ impl<'a> Parser<'a> {
 
             let args = if self.current_token == token::Type::LParen {
                 self.next_token_span(); // consume `(`
-                let args = self.parse_call_args(token::Type::RParen)?;
+                let (args, _trailing) = self.parse_call_args(token::Type::RParen)?;
                 self.assert_next_token(&[token::Type::RParen])?;
                 args.into_iter().map(|a| a.value).collect()
             } else {
@@ -625,7 +625,7 @@ impl<'a> Parser<'a> {
         self.next_token_span();
         let name = self.parse_identifier()?;
         self.next_token_span();
-        let args = self.parse_function_args()?;
+        let (args, args_trailing_comma) = self.parse_function_args()?;
 
         let mut header_end = args.close;
         let returns = if self.current_token == token::Type::As {
@@ -645,6 +645,7 @@ impl<'a> Parser<'a> {
         Ok(Ast::Function(FunctionDecl {
             name,
             args,
+            args_trailing_comma,
             returns,
             body,
             visibility,
@@ -829,10 +830,13 @@ impl<'a> Parser<'a> {
 
     /// Parse a `(arg, arg, ...)` parameter list, returning the args wrapped
     /// with their parens' source positions.
-    fn parse_function_args(&mut self) -> Result<Parens<Vec<Variable>>, ParserError> {
+    fn parse_function_args(
+        &mut self,
+    ) -> Result<(Parens<Vec<Variable>>, bool), ParserError> {
         let open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
         let mut args: Vec<Variable> = Vec::new();
+        let mut trailing_comma = false;
 
         loop {
             if self.current_token == token::Type::RParen {
@@ -873,6 +877,7 @@ impl<'a> Parser<'a> {
                 args.push(arg);
 
                 if self.current_token == token::Type::RParen {
+                    trailing_comma = true;
                     break;
                 }
             } else if self.current_token == token::Type::RParen {
@@ -889,11 +894,14 @@ impl<'a> Parser<'a> {
         let close = self.current_token_end;
         self.next_token_span(); // consume RParen
 
-        Ok(Parens {
-            open,
-            inner: args,
-            close,
-        })
+        Ok((
+            Parens {
+                open,
+                inner: args,
+                close,
+            },
+            trailing_comma,
+        ))
     }
 
     /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.

@@ -378,11 +378,12 @@ impl Parser<'_> {
 
             if self.current_token == token::Type::LParen {
                 self.next_token_span(); // consume (
-                let args = self.parse_call_args(token::Type::RParen)?;
+                let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end; // end of )
                 expr = Expr::Call(CallExpr {
                     callee: Box::new(expr),
                     args,
+                    args_trailing_comma,
                     span: Span { start, end },
                 });
                 self.assert_next_token(&[token::Type::RParen])?;
@@ -662,13 +663,14 @@ impl Parser<'_> {
                 }
 
                 self.assert_next_token(&[token::Type::LParen])?;
-                let args = self.parse_call_args(token::Type::RParen)?;
+                let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end;
                 self.assert_next_token(&[token::Type::RParen])?;
 
                 Ok(Expr::New(NewExpr {
                     class,
                     args,
+                    args_trailing_comma,
                     span: Span { start, end },
                 }))
             }
@@ -683,8 +685,9 @@ impl Parser<'_> {
     pub(crate) fn parse_call_args(
         &mut self,
         close: token::Type,
-    ) -> Result<Vec<CallArg>, ParserError> {
+    ) -> Result<(Vec<CallArg>, bool), ParserError> {
         let mut args: Vec<CallArg> = Vec::new();
+        let mut trailing_comma = false;
 
         loop {
             if self.current_token == close {
@@ -697,6 +700,7 @@ impl Parser<'_> {
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
                 if self.current_token == close {
+                    trailing_comma = true;
                     break;
                 }
             } else if self.current_token == close {
@@ -709,7 +713,7 @@ impl Parser<'_> {
             }
         }
 
-        Ok(args)
+        Ok((args, trailing_comma))
     }
 
     /// Parse the body of an array literal. The opening `[` has already been
