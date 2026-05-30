@@ -7,9 +7,9 @@ function fn() {
 }
 
 enum {
-    SHORT = 1, // a
-    LONGER_NAME = 22, // b
-    LONGEST_NAME_HERE = 333, // c
+    FIELD_SHORT = 1, // a
+    FIELD_LONGER_NAME = 22, // b
+    FIELD_LONGEST_NAME_HERE = 333, // c
 }
 
 function strings() {

@@ -1,4 +1,4 @@
-enum /* A */ { FOO, BAR }
+enum /* A */ { TAG_FOO, TAG_BAR }
 
 class Foo /* B */ {
     var x;

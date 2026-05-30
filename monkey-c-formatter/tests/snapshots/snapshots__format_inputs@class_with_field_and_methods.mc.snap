@@ -3,13 +3,13 @@ source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/class_with_field_and_methods.mc
 ---
 class MyClass extends Base {
-    private var mValue as Number = 0;
+    private var _value as Number = 0;
 
     public function initialize(value as Number) as Void {
-        mValue = value;
+        _value = value;
     }
 
     function getValue() as Number {
-        return mValue;
+        return _value;
     }
 }

@@ -5,9 +5,9 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/inline_comments.mc
 using Toybox.Lang;
 
 enum /* NUMBERS */ {
-    First,
-    /* SECOND */ Second,
-    Third,
+    NUM_FIRST,
+    /* SECOND */ NUM_SECOND,
+    NUM_THIRD,
 }
 
 class Comments {

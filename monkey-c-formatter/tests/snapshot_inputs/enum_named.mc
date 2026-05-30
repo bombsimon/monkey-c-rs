@@ -1,8 +1,8 @@
 enum Dog {
-    SPOT = "Spot",
-    LUKE = "Luke",
-    POCO = "Poco",
-    BINGO = "B_I_N_G_O",
+    DOG_SPOT = "Spot",
+    DOG_LUKE = "Luke",
+    DOG_POCO = "Poco",
+    DOG_BINGO = "B_I_N_G_O",
 }
 
 enum {

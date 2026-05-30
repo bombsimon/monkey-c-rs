@@ -1,1 +1,1 @@
-var mBaseWidth = params[:width]; // mCurrentWidth calculated at start of draw(), when DC is available.
+var baseWidth = params[:width]; // currentWidth calculated at start of draw(), when DC is available.

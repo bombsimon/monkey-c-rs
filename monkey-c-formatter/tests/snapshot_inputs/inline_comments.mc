@@ -1,9 +1,9 @@
 using Toybox.Lang;
 
 enum /* NUMBERS */ {
-    First,
-    /* SECOND */ Second,
-    Third,
+    NUM_FIRST,
+    /* SECOND */ NUM_SECOND,
+    NUM_THIRD,
 }
 
 class Comments {

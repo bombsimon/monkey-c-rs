@@ -2,32 +2,27 @@
 source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/enum_aligned_values.mc
 ---
-enum Foo {
-    FIRST     = 1,
-    SECOND    = 2,
-    THIRD_ONE = 3,
+enum Color {
+    COLOR_RED       = 1,
+    COLOR_GREEN     = 2,
+    COLOR_BLUE_DARK = 3,
 }
 
 enum {
-    SHORT             = 1,
-    LONGER_NAME       = 22,
-    LONGEST_NAME_HERE = 333,
+    FIELD_SHORT             = 1,
+    FIELD_LONGER_NAME       = 22,
+    FIELD_LONGEST_NAME_HERE = 333,
 }
 
-// No alignment when not every variant in the run has a value: the
-// run [B = 5, C = 6] is 2 entries — they get aligned with each other
-// but the no-value variants A and D stay as-is.
-enum Mixed {
-    A,
-    B = 5,
-    C = 6,
-    D,
+enum State {
+    STATE_A,
+    STATE_B = 5,
+    STATE_C = 6,
+    STATE_D,
 }
 
-// A single variant with a value isn't padded — alignment requires
-// at least two consecutive value-bearing entries.
-enum One {
-    A,
-    B = 5,
-    C,
+enum Stage {
+    STAGE_A,
+    STAGE_B = 5,
+    STAGE_C,
 }

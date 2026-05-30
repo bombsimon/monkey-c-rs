@@ -1,5 +1,5 @@
 enum {
-    Sunday,     // 0
-    Monday,     // 1
-    Saturday    // 6
+    DAY_SUNDAY,     // 0
+    DAY_MONDAY,     // 1
+    DAY_SATURDAY    // 6
 }

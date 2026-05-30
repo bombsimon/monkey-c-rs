@@ -111,17 +111,17 @@ explicit value, and pads the names within each run.
         :a => 3
     };
 
-    enum Foo {
-        FIRST = 1,
-        SECOND = 2,
-        THIRD_ONE = 3,
+    enum Color {
+        COLOR_RED = 1,
+        COLOR_GREEN = 2,
+        COLOR_BLUE_DARK = 3,
     }
 
-    enum Mixed {
-        A,
-        B = 5,
-        C = 6,
-        D,
+    enum State {
+        STATE_A,
+        STATE_B = 5,
+        STATE_C = 6,
+        STATE_D,
     }
 
 </td>
@@ -133,17 +133,17 @@ explicit value, and pads the names within each run.
         :a            => 3
     };
 
-    enum Foo {
-        FIRST     = 1,
-        SECOND    = 2,
-        THIRD_ONE = 3,
+    enum Color {
+        COLOR_RED       = 1,
+        COLOR_GREEN     = 2,
+        COLOR_BLUE_DARK = 3,
     }
 
-    enum Mixed {
-        A,
-        B = 5,
-        C = 6,
-        D,
+    enum State {
+        STATE_A,
+        STATE_B = 5,
+        STATE_C = 6,
+        STATE_D,
     }
 
 </td>
@@ -151,9 +151,9 @@ explicit value, and pads the names within each run.
 
 </table>
 
-In the `Mixed` example the run `[B = 5, C = 6]` is already aligned with itself
-and no padding is needed. The bare variants `A` and `D` break the run and stay
-as-is.
+In the `State` example the run `[STATE_B = 5, STATE_C = 6]` is already aligned
+with itself and no padding is needed. The bare variants `STATE_A` and `STATE_D`
+break the run and stay as-is.
 
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf

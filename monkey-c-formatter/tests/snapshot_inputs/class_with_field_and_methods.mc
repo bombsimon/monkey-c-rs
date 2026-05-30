@@ -1,11 +1,11 @@
 class MyClass extends Base {
-    private var mValue as Number = 0;
+    private var _value as Number = 0;
 
     public function initialize(value as Number) as Void {
-        mValue = value;
+        _value = value;
     }
 
     function getValue() as Number {
-        return mValue;
+        return _value;
     }
 }
