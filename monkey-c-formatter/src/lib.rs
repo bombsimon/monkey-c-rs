@@ -46,6 +46,9 @@ pub struct Formatter {
     /// - dict literals — `=>` between key and value
     /// - enum variants — `=` between name and explicit value
     align_pairs: bool,
+    /// When `true`, multi-binding `var`/`const` declarations break each
+    /// binding onto its own indented line. See [`Self::with_decl_wrap`].
+    wrap_multi_bindings: bool,
     /// Built once at the start of [`Self::format`] from the [`ParseOutput`]'s
     /// comment table. Render methods query it via
     /// [`Self::leading_doc`] / [`Self::trailing_doc`] / [`Self::dangling`].
@@ -64,6 +67,7 @@ impl Formatter {
             line_index: LineIndex::new(source),
             line_width: 100,
             align_pairs: false,
+            wrap_multi_bindings: false,
             comments: RefCell::new(CommentsMap::new()),
         }
     }
@@ -84,6 +88,15 @@ impl Formatter {
     /// names padded so the separators form a vertical column.
     pub fn with_alignment(mut self) -> Self {
         self.align_pairs = true;
+        self
+    }
+
+    /// Enable per-binding wrapping for multi-binding `var`/`const` declarations
+    /// (opt-in). When set, a declaration with two or more bindings is broken
+    /// so the keyword sits alone and each binding lives on its own indented
+    /// line. For-loop init clauses keep their flat form regardless.
+    pub fn with_decl_wrap(mut self) -> Self {
+        self.wrap_multi_bindings = true;
         self
     }
 
@@ -601,10 +614,28 @@ impl Formatter {
     }
 
     fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
+        if self.wrap_multi_bindings && var_decl.bindings.len() >= 2 {
+            return self.wrapped_bindings_decl(
+                var_decl.visibility.as_ref(),
+                var_decl.is_static,
+                "var",
+                &var_decl.bindings,
+            );
+        }
+
         Doc::concat(vec![self.var_decl_to_doc(var_decl), Doc::text(";")])
     }
 
     fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
+        if self.wrap_multi_bindings && decl.bindings.len() >= 2 {
+            return self.wrapped_bindings_decl(
+                decl.visibility.as_ref(),
+                decl.is_static,
+                "const",
+                &decl.bindings,
+            );
+        }
+
         let mut parts = self.decl_keyword(decl.visibility.as_ref(), decl.is_static, "const");
         self.push_bindings(&mut parts, &decl.bindings);
         parts.push(Doc::text(";"));
@@ -614,10 +645,50 @@ impl Formatter {
 
     /// Render a `var` declaration without a trailing semicolon.
     ///
-    /// Used for both `var` statements and `for`-loop init clauses.
+    /// Used for both `var` statements and `for`-loop init clauses. The
+    /// statement form ([`Self::var_stmt_to_doc`]) substitutes the multi-binding
+    /// wrapping path when [`Self::with_decl_wrap`] is on; for-loop inits keep
+    /// the flat form regardless so the loop header stays on one line.
     fn var_decl_to_doc(&self, var: &VarDecl) -> Doc {
         let mut parts = self.decl_keyword(var.visibility.as_ref(), var.is_static, "var");
         self.push_bindings(&mut parts, &var.bindings);
+
+        Doc::Concat(parts)
+    }
+
+    /// Render a `var`/`const` declaration where each binding lives on its own
+    /// indented line, with the keyword left dangling on the line above. Used
+    /// only when there are two or more bindings.
+    fn wrapped_bindings_decl(
+        &self,
+        visibility: Option<&Visibility>,
+        is_static: bool,
+        keyword: &str,
+        bindings: &[Binding],
+    ) -> Doc {
+        let mut parts: Vec<Doc> = Vec::new();
+        if let Some(vis) = visibility {
+            parts.push(self.visibility_to_doc(vis));
+        }
+
+        if is_static {
+            parts.push(Doc::text("static "));
+        }
+
+        parts.push(Doc::text(keyword.to_string()));
+
+        let mut indented = vec![Doc::HardLine];
+        for (i, b) in bindings.iter().enumerate() {
+            if i > 0 {
+                indented.push(Doc::text(","));
+                indented.push(Doc::HardLine);
+            }
+
+            indented.push(self.binding_to_doc(b));
+        }
+
+        parts.push(Doc::Indent(indented));
+        parts.push(Doc::text(";"));
 
         Doc::Concat(parts)
     }
@@ -649,18 +720,24 @@ impl Formatter {
                 parts.push(Doc::text(", "));
             }
 
-            parts.push(Doc::text(&b.name));
-
-            if let Some(ty) = &b.type_ {
-                parts.push(Doc::text(" as "));
-                parts.push(self.type_to_doc(ty));
-            }
-
-            if let Some(init) = &b.initializer {
-                parts.push(Doc::text(" = "));
-                parts.push(self.expr_to_doc(init));
-            }
+            parts.push(self.binding_to_doc(b));
         }
+    }
+
+    /// Render a single `name [as Type] [= init]` binding.
+    fn binding_to_doc(&self, b: &Binding) -> Doc {
+        let mut parts = vec![Doc::text(&b.name)];
+        if let Some(ty) = &b.type_ {
+            parts.push(Doc::text(" as "));
+            parts.push(self.type_to_doc(ty));
+        }
+
+        if let Some(init) = &b.initializer {
+            parts.push(Doc::text(" = "));
+            parts.push(self.expr_to_doc(init));
+        }
+
+        Doc::Concat(parts)
     }
 
     fn visibility_to_doc(&self, vis: &Visibility) -> Doc {

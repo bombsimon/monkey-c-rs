@@ -7,7 +7,7 @@
 //! Snapshots live under `tests/snapshots/`. See <https://insta.rs/> for the
 //! snapshot tooling.
 mod common;
-use common::{format, format_aligned, format_aligned_width, format_width};
+use common::{format, format_aligned, format_aligned_width, format_default, format_width};
 
 #[test]
 fn format_inputs() {
@@ -15,7 +15,7 @@ fn format_inputs() {
         let raw = std::fs::read_to_string(path).expect("read input file");
         let input = raw.trim();
         insta::with_settings!({ omit_expression => true }, {
-            insta::assert_snapshot!(format_aligned(input));
+            insta::assert_snapshot!(format_default(input));
         });
     });
 }

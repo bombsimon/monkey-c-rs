@@ -62,7 +62,8 @@ fn run(cli: &Cli) -> io::Result<bool> {
 
     let formatter = Formatter::new(&source)
         .with_line_width(cli.line_width)
-        .with_alignment();
+        .with_alignment()
+        .with_decl_wrap();
     let formatted = formatter.format(&output);
 
     if cli.check {

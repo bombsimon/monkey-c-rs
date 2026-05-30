@@ -12,6 +12,15 @@ pub fn format_aligned(src: &str) -> String {
     Formatter::new(src).with_alignment().format(&output)
 }
 
+/// Mirrors the CLI defaults — every opt-in formatting feature enabled.
+pub fn format_default(src: &str) -> String {
+    let output = Parser::new(src).parse().expect("should parse");
+    Formatter::new(src)
+        .with_alignment()
+        .with_decl_wrap()
+        .format(&output)
+}
+
 pub fn format_width(src: &str, width: usize) -> String {
     let output = Parser::new(src).parse().expect("should parse");
     Formatter::new(src).with_line_width(width).format(&output)
