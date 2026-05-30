@@ -1227,7 +1227,10 @@ impl Formatter {
             }
 
             header.push(Doc::text(":"));
-            let body_span = Span { start: case.label_span.end, end: case.span.end };
+            let body_span = Span {
+                start: case.label_span.end,
+                end: case.span.end,
+            };
             header.push(self.after_open_brace_doc(body_span));
             body.push(Doc::Concat(header));
 
@@ -1578,7 +1581,10 @@ impl Formatter {
                 self.expr_to_doc(&e.value),
             ]),
             Expr::Call(e) => {
-                let args_span = Span { start: e.args_open, end: e.span.end };
+                let args_span = Span {
+                    start: e.args_open,
+                    end: e.span.end,
+                };
                 let after_open = self.after_open_brace_doc(args_span);
                 Doc::concat(vec![
                     self.expr_to_doc(&e.callee),
@@ -1603,7 +1609,10 @@ impl Formatter {
                 Doc::text("]"),
             ]),
             Expr::New(e) => {
-                let args_span = Span { start: e.args_open, end: e.span.end };
+                let args_span = Span {
+                    start: e.args_open,
+                    end: e.span.end,
+                };
                 let after_open = self.after_open_brace_doc(args_span);
                 Doc::concat(vec![
                     Doc::text(format!("new {}", e.class)),

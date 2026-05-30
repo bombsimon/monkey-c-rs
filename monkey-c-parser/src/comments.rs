@@ -624,7 +624,10 @@ fn collect_spans_stmt(
                 // immediately after the colon attach as `AfterOpenBrace` and
                 // own-line comments below attach as `BeforeFirstChild` — the
                 // same machinery used for `if`/`while`/`for` bodies.
-                let body_span = Span { start: case.label_span.end, end: case.span.end };
+                let body_span = Span {
+                    start: case.label_span.end,
+                    end: case.span.end,
+                };
                 block_spans.insert(body_span);
                 out.push(body_span);
 
@@ -812,7 +815,10 @@ fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>, block_spans: &mut HashSe
         }
         Expr::Call(c) => {
             collect_spans_expr(&c.callee, out, block_spans);
-            let args_span = Span { start: c.args_open, end: c.span.end };
+            let args_span = Span {
+                start: c.args_open,
+                end: c.span.end,
+            };
             block_spans.insert(args_span);
             out.push(args_span);
             for arg in &c.args {
@@ -825,7 +831,10 @@ fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>, block_spans: &mut HashSe
             collect_spans_expr(&i.index, out, block_spans);
         }
         Expr::New(n) => {
-            let args_span = Span { start: n.args_open, end: n.span.end };
+            let args_span = Span {
+                start: n.args_open,
+                end: n.span.end,
+            };
             block_spans.insert(args_span);
             out.push(args_span);
             for arg in &n.args {
