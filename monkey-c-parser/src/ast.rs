@@ -273,17 +273,21 @@ pub enum AssignOperator {
 /// A 32-bit floating point literal together with the source-form flags
 /// needed to round-trip it. The lexer parses `value` from the written digits;
 /// flags capture which surface form the user wrote so the formatter can
-/// re-emit the same shape (`0f`, `0.5`, `0.5f`, `.978`, `.5f`).
+/// re-emit the same shape (`0f`, `0.5`, `0.5f`, `.978`, `.5f`, `6371e3`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatLit {
     pub value: f32,
     /// Source contained a `.` (`0.5`, `.978`). False for integer-form
-    /// literals that gain Float-ness only through the `f` suffix (`0f`).
+    /// literals that gain Float-ness only through the `f` suffix (`0f`) or
+    /// an exponent (`6371e3`).
     pub has_dot: bool,
     /// Source omitted the leading zero (`.5`, `.5f`). Implies `has_dot`.
     pub leading_dot: bool,
     /// Source had an explicit `f` suffix.
     pub has_suffix: bool,
+    /// Exponent part from scientific notation, e.g. `"e3"`, `"E-2"`, `"e+10"`.
+    /// `None` for literals without an exponent.
+    pub exponent: Option<String>,
 }
 
 /// A 64-bit floating point literal. Unlike [`FloatLit`], the `d` suffix is
@@ -292,10 +296,13 @@ pub struct FloatLit {
 pub struct DoubleLit {
     pub value: f64,
     /// Source contained a `.` (`78.0d`). False for integer-form Double
-    /// literals (`78d`).
+    /// literals (`78d`) or exponent-only form (`6371e3d`).
     pub has_dot: bool,
     /// Source omitted the leading zero (`.5d`). Implies `has_dot`.
     pub leading_dot: bool,
+    /// Exponent part from scientific notation, e.g. `"e3"`, `"E-2"`.
+    /// `None` for literals without an exponent.
+    pub exponent: Option<String>,
 }
 
 impl std::fmt::Display for FloatLit {

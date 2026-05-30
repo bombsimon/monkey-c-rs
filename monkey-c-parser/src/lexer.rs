@@ -112,7 +112,34 @@ impl<'a> Lexer<'a> {
             self.read_char();
         }
 
+        // Scientific notation exponent: e.g. `e3`, `E-2`, `e+10`.
+        // Only consume it when at least one digit follows the optional sign.
+        let exponent = if matches!(self.ch, b'e' | b'E') {
+            let next = self.peek_char();
+            let has_exp_digits = next.is_ascii_digit()
+                || (matches!(next, b'+' | b'-') && self.peek_char_at(2).is_ascii_digit());
+
+            if has_exp_digits {
+                let exp_start = self.position;
+                self.read_char(); // consume 'e'/'E'
+                if matches!(self.ch, b'+' | b'-') {
+                    self.read_char(); // consume optional sign
+                }
+
+                while self.ch.is_ascii_digit() {
+                    self.read_char();
+                }
+
+                Some(self.input[exp_start..self.position].to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let text = self.input[start_position..self.position].to_string();
+
         match self.ch {
             b'l' => {
                 self.read_char();
@@ -124,6 +151,7 @@ impl<'a> Lexer<'a> {
                     value: text.parse().unwrap_or(0.0),
                     has_dot,
                     leading_dot,
+                    exponent,
                 })
             }
             b'f' => {
@@ -133,13 +161,15 @@ impl<'a> Lexer<'a> {
                     has_dot,
                     leading_dot,
                     has_suffix: true,
+                    exponent,
                 })
             }
-            _ if has_dot => NumberLiteral::Float(FloatLit {
+            _ if has_dot || exponent.is_some() => NumberLiteral::Float(FloatLit {
                 value: text.parse().unwrap_or(0.0),
                 has_dot,
                 leading_dot,
                 has_suffix: false,
+                exponent,
             }),
             _ => NumberLiteral::Number(text),
         }

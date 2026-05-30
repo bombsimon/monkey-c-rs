@@ -45,6 +45,7 @@ fn test_literals() {
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: false,
+                exponent: None,
             }),
         ),
         (
@@ -53,6 +54,7 @@ fn test_literals() {
                 value: 1.5,
                 has_dot: true,
                 leading_dot: false,
+                exponent: None,
             }),
         ),
         ("true", LiteralValue::Boolean(true)),

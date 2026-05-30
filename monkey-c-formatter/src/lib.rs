@@ -2108,12 +2108,28 @@ fn strip_leading_zero(s: &str) -> String {
         .unwrap_or_else(|| s.to_string())
 }
 
+/// Parse the numeric power from a stored exponent string like `"e3"`, `"E-2"`,
+/// or `"e+10"`. The leading `e`/`E` is skipped; Rust's parser handles the
+/// optional sign.
+///
+/// The lexer only ever produces a `Some` exponent after consuming the `e`/`E`
+/// byte, so the string is always at least two bytes — the slice is safe.
+fn exponent_power(exp: &str) -> i32 {
+    exp[1..].parse().unwrap_or(0)
+}
+
 /// Re-emit a [`FloatLit`] in the exact source form recorded by the lexer.
-/// Combines `has_dot`/`leading_dot`/`has_suffix` to reconstruct `0f`, `0.5`,
-/// `0.5f`, `.978`, `.5f`, etc.
+/// Combines `has_dot`/`leading_dot`/`has_suffix`/`exponent` to reconstruct
+/// `0f`, `0.5`, `0.5f`, `.978`, `.5f`, `6371e3`, `6371e3f`, etc.
 fn format_float_lit(lit: &FloatLit) -> String {
+    let mantissa = if let Some(exp) = &lit.exponent {
+        lit.value / 10_f32.powi(exponent_power(exp))
+    } else {
+        lit.value
+    };
+
     let body = if lit.has_dot {
-        let with_dot = with_decimal_point(&lit.value.to_string());
+        let with_dot = with_decimal_point(&mantissa.to_string());
         if lit.leading_dot {
             strip_leading_zero(&with_dot)
         } else {
@@ -2122,7 +2138,13 @@ fn format_float_lit(lit: &FloatLit) -> String {
     } else {
         // Source had no `.`, so the literal is integer-valued — drop the
         // trailing `.0` that `f32::to_string()` includes for whole numbers.
-        (lit.value as i64).to_string()
+        (mantissa as i64).to_string()
+    };
+
+    let body = if let Some(exp) = &lit.exponent {
+        format!("{body}e{}", exponent_power(exp))
+    } else {
+        body
     };
 
     if lit.has_suffix {
@@ -2135,15 +2157,27 @@ fn format_float_lit(lit: &FloatLit) -> String {
 /// Re-emit a [`DoubleLit`] preserving its source style. Mirrors
 /// [`format_float_lit`] but the `d` suffix is always present.
 fn format_double_lit(lit: &DoubleLit) -> String {
+    let mantissa = if let Some(exp) = &lit.exponent {
+        lit.value / 10_f64.powi(exponent_power(exp))
+    } else {
+        lit.value
+    };
+
     let body = if lit.has_dot {
-        let with_dot = with_decimal_point(&lit.value.to_string());
+        let with_dot = with_decimal_point(&mantissa.to_string());
         if lit.leading_dot {
             strip_leading_zero(&with_dot)
         } else {
             with_dot
         }
     } else {
-        (lit.value as i64).to_string()
+        (mantissa as i64).to_string()
+    };
+
+    let body = if let Some(exp) = &lit.exponent {
+        format!("{body}e{}", exponent_power(exp))
+    } else {
+        body
     };
 
     format!("{body}d")

@@ -1,4 +1,4 @@
-use monkey_c_parser::ast::FloatLit;
+use monkey_c_parser::ast::{DoubleLit, FloatLit};
 use monkey_c_parser::lexer::Lexer;
 use monkey_c_parser::token::Type;
 
@@ -41,6 +41,7 @@ fn test_var_declaration() {
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: false,
+                exponent: None,
             }),
             Type::Semicolon,
         ]
@@ -205,18 +206,21 @@ fn test_float_suffix() {
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: true,
+                exponent: None,
             }),
             Type::Float(FloatLit {
                 value: 5.0,
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: true,
+                exponent: None,
             }),
             Type::Float(FloatLit {
                 value: 0.5,
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: true,
+                exponent: None,
             }),
         ]
     );
@@ -232,12 +236,14 @@ fn test_leading_dot_float() {
                 has_dot: true,
                 leading_dot: true,
                 has_suffix: false,
+                exponent: None,
             }),
             Type::Float(FloatLit {
                 value: 0.5,
                 has_dot: true,
                 leading_dot: true,
                 has_suffix: true,
+                exponent: None,
             }),
         ]
     );
@@ -387,7 +393,51 @@ fn test_float_literal() {
             has_dot: true,
             leading_dot: false,
             has_suffix: false,
+            exponent: None,
         })]
+    );
+}
+
+#[test]
+fn test_exponent_notation() {
+    assert_eq!(
+        tokens("6371e3 6371E3 10e-2 1.5e+10 6371e3d"),
+        vec![
+            Type::Float(FloatLit {
+                value: 6371e3,
+                has_dot: false,
+                leading_dot: false,
+                has_suffix: false,
+                exponent: Some("e3".into()),
+            }),
+            Type::Float(FloatLit {
+                value: 6371e3,
+                has_dot: false,
+                leading_dot: false,
+                has_suffix: false,
+                exponent: Some("E3".into()),
+            }),
+            Type::Float(FloatLit {
+                value: 10e-2,
+                has_dot: false,
+                leading_dot: false,
+                has_suffix: false,
+                exponent: Some("e-2".into()),
+            }),
+            Type::Float(FloatLit {
+                value: 1.5e+10,
+                has_dot: true,
+                leading_dot: false,
+                has_suffix: false,
+                exponent: Some("e+10".into()),
+            }),
+            Type::Double(DoubleLit {
+                value: 6371e3,
+                has_dot: false,
+                leading_dot: false,
+                exponent: Some("e3".into()),
+            }),
+        ]
     );
 }
 
