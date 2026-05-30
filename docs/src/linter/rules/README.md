@@ -16,11 +16,14 @@ Once `--fix` has been applied the user is expected to run the
 | -------------------------------------------- | -------- | ----------------------------------- |
 | [`compound-assignment`][compound-assignment] | ✅       | Rewrites `x = x + n` as `x += n`    |
 | [`import-order`][import-order]               | ⚠️       | Suppressed when comments interleave |
+| [`one-class-per-file`][one-class-per-file]   | ❌       | [Coding Conventions]                |
 | [`unneeded-parens`][unneeded-parens]         | ✅       | Removes redundant parentheses       |
 
+[Coding Conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
 [compound-assignment]: ./compound-assignment
 [diagnostic]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [fix]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [formatter]: ../../formatter
 [import-order]: ./import-order
+[one-class-per-file]: ./one-class-per-file
 [unneeded-parens]: ./unneeded-parens

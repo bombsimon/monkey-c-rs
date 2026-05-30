@@ -19,3 +19,7 @@ class Example {
         value = (valueEnabled ? "V on" : "V off");
     }
 }
+
+class Example2 {
+    const X = 10;
+}

@@ -72,6 +72,13 @@ fn dispatch_ast_seq(seq: &[Ast], ctx: &LintContext, diags: &mut Vec<Diagnostic>)
     diags.extend(rules::import_order::check_ast_seq(seq, ctx));
 }
 
+/// Called once for the file's top-level declaration list. Rules that need
+/// to reason about the *whole file* — e.g. counting class declarations
+/// across modules — hook here.
+fn dispatch_document(nodes: &[Ast], ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    diags.extend(rules::one_class_per_file::check_document(nodes, ctx));
+}
+
 fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     if let Some(d) = rules::unneeded_parens::check_type(ty, ctx) {
         diags.push(d);
@@ -81,6 +88,7 @@ fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
 fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     match ast {
         Ast::Document(nodes, _) => {
+            dispatch_document(nodes, ctx, diags);
             dispatch_ast_seq(nodes, ctx, diags);
             for n in nodes {
                 walk_ast(n, ctx, diags);
