@@ -63,9 +63,6 @@ pub enum Type {
     Identifier(String),
     Me,
     Self_,
-    /// A symbol literal, e.g. `:mySymbol`.
-    Symbol(String),
-
     // Comments
     BlockComment(String),
     Comment(String),
@@ -185,8 +182,6 @@ impl std::fmt::Display for Type {
             Type::Identifier(s) => write!(f, "{s}"),
             Type::Me => write!(f, "me"),
             Type::Self_ => write!(f, "self"),
-            Type::Symbol(s) => write!(f, ":{s}"),
-
             // Comments
             Type::BlockComment(s) => write!(f, "/*{s}*/"),
             Type::Comment(s) => write!(f, "//{s}"),

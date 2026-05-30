@@ -218,6 +218,31 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Read the current token as a symbol name, accepting both `Identifier`
+    /// and keyword tokens. Keywords are valid symbol names (e.g. `:hidden`,
+    /// `:private`) — the Display text is their canonical string.
+    pub(crate) fn parse_symbol_name(&mut self) -> Result<String, ParserError> {
+        let name = match &self.current_token {
+            token::Type::Identifier(name) => name.clone(),
+            // Keywords can be valid symbol names, e.g (:private)
+            tok => {
+                let s = tok.to_string();
+                if s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+                    s
+                } else {
+                    return Err(self.parse_error(format!(
+                        "Expected name after `:` for symbol, got {:?}",
+                        self.current_token
+                    )));
+                }
+            }
+        };
+
+        self.next_token_span();
+
+        Ok(name)
+    }
+
     /// Parse a full type, including `or`-joined union alternatives at the top level.
     ///
     /// Use this for variable/parameter/return type annotations.
@@ -435,9 +460,9 @@ impl<'a> Parser<'a> {
 
         while self.current_token != token::Type::RBrace {
             let key = match self.current_token.clone() {
-                token::Type::Symbol(name) => {
-                    self.next_token_span();
-                    DictTypeKey::Symbol(name)
+                token::Type::Colon => {
+                    self.next_token_span(); // consume `:`
+                    DictTypeKey::Symbol(self.parse_symbol_name()?)
                 }
                 token::Type::String(name) => {
                     self.next_token_span();
@@ -502,7 +527,7 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_token.clone() {
-            token::Type::LParen if matches!(self.lexer.peek_token().1, token::Type::Symbol(_)) => {
+            token::Type::LParen if matches!(self.lexer.peek_token().1, token::Type::Colon) => {
                 self.parse_annotation_decl(start)
             }
             token::Type::Class => self.parse_class_decl(start),
@@ -523,26 +548,16 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a `(:Name)` or `(:Name1, :Name2, …)` annotation at a declaration
-    /// position. The lexer emits the surface bytes as `LParen`, `Symbol`s
-    /// separated by commas, `RParen`; the parser stitches them back together
-    /// when seen at decl scope. In expression scope the same bytes are a
+    /// position. Each entry is a `:Name` pair — the parser consumes the colon
+    /// and identifier separately. In expression scope the same bytes parse as a
     /// parenthesised symbol expression.
     fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
         let mut entries = Vec::new();
 
         loop {
-            let name = match self.current_token.clone() {
-                token::Type::Symbol(name) => name,
-                _ => {
-                    return Err(self.parse_error(format!(
-                        "Expected `:Name` inside annotation, got {:?}",
-                        self.current_token
-                    )));
-                }
-            };
-
-            self.next_token_span();
+            self.assert_next_token(&[token::Type::Colon])?; // consume `:`
+            let name = self.parse_symbol_name()?;
 
             let args = if self.current_token == token::Type::LParen {
                 self.next_token_span(); // consume `(`

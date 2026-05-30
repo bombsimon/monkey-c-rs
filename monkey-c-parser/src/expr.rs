@@ -472,10 +472,11 @@ impl Parser<'_> {
                 self.next_token_span();
                 Ok(Expr::Bling(Span { start, end }))
             }
-            token::Type::Symbol(name) => {
+            token::Type::Colon => {
                 let start = self.current_token_start;
+                self.next_token_span(); // consume `:`
                 let end = self.current_token_end;
-                self.next_token_span();
+                let name = self.parse_symbol_name()?;
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Symbol(name),
                     span: Span { start, end },

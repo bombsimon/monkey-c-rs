@@ -160,27 +160,32 @@ fn test_block_comment_multi_line() {
 }
 
 #[test]
-fn test_symbol_after_call_paren_is_not_annotation() {
-    // `method(:foo)` must lex as Identifier, LParen, Symbol, RParen — not as
-    // Identifier + Annotation.
+fn test_symbol_after_call_paren() {
+    // `:foo` lexes as Colon + Identifier — the parser decides context.
     assert_eq!(
         tokens("method(:foo)"),
         vec![
             Type::Identifier("method".into()),
             Type::LParen,
-            Type::Symbol("foo".into()),
+            Type::Colon,
+            Type::Identifier("foo".into()),
             Type::RParen,
         ]
     );
 }
 
 #[test]
-fn test_annotation_bytes_are_paren_symbol_paren() {
-    // The lexer is context-free — `(:test)` is just three tokens. The parser
+fn test_annotation_bytes_are_paren_colon_ident_paren() {
+    // The lexer is context-free — `(:test)` is four tokens. The parser
     // reconstructs an annotation at declaration position.
     assert_eq!(
         tokens("(:test)"),
-        vec![Type::LParen, Type::Symbol("test".into()), Type::RParen]
+        vec![
+            Type::LParen,
+            Type::Colon,
+            Type::Identifier("test".into()),
+            Type::RParen,
+        ]
     );
 }
 
@@ -277,7 +282,8 @@ fn test_annotation() {
         tokens("(:test)\nfunction foo() {}"),
         vec![
             Type::LParen,
-            Type::Symbol("test".into()),
+            Type::Colon,
+            Type::Identifier("test".into()),
             Type::RParen,
             Type::Function,
             Type::Identifier("foo".into()),
@@ -291,9 +297,15 @@ fn test_annotation() {
 
 #[test]
 fn test_symbol_literal() {
-    assert_eq!(tokens(":mySymbol"), vec![Type::Symbol("mySymbol".into())]);
-    assert_eq!(tokens(":_private"), vec![Type::Symbol("_private".into())]);
-    // plain colon (e.g. dict separator) is NOT a symbol
+    assert_eq!(
+        tokens(":mySymbol"),
+        vec![Type::Colon, Type::Identifier("mySymbol".into())]
+    );
+    assert_eq!(
+        tokens(":_private"),
+        vec![Type::Colon, Type::Identifier("_private".into())]
+    );
+    // plain colon with no following identifier stays as Colon
     assert_eq!(tokens(":"), vec![Type::Colon]);
 }
 
@@ -301,7 +313,12 @@ fn test_symbol_literal() {
 fn test_fat_arrow() {
     assert_eq!(
         tokens(":key => 1"),
-        vec![Type::Symbol("key".into()), Type::FatArrow, Type::Number(1)]
+        vec![
+            Type::Colon,
+            Type::Identifier("key".into()),
+            Type::FatArrow,
+            Type::Number(1),
+        ]
     );
     // = alone is still Assign, == is still EqualEqual
     assert_eq!(tokens("= =>"), vec![Type::Assign, Type::FatArrow]);

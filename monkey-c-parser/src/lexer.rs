@@ -396,16 +396,7 @@ impl<'a> Lexer<'a> {
             }
             b'~' => (token::Type::Tilde, 1),
             b'?' => (token::Type::Question, 1),
-            b':' => {
-                let next = self.peek_char();
-                if next.is_ascii_alphabetic() || next == b'_' {
-                    self.read_char(); // advance past ':'
-                    let name = self.read_identifier();
-                    return (start, token::Type::Symbol(name), self.position);
-                } else {
-                    (token::Type::Colon, 1)
-                }
-            }
+            b':' => (token::Type::Colon, 1),
             b';' => (token::Type::Semicolon, 1),
             b',' => (token::Type::Comma, 1),
             b'.' => {

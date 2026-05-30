@@ -445,3 +445,15 @@ fn test_left_associativity() {
         assert_eq!(lhs.operator, op);
     }
 }
+
+#[test]
+fn test_ternary_no_whitespace() {
+    for src in ["a?b:c", "a ? b : c"] {
+        let Expr::Ternary(e) = parse_expr(src) else {
+            panic!("`{src}`: expected Ternary");
+        };
+        assert!(matches!(*e.cond, Expr::Ident(_)));
+        assert!(matches!(*e.then_expr, Expr::Ident(_)));
+        assert!(matches!(*e.else_expr, Expr::Ident(_)));
+    }
+}
