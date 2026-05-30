@@ -29,7 +29,7 @@ declaration parameters, and function / method call arguments.
 </tr>
 
 <tr>
-<td>
+<td valign="top">
 
     function SomeFunction(arg1 as String, arg2 as Number,) as Void {
         var arr = [
@@ -51,7 +51,7 @@ declaration parameters, and function / method call arguments.
     }
 
 </td>
-<td>
+<td valign="top">
 
     function SomeFunction(
         arg1 as String,
@@ -103,7 +103,7 @@ explicit value, and pads the names within each run.
 </tr>
 
 <tr>
-<td>
+<td valign="top">
 
     var dict = {
         :keyOne => 1,
@@ -125,7 +125,7 @@ explicit value, and pads the names within each run.
     }
 
 </td>
-<td>
+<td valign="top">
 
     var dict = {
         :keyOne       => 1,
