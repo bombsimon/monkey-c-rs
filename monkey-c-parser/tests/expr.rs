@@ -128,6 +128,7 @@ fn test_binary_operators() {
 #[test]
 fn test_prefix_unary_operators() {
     for (src, expected) in [
+        ("+x", UnaryOperator::Pos),
         ("-x", UnaryOperator::Neg),
         ("!x", UnaryOperator::Not),
         ("~x", UnaryOperator::BitNot),
@@ -137,6 +138,15 @@ fn test_prefix_unary_operators() {
         };
         assert_eq!(e.operator, expected, "unary op in `{src}`");
     }
+}
+
+#[test]
+fn test_explicit_positive_number() {
+    let Expr::Unary(e) = parse_expr("+1") else {
+        panic!("expected Unary for `+1`");
+    };
+    assert_eq!(e.operator, UnaryOperator::Pos);
+    assert!(matches!(*e.operand, Expr::Lit(_)));
 }
 
 #[test]

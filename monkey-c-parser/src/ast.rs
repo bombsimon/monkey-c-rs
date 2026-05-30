@@ -244,6 +244,7 @@ pub enum BinaryOperator {
 /// A unary (single-operand) operator.
 #[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
+    Pos,     // +
     Neg,     // -
     Not,     // !
     BitNot,  // ~

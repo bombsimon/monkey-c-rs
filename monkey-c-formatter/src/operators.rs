@@ -37,6 +37,7 @@ pub(crate) fn binary_op(op: &BinaryOperator) -> &'static str {
 /// must handle those separately since they follow their operand.
 pub(crate) fn unary_prefix_op(op: &UnaryOperator) -> &'static str {
     match op {
+        UnaryOperator::Pos => "+",
         UnaryOperator::Neg => "-",
         UnaryOperator::Not => "!",
         UnaryOperator::BitNot => "~",

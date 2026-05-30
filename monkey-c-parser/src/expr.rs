@@ -300,6 +300,7 @@ impl Parser<'_> {
         let operator_token = self.current_token.clone();
         self.next_token_span(); // advance past operator
         let operator = match operator_token {
+            token::Type::Plus => UnaryOperator::Pos,
             token::Type::Minus => UnaryOperator::Neg,
             token::Type::Bang => UnaryOperator::Not,
             token::Type::Tilde => UnaryOperator::BitNot,
@@ -329,7 +330,8 @@ impl Parser<'_> {
 
         let result = if matches!(
             self.current_token,
-            token::Type::Minus
+            token::Type::Plus
+                | token::Type::Minus
                 | token::Type::Bang
                 | token::Type::Tilde
                 | token::Type::PlusPlus
