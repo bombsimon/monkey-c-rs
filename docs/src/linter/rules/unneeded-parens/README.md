@@ -1,56 +1,51 @@
 # `unneeded-parens`
 
-Flags `(<expr>)` written in positions where the parentheses don't change
-parsing.
+Flags parentheses written in positions where they don't change parsing.
 
 ## Rationale
 
-A parenthesised expression in certain positions is unambiguous — the grammar
-accepts any expression there regardless of operator precedence. Wrapping it in
-extra parens reads as either a typo or copy-paste residue.
+Parens that don't affect parsing read as either a typo or copy-paste residue.
+Removing them clarifies the code without changing behavior.
 
 ## What triggers
 
-The rule fires when a `(<expr>)` appears as:
-
-- the right-hand side of an assignment (`x = (1 + 2);`),
-- the initializer of a `var` / `const` binding (`var x = (1 + 2);`),
-- the value of a `return` statement (`return (x);`).
-
-In all three slots, removing the parentheses cannot affect operator precedence.
+- The right-hand side of an assignment: `x = (1 + 2);`
+- The initializer of a `var` / `const`: `var x = (1 + 2);`
+- The value of a `return`: `return (x);`
+- Parens around a `Method(…)` type annotation when they aren't load-bearing,
+  e.g. `(Method() as Boolean)` as a function return type.
 
 ## What does not trigger
 
-The rule is intentionally conservative and skips positions where parentheses
-*can* matter:
+Positions where parens *can* affect parsing:
 
-- Operand of a binary operator — `1 * (2 + 3)` *needs* the parens.
-- Object position of a `.member` or `[index]` — `(x + 1).foo` *needs* the
-  parens.
-- Anywhere else not in the explicit list above.
+- Operand of a binary operator — `1 * (2 + 3)` needs the parens.
+- Object position of `.member` or `[index]` — `(x + 1).foo` needs the parens.
+- `(Method(…) as Return)?` — without the parens, the trailing `?` binds to
+  `Return` rather than to the whole callable.
 
 ## Example
 
 Before:
 
 ```monkey-c
-var x = (1 + 2);
-function f() {
-    return (foo());
+function f(cb as (Method(x as Number) as Void)?) as (Method() as Boolean) {
+    var x = (1 + 2);
+    return (method(:g));
 }
 ```
 
 After `--fix`:
 
 ```monkey-c
-var x = 1 + 2;
-function f() {
-    return foo();
+function f(cb as (Method(x as Number) as Void)?) as Method() as Boolean {
+    var x = 1 + 2;
+    return method(:g);
 }
 ```
 
 ## Fix
 
-The fix replaces the source between the parentheses (trimmed of surrounding
+The fix replaces the source between the parens (trimmed of surrounding
 whitespace) into the outer span. Comments inside the parens are preserved:
 `(/* tag */ 2 + 3)` becomes `/* tag */ 2 + 3`.

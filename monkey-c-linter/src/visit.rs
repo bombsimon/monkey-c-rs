@@ -11,7 +11,9 @@
 //! slot it sits in. Rules use this to decide when they apply — e.g., the
 //! `unneeded-parens` rule only fires for expressions in slots where any
 //! expression is unambiguously parseable.
-use monkey_c_parser::ast::{Ast, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, Stmt};
+use monkey_c_parser::ast::{
+    Ast, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, InterfaceMember, Stmt, Type, TypeKind,
+};
 
 use crate::{Diagnostic, rules};
 
@@ -70,6 +72,12 @@ fn dispatch_ast_seq(seq: &[Ast], ctx: &LintContext, diags: &mut Vec<Diagnostic>)
     diags.extend(rules::import_order::check_ast_seq(seq, ctx));
 }
 
+fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    if let Some(d) = rules::unneeded_parens::check_type(ty, ctx) {
+        diags.push(d);
+    }
+}
+
 fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     match ast {
         Ast::Document(nodes, _) => {
@@ -91,12 +99,26 @@ fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         Ast::Function(decl) => {
+            for arg in &decl.args.inner {
+                if let Some(t) = &arg.type_ {
+                    walk_type(t, ctx, diags);
+                }
+            }
+
+            if let Some(ret) = &decl.returns {
+                walk_type(ret, ctx, diags);
+            }
+
             for stmt in &decl.body.stmts {
                 walk_stmt(stmt, ctx, diags);
             }
         }
         Ast::Variable(decl) => {
             for b in &decl.bindings {
+                if let Some(t) = &b.type_ {
+                    walk_type(t, ctx, diags);
+                }
+
                 if let Some(init) = &b.initializer {
                     walk_expr(init, ExprPosition::Initializer, ctx, diags);
                 }
@@ -104,17 +126,17 @@ fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
         }
         Ast::Const(decl) => {
             for b in &decl.bindings {
+                if let Some(t) = &b.type_ {
+                    walk_type(t, ctx, diags);
+                }
+
                 if let Some(init) = &b.initializer {
                     walk_expr(init, ExprPosition::Initializer, ctx, diags);
                 }
             }
         }
-        Ast::Enum(_)
-        | Ast::Typedef(_)
-        | Ast::Import(_)
-        | Ast::Using(_)
-        | Ast::Annotation(_, _)
-        | Ast::Eof => {}
+        Ast::Typedef(decl) => walk_type(&decl.type_, ctx, diags),
+        Ast::Enum(_) | Ast::Import(_) | Ast::Using(_) | Ast::Annotation(_, _) | Ast::Eof => {}
     }
 }
 
@@ -139,10 +161,21 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         Stmt::For(s) => {
-            if let Some(init) = &s.header.inner.init
-                && let ForInit::Expr(e) = init
-            {
-                walk_expr(e, ExprPosition::Other, ctx, diags);
+            if let Some(init) = &s.header.inner.init {
+                match init {
+                    ForInit::Expr(e) => walk_expr(e, ExprPosition::Other, ctx, diags),
+                    ForInit::Var(v) => {
+                        for b in &v.bindings {
+                            if let Some(t) = &b.type_ {
+                                walk_type(t, ctx, diags);
+                            }
+
+                            if let Some(init) = &b.initializer {
+                                walk_expr(init, ExprPosition::Initializer, ctx, diags);
+                            }
+                        }
+                    }
+                }
             }
 
             if let Some(c) = &s.header.inner.condition {
@@ -160,8 +193,10 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
         Stmt::Switch(s) => {
             walk_expr(&s.discriminant.inner, ExprPosition::Other, ctx, diags);
             for case in &s.cases {
-                if let CaseLabel::Value(e) = &case.label {
-                    walk_expr(e, ExprPosition::Other, ctx, diags);
+                match &case.label {
+                    CaseLabel::Value(e) => walk_expr(e, ExprPosition::Other, ctx, diags),
+                    CaseLabel::InstanceOf(t) => walk_type(t, ctx, diags),
+                    CaseLabel::Default => {}
                 }
 
                 for sub in &case.stmts {
@@ -175,6 +210,10 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
 
             for catch in &s.catches {
+                if let Some(t) = &catch.type_filter {
+                    walk_type(t, ctx, diags);
+                }
+
                 for sub in &catch.body.stmts {
                     walk_stmt(sub, ctx, diags);
                 }
@@ -194,6 +233,10 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
         }
         Stmt::Var(v) => {
             for b in &v.bindings {
+                if let Some(t) = &b.type_ {
+                    walk_type(t, ctx, diags);
+                }
+
                 if let Some(init) = &b.initializer {
                     walk_expr(init, ExprPosition::Initializer, ctx, diags);
                 }
@@ -201,6 +244,62 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
         }
         Stmt::Expr(e) => walk_expr(e, ExprPosition::Other, ctx, diags),
         Stmt::Break(_) | Stmt::Continue(_) => {}
+    }
+}
+
+fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    dispatch_type(ty, ctx, diags);
+
+    match &ty.kind {
+        TypeKind::Named { generic_params, .. } => {
+            for p in generic_params {
+                walk_type(p, ctx, diags);
+            }
+        }
+        TypeKind::Dict { entries, .. } => {
+            for entry in entries {
+                walk_type(&entry.value_type, ctx, diags);
+            }
+        }
+        TypeKind::Tuple { elements } => {
+            for el in elements {
+                walk_type(el, ctx, diags);
+            }
+        }
+        TypeKind::Method { args, returns, .. } => {
+            for arg in args {
+                if let Some(t) = &arg.type_ {
+                    walk_type(t, ctx, diags);
+                }
+            }
+
+            if let Some(ret) = returns {
+                walk_type(ret, ctx, diags);
+            }
+        }
+        TypeKind::Interface { members, .. } => {
+            for m in members {
+                match m {
+                    InterfaceMember::Function(f) => {
+                        for arg in &f.args {
+                            if let Some(t) = &arg.type_ {
+                                walk_type(t, ctx, diags);
+                            }
+                        }
+
+                        if let Some(ret) = &f.returns {
+                            walk_type(ret, ctx, diags);
+                        }
+                    }
+                    InterfaceMember::Variable(v) => walk_type(&v.type_, ctx, diags),
+                }
+            }
+        }
+        TypeKind::Group(group) => walk_type(&group.inner, ctx, diags),
+    }
+
+    for alt in &ty.alternatives {
+        walk_type(alt, ctx, diags);
     }
 }
 
@@ -256,8 +355,17 @@ fn walk_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext, diags: &mut Vec<
                 walk_expr(&arg.value, ExprPosition::CallArg, ctx, diags);
             }
         }
-        Expr::NewArray(n) => walk_expr(&n.size, ExprPosition::Other, ctx, diags),
-        Expr::TypeCast(t) => walk_expr(&t.expr, ExprPosition::Other, ctx, diags),
+        Expr::NewArray(n) => {
+            walk_expr(&n.size, ExprPosition::Other, ctx, diags);
+
+            if let Some(t) = &n.element_type {
+                walk_type(t, ctx, diags);
+            }
+        }
+        Expr::TypeCast(t) => {
+            walk_expr(&t.expr, ExprPosition::Other, ctx, diags);
+            walk_type(&t.target_type, ctx, diags);
+        }
         Expr::Array(a) => {
             for entry in &a.entries {
                 walk_expr(&entry.value, ExprPosition::Other, ctx, diags);

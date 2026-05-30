@@ -251,6 +251,20 @@ impl<'a> Parser<'a> {
             TypeKind::Tuple {
                 elements: self.parse_tuple_type_elements()?,
             }
+        } else if self.current_token == token::Type::LParen {
+            // `(T)` — parenthesised type. Needed so a trailing `?` or `or`
+            // binds to the whole inner type, e.g. `(Method(x) as Void)?`.
+            let open = self.current_token_start;
+            self.next_token_span(); // consume (
+            let inner = self.parse_type()?;
+            let close = self.current_token_end;
+            self.assert_next_token(&[token::Type::RParen])?;
+
+            TypeKind::Group(Parens {
+                open,
+                inner: Box::new(inner),
+                close,
+            })
         } else {
             let ident = self.parse_dotted_identifier()?;
 

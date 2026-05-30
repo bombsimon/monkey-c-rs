@@ -80,6 +80,15 @@ pub enum TypeKind {
         args: Vec<Variable>,
         returns: Option<Box<Type>>,
     },
+    /// A parenthesised type: `(T)`. Preserved from source so the formatter
+    /// can re-emit user-written grouping, which matters when the `?` or `or`
+    /// suffix would otherwise bind to a sub-part — `(Method(x) as Void)?`
+    /// is the whole callable being nullable, not the return type.
+    ///
+    /// The [`Parens`] wrapper carries the open/close byte offsets so the
+    /// linter can replace just the parens (not the inner text) when the
+    /// grouping is redundant.
+    Group(Parens<Box<Type>>),
 }
 
 /// One member inside an `interface { … }` type — either a function
@@ -126,20 +135,22 @@ pub enum DictTypeKey {
 
 impl Type {
     /// The name of a [`TypeKind::Named`] type, or `None` for an inline
-    /// dictionary type.
+    /// dictionary type. Unwraps [`TypeKind::Group`] transparently.
     pub fn ident(&self) -> Option<&str> {
         match &self.kind {
             TypeKind::Named { ident, .. } => Some(ident),
             TypeKind::Method { name, .. } => Some(name),
+            TypeKind::Group(group) => group.inner.ident(),
             TypeKind::Dict { .. } | TypeKind::Interface { .. } | TypeKind::Tuple { .. } => None,
         }
     }
 
     /// Comma-separated generic arguments. Empty for non-generic types and
-    /// for inline dictionary types.
+    /// for inline dictionary types. Unwraps [`TypeKind::Group`] transparently.
     pub fn generic_params(&self) -> &[Type] {
         match &self.kind {
             TypeKind::Named { generic_params, .. } => generic_params,
+            TypeKind::Group(group) => group.inner.generic_params(),
             TypeKind::Dict { .. }
             | TypeKind::Interface { .. }
             | TypeKind::Tuple { .. }

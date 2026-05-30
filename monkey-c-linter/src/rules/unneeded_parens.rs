@@ -1,11 +1,20 @@
-//! `unneeded-parens` — flag `(<expr>)` in positions where parentheses don't
-//! change parsing.
+//! `unneeded-parens` — flag `(<expr>)` and `(<Method(…)>)` in positions where
+//! the parentheses don't change parsing.
+//!
+//! ## Expressions
 //!
 //! A `(<expr>)` is unneeded when its enclosing position guarantees that any
 //! expression is unambiguously parseable: the RHS of an assignment, the
 //! initializer of a `var`/`const`, the value of a `return`. In those slots,
 //! removing the parens cannot affect operator precedence.
-use monkey_c_parser::ast::Expr;
+//!
+//! ## Types
+//!
+//! The Monkey C grammar only accepts parens around `Method(…)` types. The
+//! rule flags `(Method(…))` groupings except when the parens are
+//! load-bearing — `(Method(…) as Return)?`, where without the parens the
+//! trailing `?` would bind to `Return` instead of to the whole callable.
+use monkey_c_parser::ast::{Expr, Span, Type, TypeKind};
 
 use crate::visit::{ExprPosition, LintContext};
 use crate::{Diagnostic, Fix};
@@ -40,6 +49,40 @@ pub fn check_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext) -> Option<D
             span: p.span,
             replacement,
         }),
+    })
+}
+
+pub fn check_type(ty: &Type, ctx: &LintContext) -> Option<Diagnostic> {
+    let TypeKind::Group(group) = &ty.kind else {
+        return None;
+    };
+
+    // The grammar only accepts parens around `Method(…)` types — every
+    // other `(T)` shape is already a compile error and there's no useful
+    // fix to suggest.
+    let TypeKind::Method { returns, .. } = &group.inner.kind else {
+        return None;
+    };
+
+    // Load-bearing case: a nullable Method type *with* a return. Without
+    // the parens, `Method(x) as Void?` would put `?` on `Void` rather than
+    // on the whole callable.
+    if ty.optional && returns.is_some() {
+        return None;
+    }
+
+    let span = Span {
+        start: group.open,
+        end: group.close,
+    };
+    let between = &ctx.source[group.open + 1..group.close - 1];
+    let replacement = between.trim().to_string();
+
+    Some(Diagnostic {
+        rule: RULE,
+        message: "unneeded parentheses around type".into(),
+        span,
+        fix: Some(Fix { span, replacement }),
     })
 }
 
@@ -141,5 +184,53 @@ function f() {
 }"#
             .trim()
         );
+    }
+
+    fn first_type_fix(src: &str) -> String {
+        let diags = lints(src);
+        let fixes = diags.into_iter().filter_map(|d| d.fix).collect();
+
+        apply_fixes(src, fixes)
+    }
+
+    #[test]
+    fn flags_parens_around_method_without_return() {
+        // No return → nothing for an inner `?` to attach to, so the outer
+        // parens add nothing.
+        let src = "var cb as (Method(x as Number))?;";
+        let diags = lints(src);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].rule, "unneeded-parens");
+        assert_eq!(diags[0].message, "unneeded parentheses around type");
+        assert_eq!(first_type_fix(src), "var cb as Method(x as Number)?;");
+    }
+
+    #[test]
+    fn flags_parens_around_method_with_return_but_no_optional() {
+        // `(Method(…) as Return)` without a trailing `?` parses the same as
+        // `Method(…) as Return` — both forms compile.
+        let src = "function f() as (Method() as Boolean) { return method(:y); }";
+        assert_eq!(
+            first_type_fix(src),
+            "function f() as Method() as Boolean { return method(:y); }"
+        );
+    }
+
+    #[test]
+    fn ignores_parens_around_optional_method_with_return() {
+        // The one load-bearing case — `Method(x) as Void?` would put `?` on
+        // `Void` rather than on the whole callable.
+        let src = "var cb as (Method(value as String) as Void)?;";
+        assert!(lints(src).is_empty());
+    }
+
+    #[test]
+    fn ignores_parens_around_non_method_types() {
+        // The Monkey C grammar only accepts parens around `Method(…)` types.
+        // Even though our parser is permissive enough to accept other shapes,
+        // they're compile errors upstream and there's no useful fix to make
+        // here.
+        let src = "var x as (Number);";
+        assert!(lints(src).is_empty());
     }
 }

@@ -831,6 +831,11 @@ impl Formatter {
 
                 Doc::Concat(parts)
             }
+            TypeKind::Group(group) => Doc::concat(vec![
+                Doc::text("("),
+                self.type_to_doc(&group.inner),
+                Doc::text(format!("){suffix}")),
+            ]),
         };
 
         if ty.alternatives.is_empty() {

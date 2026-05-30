@@ -751,6 +751,7 @@ fn collect_spans_type(ty: &Type, out: &mut Vec<Span>, block_spans: &mut HashSet<
                 collect_spans_type(ret, out, block_spans);
             }
         }
+        TypeKind::Group(group) => collect_spans_type(&group.inner, out, block_spans),
         TypeKind::Interface { members, body_span } => {
             block_spans.insert(*body_span);
             out.push(*body_span);
