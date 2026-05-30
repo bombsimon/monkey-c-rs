@@ -154,10 +154,17 @@ impl Formatter {
             return Doc::Empty;
         }
 
+        let last = comments.len() - 1;
         let mut parts = Vec::new();
-        for c in &comments {
+        for (i, c) in comments.iter().enumerate() {
             parts.push(self.comment_to_doc(c));
-            parts.push(Doc::text(" "));
+            // A line comment ends the source line, so the opening `{` must
+            // move to the next line. Block comments stay inline with a space.
+            if i == last && !c.is_block {
+                parts.push(Doc::HardLine);
+            } else {
+                parts.push(Doc::text(" "));
+            }
         }
 
         Doc::Concat(parts)
