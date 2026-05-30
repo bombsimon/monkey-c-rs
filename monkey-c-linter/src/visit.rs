@@ -86,6 +86,8 @@ fn dispatch_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     if let Some(d) = rules::super_initializer_call::check_ast(ast, ctx) {
         diags.push(d);
     }
+
+    diags.extend(rules::naming_convention::check_ast(ast, ctx));
 }
 
 fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {

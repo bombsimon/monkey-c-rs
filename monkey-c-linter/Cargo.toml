@@ -8,4 +8,5 @@ repository.workspace = true
 [dependencies]
 ariadne = "0.6"
 clap.workspace = true
+convert_case = "0.6"
 monkey-c-parser.workspace = true

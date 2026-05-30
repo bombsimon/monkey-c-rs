@@ -16,6 +16,7 @@ Once `--fix` has been applied the user is expected to run the
 | -------------------------------------------------- | -------- | ----------------------------------- |
 | [`compound-assignment`][compound-assignment]       | ✅       | Rewrites `x = x + n` as `x += n`    |
 | [`import-order`][import-order]                     | ⚠️       | Suppressed when comments interleave |
+| [`naming-convention`][naming-convention]           | ❌       | [Coding Conventions]                |
 | [`one-class-per-file`][one-class-per-file]         | ❌       | [Coding Conventions]                |
 | [`super-initializer-call`][super-initializer-call] | ❌       | Flags missing `Base.initialize(…)`  |
 | [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses       |
@@ -26,6 +27,7 @@ Once `--fix` has been applied the user is expected to run the
 [fix]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [formatter]: ../../formatter
 [import-order]: ./import-order
+[naming-convention]: ./naming-convention
 [one-class-per-file]: ./one-class-per-file
 [super-initializer-call]: ./super-initializer-call
 [unneeded-parens]: ./unneeded-parens
