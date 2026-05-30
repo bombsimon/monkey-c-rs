@@ -1071,6 +1071,63 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
+    /// Render a chain of binary operators sharing one
+    /// [`precedence_group`](operators::precedence_group) wrapped in a
+    /// breakable [`Doc::Group`]. Same-precedence operators are flattened
+    /// into one list by [`collect_binary_chain`]; sub-chains at a *different*
+    /// precedence are reached by recursing through
+    /// [`Self::binary_chain_operand`] with `outermost = false`.
+    ///
+    /// Only the outermost call (`outermost = true`) adds a continuation
+    /// [`Doc::Indent`]; nested sub-chains get a plain Group, so when they
+    /// also break their lines land at the *same* column as the outer
+    /// chain's. This keeps every operator in a mixed-precedence chain at
+    /// one wrap indent — matching prettier, rustfmt, gofmt, ruff, and
+    /// black, which all flatten broken arithmetic chains rather than
+    /// nesting per precedence level.
+    fn binary_chain_to_doc(&self, expr: &Expr, op: &BinaryOperator, outermost: bool) -> Doc {
+        let mut operands: Vec<&Expr> = Vec::new();
+        let mut ops: Vec<&BinaryOperator> = Vec::new();
+        collect_binary_chain(expr, op, &mut operands, &mut ops);
+
+        let mut inner: Vec<Doc> = Vec::new();
+        for (i, operand) in operands.iter().enumerate() {
+            if i > 0 {
+                inner.push(Doc::Line);
+                inner.push(Doc::text(format!("{} ", operators::binary_op(ops[i - 1]))));
+            }
+
+            inner.push(self.binary_chain_operand(operand));
+        }
+
+        if outermost {
+            Doc::Group(vec![Doc::Indent(inner)])
+        } else {
+            Doc::Group(inner)
+        }
+    }
+
+    /// Render one operand inside a binary chain. Mirrors [`Self::expr_to_doc`]
+    /// — attaches leading/trailing comments to the operand's span — but when
+    /// the operand is itself a [`Expr::Binary`], dispatches to
+    /// [`Self::binary_chain_to_doc`] with `outermost = false` so the nested
+    /// sub-chain doesn't add its own continuation indent.
+    fn binary_chain_operand(&self, expr: &Expr) -> Doc {
+        let span = *expr.span();
+        let leading = self.leading_doc(span);
+        let trailing = self.trailing_doc(span);
+
+        let inner = match expr {
+            Expr::Binary(e) => self.binary_chain_to_doc(expr, &e.operator, false),
+            _ => self.expr_inner_to_doc(expr),
+        };
+
+        match (&leading, &trailing) {
+            (Doc::Empty, Doc::Empty) => inner,
+            _ => Doc::concat(vec![leading, inner, trailing]),
+        }
+    }
+
     /// Render an expression intended as a control-flow condition.
     ///
     /// For any top-level binary expression, the operands are joined by a
@@ -1080,18 +1137,18 @@ impl Formatter {
     /// keep their precedence-determined nesting on the broken side.
     fn condition_to_doc(&self, expr: &Expr) -> Doc {
         if let Expr::Binary(e) = expr {
-            let op_str = format!("{} ", operators::binary_op(&e.operator));
             let mut operands: Vec<&Expr> = Vec::new();
-            collect_logical_chain(expr, &e.operator, &mut operands);
+            let mut ops: Vec<&BinaryOperator> = Vec::new();
+            collect_binary_chain(expr, &e.operator, &mut operands, &mut ops);
 
             let mut parts: Vec<Doc> = Vec::new();
             for (i, operand) in operands.iter().enumerate() {
                 if i > 0 {
                     parts.push(Doc::Line);
-                    parts.push(Doc::text(op_str.clone()));
+                    parts.push(Doc::text(format!("{} ", operators::binary_op(ops[i - 1]))));
                 }
 
-                parts.push(self.expr_to_doc(operand));
+                parts.push(self.binary_chain_operand(operand));
             }
 
             // The chain-flattening loop above emits each operand individually
@@ -1485,11 +1542,7 @@ impl Formatter {
 
     fn expr_inner_to_doc(&self, expr: &Expr) -> Doc {
         match expr {
-            Expr::Binary(e) => Doc::concat(vec![
-                self.expr_to_doc(&e.left),
-                Doc::text(format!(" {} ", operators::binary_op(&e.operator))),
-                self.expr_to_doc(&e.right),
-            ]),
+            Expr::Binary(e) => self.binary_chain_to_doc(expr, &e.operator, true),
             Expr::Unary(e) => match e.operator {
                 UnaryOperator::PostInc => {
                     Doc::concat(vec![self.expr_to_doc(&e.operand), Doc::text("++")])
@@ -2129,23 +2182,31 @@ fn escape_quoted(s: &str, quote: char) -> String {
     out
 }
 
-/// Walk a left-associative binary tree and collect all operands joined by `op`,
-/// at the same precedence level.
+/// Walk a left-associative binary tree and collect every operand joined by
+/// an operator at the same [`precedence_group`](operators::precedence_group)
+/// as `chain_op`. `ops` receives the operator that precedes each operand
+/// (one shorter than `operands`).
 ///
-/// `a || b || c` parses as `Or(Or(a, b), c)` — this flattens it to
-/// `[a, b, c]` so the formatter can render the chain with breakable
-/// separators between siblings.
-fn collect_logical_chain<'a>(expr: &'a Expr, op: &BinaryOperator, out: &mut Vec<&'a Expr>) {
+/// `a + b - c + d` parses as `Add(Sub(Add(a, b), c), d)` — this flattens it
+/// to operands `[a, b, c, d]` and ops `[+, -, +]` so the formatter can wrap
+/// the whole chain at one level instead of nesting `+` and `-` separately.
+fn collect_binary_chain<'a>(
+    expr: &'a Expr,
+    chain_op: &BinaryOperator,
+    operands: &mut Vec<&'a Expr>,
+    ops: &mut Vec<&'a BinaryOperator>,
+) {
     if let Expr::Binary(be) = expr
-        && be.operator == *op
+        && operators::precedence_group(&be.operator) == operators::precedence_group(chain_op)
     {
-        collect_logical_chain(&be.left, op, out);
-        collect_logical_chain(&be.right, op, out);
+        collect_binary_chain(&be.left, chain_op, operands, ops);
+        ops.push(&be.operator);
+        collect_binary_chain(&be.right, chain_op, operands, ops);
 
         return;
     }
 
-    out.push(expr);
+    operands.push(expr);
 }
 
 /// Per-variant padding target for column-aligning the `=` between names and

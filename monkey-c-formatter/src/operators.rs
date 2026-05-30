@@ -46,6 +46,35 @@ pub(crate) fn unary_prefix_op(op: &UnaryOperator) -> &'static str {
     }
 }
 
+/// Precedence-tier identifier used by the formatter to decide which adjacent
+/// binary operators can collapse into one breakable chain. Two operators
+/// share a chain when they have the same precedence — `+` and `-`, or
+/// `*` / `/` / `%`, or the comparison operators — so a mixed expression like
+/// `a + b - c + d` wraps at every `+`/`-` rather than nesting.
+///
+/// Different precedence tiers stay nested so the precedence structure
+/// remains visible after wrapping: `a + b * c + d` keeps `b * c` as a tight
+/// inner group instead of letting `*` be part of the outer `+` chain.
+pub(crate) fn precedence_group(op: &BinaryOperator) -> u8 {
+    match op {
+        BinaryOperator::Or | BinaryOperator::OrKeyword => 1,
+        BinaryOperator::And | BinaryOperator::AndKeyword => 2,
+        BinaryOperator::BitOr => 3,
+        BinaryOperator::BitXor => 4,
+        BinaryOperator::BitAnd => 5,
+        BinaryOperator::Eq | BinaryOperator::NotEq => 6,
+        BinaryOperator::Lt
+        | BinaryOperator::LtEq
+        | BinaryOperator::Gt
+        | BinaryOperator::GtEq
+        | BinaryOperator::InstanceOf
+        | BinaryOperator::Has => 7,
+        BinaryOperator::LeftShift | BinaryOperator::RightShift => 8,
+        BinaryOperator::Add | BinaryOperator::Sub => 9,
+        BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => 10,
+    }
+}
+
 pub(crate) fn assign_op(op: &AssignOperator) -> &'static str {
     match op {
         AssignOperator::Assign => "=",
