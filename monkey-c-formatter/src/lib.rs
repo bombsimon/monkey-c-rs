@@ -1227,12 +1227,11 @@ impl Formatter {
             }
 
             header.push(Doc::text(":"));
-            // Trailing comments on the `:` boundary — same-line stays
-            // inline (`case 1: // tag`); own-line indents to the case body.
-            header.push(self.trailing_doc(case.label_span));
+            let body_span = Span { start: case.label_span.end, end: case.span.end };
+            header.push(self.after_open_brace_doc(body_span));
             body.push(Doc::Concat(header));
 
-            let case_inner = self.stmts_to_doc(&case.stmts, case.span);
+            let case_inner = self.stmts_to_doc(&case.stmts, body_span);
             if !case.stmts.is_empty() || !matches!(case_inner, Doc::Empty) {
                 body.push(Doc::Indent(vec![Doc::HardLine, case_inner]));
             }

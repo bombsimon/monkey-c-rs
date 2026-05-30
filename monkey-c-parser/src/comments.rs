@@ -620,6 +620,14 @@ fn collect_spans_stmt(
                 out.push(case.span);
                 out.push(case.label_span);
 
+                // Treat the region after `:` like a `{` block so comments
+                // immediately after the colon attach as `AfterOpenBrace` and
+                // own-line comments below attach as `BeforeFirstChild` — the
+                // same machinery used for `if`/`while`/`for` bodies.
+                let body_span = Span { start: case.label_span.end, end: case.span.end };
+                block_spans.insert(body_span);
+                out.push(body_span);
+
                 match &case.label {
                     CaseLabel::Value(e) => collect_spans_expr(e, out, block_spans),
                     CaseLabel::InstanceOf(ty) => collect_spans_type(ty, out, block_spans),

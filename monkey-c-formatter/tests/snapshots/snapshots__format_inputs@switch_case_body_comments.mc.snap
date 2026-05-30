@@ -1,0 +1,15 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/switch_case_body_comments.mc
+---
+function f() {
+    switch (x) {
+        case 1: // inline comment
+            // own-line comment
+
+            System.println("x");
+        case 2:
+            // leading-only comment
+            foo();
+    }
+}
