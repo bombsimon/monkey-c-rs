@@ -8,7 +8,7 @@
   <a href="https://github.com/bombsimon/monkey-c-rs/actions/workflows/ci.yml">
     <img src="https://github.com/bombsimon/monkey-c-rs/actions/workflows/ci.yml/badge.svg" alt="Build status" />
   </a>
-  <a href="https://github.com/bombsimon/monkey-c-rs/actions/workflows/docs.yml">
+  <a href="https://bombsimon.github.io/monkey-c-rs">
     <img src="https://github.com/bombsimon/monkey-c-rs/actions/workflows/docs.yml/badge.svg" alt="Docs status" />
   </a>
 </p>
