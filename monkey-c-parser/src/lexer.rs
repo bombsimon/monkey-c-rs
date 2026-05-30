@@ -72,15 +72,23 @@ impl<'a> Lexer<'a> {
 
     fn read_identifier(&mut self) -> String {
         let position = self.position;
+        let mut chars = self.input[position..].chars();
 
-        if self.ch.is_ascii_alphabetic() || self.ch == b'_' {
-            self.read_char();
+        let first = chars.next().unwrap_or('\0');
+        if !first.is_alphabetic() && first != '_' {
+            return String::new();
+        }
 
-            while self.ch.is_ascii_alphanumeric() || self.ch == b'_' {
-                self.read_char();
+        let mut byte_len = first.len_utf8();
+        for ch in chars {
+            if ch.is_alphanumeric() || ch == '_' {
+                byte_len += ch.len_utf8();
+            } else {
+                break;
             }
         }
 
+        self.read_n_chars(byte_len);
         self.input[position..self.position].to_string()
     }
 
@@ -432,7 +440,8 @@ impl<'a> Lexer<'a> {
             b'$' => (token::Type::Bling, 1),
             0 => (token::Type::Eof, 0),
             _ => {
-                if self.ch.is_ascii_alphabetic() || self.ch == b'_' {
+                let first = self.input[self.position..].chars().next().unwrap_or('\0');
+                if first.is_alphabetic() || first == '_' {
                     let ident = self.read_identifier();
                     if let Ok(token_type) = ident.parse() {
                         (token_type, 0)
