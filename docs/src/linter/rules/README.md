@@ -12,12 +12,13 @@ Once `--fix` has been applied the user is expected to run the
 
 ## Categories
 
-| Rule                                         | Auto-fix | Notes                               |
-| -------------------------------------------- | -------- | ----------------------------------- |
-| [`compound-assignment`][compound-assignment] | ✅       | Rewrites `x = x + n` as `x += n`    |
-| [`import-order`][import-order]               | ⚠️       | Suppressed when comments interleave |
-| [`one-class-per-file`][one-class-per-file]   | ❌       | [Coding Conventions]                |
-| [`unneeded-parens`][unneeded-parens]         | ✅       | Removes redundant parentheses       |
+| Rule                                               | Auto-fix | Notes                               |
+| -------------------------------------------------- | -------- | ----------------------------------- |
+| [`compound-assignment`][compound-assignment]       | ✅       | Rewrites `x = x + n` as `x += n`    |
+| [`import-order`][import-order]                     | ⚠️       | Suppressed when comments interleave |
+| [`one-class-per-file`][one-class-per-file]         | ❌       | [Coding Conventions]                |
+| [`super-initializer-call`][super-initializer-call] | ❌       | Flags missing `Base.initialize(…)`  |
+| [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses       |
 
 [Coding Conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
 [compound-assignment]: ./compound-assignment
@@ -26,4 +27,5 @@ Once `--fix` has been applied the user is expected to run the
 [formatter]: ../../formatter
 [import-order]: ./import-order
 [one-class-per-file]: ./one-class-per-file
+[super-initializer-call]: ./super-initializer-call
 [unneeded-parens]: ./unneeded-parens

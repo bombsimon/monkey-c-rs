@@ -79,6 +79,15 @@ fn dispatch_document(nodes: &[Ast], ctx: &LintContext, diags: &mut Vec<Diagnosti
     diags.extend(rules::one_class_per_file::check_document(nodes, ctx));
 }
 
+/// Called once per [`Ast`] node visited by [`walk_ast`]. Rules that care
+/// about a single declaration (a class, a function, a typedef, …) hook
+/// here and pattern-match on the variant they want.
+fn dispatch_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    if let Some(d) = rules::super_initializer_call::check_ast(ast, ctx) {
+        diags.push(d);
+    }
+}
+
 fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     if let Some(d) = rules::unneeded_parens::check_type(ty, ctx) {
         diags.push(d);
@@ -86,6 +95,8 @@ fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
 }
 
 fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    dispatch_ast(ast, ctx, diags);
+
     match ast {
         Ast::Document(nodes, _) => {
             dispatch_document(nodes, ctx, diags);

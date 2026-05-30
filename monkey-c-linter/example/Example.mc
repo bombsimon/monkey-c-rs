@@ -9,6 +9,8 @@ class Example {
     const C = 20;
     var value = (M + C + 180 + 101.11d);
 
+    public function initialize() as Void {}
+
     function myFunction(hours as Number) {
         var isPm = (hour >= 12);
         if ((1 + 2) + (3 + 4)) {
@@ -20,6 +22,8 @@ class Example {
     }
 }
 
-class Example2 {
+class Example2 extends Example {
     const X = 10;
+
+    public function initialize(value as Number) as Void {}
 }
