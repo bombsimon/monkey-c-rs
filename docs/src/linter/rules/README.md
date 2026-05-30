@@ -12,11 +12,13 @@ Once `--fix` has been applied the user is expected to run the
 
 ## Categories
 
-| Rule                                 | Auto-fix | Notes                               |
-| ------------------------------------ | -------- | ----------------------------------- |
-| [`unneeded-parens`][unneeded-parens] | ✅       | Removes redundant parentheses       |
-| [`import-order`][import-order]       | ⚠️       | Suppressed when comments interleave |
+| Rule                                         | Auto-fix | Notes                               |
+| -------------------------------------------- | -------- | ----------------------------------- |
+| [`compound-assignment`][compound-assignment] | ✅       | Rewrites `x = x + n` as `x += n`    |
+| [`import-order`][import-order]               | ⚠️       | Suppressed when comments interleave |
+| [`unneeded-parens`][unneeded-parens]         | ✅       | Removes redundant parentheses       |
 
+[compound-assignment]: ./compound-assignment
 [diagnostic]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [fix]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [formatter]: ../../formatter
