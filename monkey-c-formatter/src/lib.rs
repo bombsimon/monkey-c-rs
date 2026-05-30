@@ -599,7 +599,7 @@ impl Formatter {
             })
             .collect();
 
-        parts.push(self.format_list("(", ")", items, &[], decl.args_trailing_comma));
+        parts.push(self.format_list("(", ")", items, &[], decl.args_trailing_comma, Doc::Empty));
 
         if let Some(ret) = &decl.returns {
             parts.push(Doc::text(" as "));
@@ -1571,16 +1571,21 @@ impl Formatter {
                 Doc::text(format!(" {} ", operators::assign_op(&e.operator))),
                 self.expr_to_doc(&e.value),
             ]),
-            Expr::Call(e) => Doc::concat(vec![
-                self.expr_to_doc(&e.callee),
-                self.format_list(
-                    "(",
-                    ")",
-                    self.call_args_to_items(&e.args),
-                    &[],
-                    e.args_trailing_comma,
-                ),
-            ]),
+            Expr::Call(e) => {
+                let args_span = Span { start: e.args_open, end: e.span.end };
+                let after_open = self.after_open_brace_doc(args_span);
+                Doc::concat(vec![
+                    self.expr_to_doc(&e.callee),
+                    self.format_list(
+                        "(",
+                        ")",
+                        self.call_args_to_items(&e.args),
+                        &[],
+                        e.args_trailing_comma,
+                        after_open,
+                    ),
+                ])
+            }
             Expr::Member(e) => Doc::concat(vec![
                 self.expr_to_doc(&e.object),
                 Doc::text(format!(".{}", e.property)),
@@ -1591,16 +1596,21 @@ impl Formatter {
                 self.expr_to_doc(&e.index),
                 Doc::text("]"),
             ]),
-            Expr::New(e) => Doc::concat(vec![
-                Doc::text(format!("new {}", e.class)),
-                self.format_list(
-                    "(",
-                    ")",
-                    self.call_args_to_items(&e.args),
-                    &[],
-                    e.args_trailing_comma,
-                ),
-            ]),
+            Expr::New(e) => {
+                let args_span = Span { start: e.args_open, end: e.span.end };
+                let after_open = self.after_open_brace_doc(args_span);
+                Doc::concat(vec![
+                    Doc::text(format!("new {}", e.class)),
+                    self.format_list(
+                        "(",
+                        ")",
+                        self.call_args_to_items(&e.args),
+                        &[],
+                        e.args_trailing_comma,
+                        after_open,
+                    ),
+                ])
+            }
             Expr::NewArray(e) => {
                 let mut parts = vec![Doc::text("new")];
                 if let Some(ty) = &e.element_type {
@@ -1720,7 +1730,7 @@ impl Formatter {
             })
             .collect();
 
-        self.format_list("[", "]", items, &[], false)
+        self.format_list("[", "]", items, &[], false, Doc::Empty)
     }
 
     /// Multi-line array body. See [`Self::format_collection_multiline`].
@@ -1752,15 +1762,18 @@ impl Formatter {
         items: Vec<ListItem>,
         tail_comments: &[Stmt],
         trailing_comma: bool,
+        after_open: Doc,
     ) -> Doc {
-        if items.is_empty() && tail_comments.is_empty() {
+        let has_after_open = !matches!(&after_open, Doc::Empty);
+
+        if items.is_empty() && tail_comments.is_empty() && !has_after_open {
             return Doc::text(format!("{open}{close}"));
         }
 
         let has_any_comments =
             !tail_comments.is_empty() || items.iter().any(|i| !i.trailing_comments.is_empty());
 
-        if items.is_empty() {
+        if items.is_empty() && !has_after_open {
             let comment_docs = tail_comments
                 .iter()
                 .enumerate()
@@ -1778,9 +1791,9 @@ impl Formatter {
             ]);
         }
 
-        if trailing_comma || has_any_comments {
+        if trailing_comma || has_any_comments || has_after_open {
             let mut inner = Vec::new();
-            let last_idx = items.len() - 1;
+            let last_idx = items.len().saturating_sub(1);
             for (i, item) in items.into_iter().enumerate() {
                 if i > 0 {
                     inner.push(Doc::HardLine);
@@ -1805,6 +1818,7 @@ impl Formatter {
 
             return Doc::concat(vec![
                 Doc::text(open),
+                after_open,
                 Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
                 Doc::HardLine,
                 Doc::text(close),
@@ -2065,7 +2079,7 @@ impl Formatter {
             })
             .collect();
 
-        self.format_list("{", "}", items, &[], e.trailing_comma)
+        self.format_list("{", "}", items, &[], e.trailing_comma, Doc::Empty)
     }
 
     /// Return a [`Doc::BlankLine`] if the original source had at least one blank

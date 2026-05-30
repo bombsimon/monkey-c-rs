@@ -804,6 +804,9 @@ fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>, block_spans: &mut HashSe
         }
         Expr::Call(c) => {
             collect_spans_expr(&c.callee, out, block_spans);
+            let args_span = Span { start: c.args_open, end: c.span.end };
+            block_spans.insert(args_span);
+            out.push(args_span);
             for arg in &c.args {
                 collect_spans_expr(&arg.value, out, block_spans);
             }
@@ -814,6 +817,9 @@ fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>, block_spans: &mut HashSe
             collect_spans_expr(&i.index, out, block_spans);
         }
         Expr::New(n) => {
+            let args_span = Span { start: n.args_open, end: n.span.end };
+            block_spans.insert(args_span);
+            out.push(args_span);
             for arg in &n.args {
                 collect_spans_expr(&arg.value, out, block_spans);
             }

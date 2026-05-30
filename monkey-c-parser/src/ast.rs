@@ -422,6 +422,10 @@ pub struct CallExpr {
     /// Drives the magic trailing comma formatting rule — forces multi-line
     /// rendering even when the call would otherwise fit on a single line.
     pub args_trailing_comma: bool,
+    /// Byte offset of the opening `(`. Combined with `span.end`, this defines
+    /// the argument list zone used by the comment-attachment pass to correctly
+    /// place comments that appear immediately after `(`.
+    pub args_open: usize,
     pub span: Span,
 }
 
@@ -453,6 +457,8 @@ pub struct NewExpr {
     pub args: Vec<CallArg>,
     /// See [`CallExpr::args_trailing_comma`].
     pub args_trailing_comma: bool,
+    /// See [`CallExpr::args_open`].
+    pub args_open: usize,
     pub span: Span,
 }
 

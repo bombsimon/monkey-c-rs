@@ -379,12 +379,14 @@ impl Parser<'_> {
             }
 
             if self.current_token == token::Type::LParen {
+                let args_open = self.current_token_start;
                 self.next_token_span(); // consume (
                 let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end; // end of )
                 expr = Expr::Call(CallExpr {
                     callee: Box::new(expr),
                     args,
+                    args_open,
                     args_trailing_comma,
                     span: Span { start, end },
                 });
@@ -665,6 +667,7 @@ impl Parser<'_> {
                     ));
                 }
 
+                let args_open = self.current_token_start;
                 self.assert_next_token(&[token::Type::LParen])?;
                 let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end;
@@ -673,6 +676,7 @@ impl Parser<'_> {
                 Ok(Expr::New(NewExpr {
                     class,
                     args,
+                    args_open,
                     args_trailing_comma,
                     span: Span { start, end },
                 }))
