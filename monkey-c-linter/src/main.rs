@@ -4,18 +4,22 @@ use monkey_c_linter::{Diagnostic, apply_fixes, lint};
 
 use std::fs;
 use std::io::{self, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 /// Lint Monkey C source code.
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// File to lint. If omitted, source is read from stdin.
-    path: Option<PathBuf>,
+    /// Files or directories to lint. Directories are walked recursively
+    /// for `.mc` files; hidden directories (those starting with `.`) are
+    /// skipped. Use `-` to read source from stdin. Defaults to the
+    /// current directory.
+    #[arg(default_value = ".")]
+    paths: Vec<PathBuf>,
 
-    /// Apply machine-applicable fixes in place. Requires PATH.
-    #[arg(long, requires = "path")]
+    /// Apply machine-applicable fixes in place. Ignored for stdin input.
+    #[arg(long)]
     fix: bool,
 }
 
@@ -31,17 +35,71 @@ fn main() -> ExitCode {
     }
 }
 
-/// Returns `true` if there were no findings (after fixing, if `--fix` was
-/// requested), `false` if findings remain.
+/// Returns `true` when no findings remain (after fixing, if `--fix` was
+/// requested), `false` otherwise.
 fn run(cli: &Cli) -> io::Result<bool> {
-    let source = match &cli.path {
-        Some(p) => fs::read_to_string(p)?,
-        None => {
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
-            buf
+    if cli.paths.iter().any(|p| p == Path::new("-")) {
+        if cli.paths.len() != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot mix `-` (stdin) with file or directory paths",
+            ));
         }
-    };
+
+        return run_stdin();
+    }
+
+    let files = collect_mc_files(&cli.paths)?;
+    let mut all_clean = true;
+    for file in &files {
+        match lint_file(file, cli.fix) {
+            Ok(true) => {}
+            Ok(false) => all_clean = false,
+            Err(e) => {
+                eprintln!("{}: {e}", file.display());
+                all_clean = false;
+            }
+        }
+    }
+
+    Ok(all_clean)
+}
+
+/// Lint a single file. With `--fix`, applies any machine-applicable fixes
+/// in place and returns `true`. Without `--fix`, returns `true` when no
+/// findings remain.
+fn lint_file(file: &Path, fix: bool) -> io::Result<bool> {
+    let source = fs::read_to_string(file)?;
+    let parser = monkey_c_parser::parser::Parser::new(&source);
+    let output = parser
+        .parse()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
+    let diagnostics = lint(&output, &source);
+
+    if fix {
+        let fixes = diagnostics
+            .iter()
+            .filter_map(|d| d.fix.clone())
+            .collect::<Vec<_>>();
+        if !fixes.is_empty() {
+            let patched = apply_fixes(&source, fixes);
+            fs::write(file, patched)?;
+        }
+
+        return Ok(true);
+    }
+
+    let label = file.display().to_string();
+    for d in &diagnostics {
+        render_diagnostic(&label, &source, d);
+    }
+
+    Ok(diagnostics.is_empty())
+}
+
+fn run_stdin() -> io::Result<bool> {
+    let mut source = String::new();
+    io::stdin().read_to_string(&mut source)?;
 
     let parser = monkey_c_parser::parser::Parser::new(&source);
     let output = parser
@@ -49,30 +107,61 @@ fn run(cli: &Cli) -> io::Result<bool> {
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
     let diagnostics = lint(&output, &source);
 
-    if cli.fix {
-        let fixes = diagnostics
-            .iter()
-            .filter_map(|d| d.fix.clone())
-            .collect::<Vec<_>>();
-        if !fixes.is_empty() {
-            let patched = apply_fixes(&source, fixes);
-            fs::write(cli.path.as_ref().expect("checked"), patched)?;
-        }
-
-        return Ok(true);
-    }
-
-    let label = cli
-        .path
-        .as_deref()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "<stdin>".to_string());
-
+    let label = "<stdin>";
     for d in &diagnostics {
-        render_diagnostic(&label, &source, d);
+        render_diagnostic(label, &source, d);
     }
 
     Ok(diagnostics.is_empty())
+}
+
+/// Resolve `paths` into a deterministic, sorted list of `.mc` files.
+/// Files are accepted as-is regardless of extension (so explicit per-file
+/// invocations always work); directories are walked recursively, skipping
+/// hidden ones.
+fn collect_mc_files(paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    for p in paths {
+        let meta = fs::metadata(p)
+            .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", p.display())))?;
+
+        if meta.is_file() {
+            files.push(p.clone());
+        } else if meta.is_dir() {
+            walk_dir(p, &mut files)?;
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{}: not a file or directory", p.display()),
+            ));
+        }
+    }
+
+    files.sort();
+
+    Ok(files)
+}
+
+fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with('.') {
+            continue;
+        }
+
+        if file_type.is_dir() {
+            walk_dir(&path, out)?;
+        } else if file_type.is_file() && path.extension().is_some_and(|e| e == "mc") {
+            out.push(path);
+        }
+    }
+
+    Ok(())
 }
 
 /// Render a single diagnostic to stderr using ariadne — coloured caret with
