@@ -47,8 +47,11 @@ Run the formatter after `--fix` if you want whitespace normalised.
 
 ## Notes on AI
 
-For transparency: this project uses AI. Implementations are suggested by me,
-discussed, and reviewed before being committed.
+For transparency: this project is being built with assistance of AI. However,
+all implementations are suggested by me, discussed, and reviewed before being
+committed. My focus is still to build the best tools possible and know and
+understand 100% of the codebase. Although not every line of code is written by
+hand, I want to avoid slop.
 
 ## License
 
