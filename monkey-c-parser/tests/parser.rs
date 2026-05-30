@@ -529,7 +529,6 @@ fn test_if_condition_with_member_access() {
 }
 
 #[test]
-#[allow(dead_code)]
 fn test_dict_entry_trailing_comments_parse() {
     // Comment-slot fields have been removed; comments live in the CommentsMap.
     // This test is preserved as a structural sanity check on dict parsing.
@@ -749,4 +748,21 @@ function f() {
         .map(|c| c.is_block)
         .collect();
     assert_eq!(blocks, vec![false, false, true, false, true, false]);
+}
+
+#[test]
+fn test_extra_semicolons_are_dropped() {
+    // Extra semicolons in a function body are treated as no-ops.
+    let f = first_function("function f() { var x = 1;;;; var y = 2; }");
+    assert_eq!(f.body.stmts.len(), 2);
+    assert!(matches!(f.body.stmts[0], Stmt::Var(_)));
+    assert!(matches!(f.body.stmts[1], Stmt::Var(_)));
+
+    // Extra semicolons at the top level between declarations.
+    let nodes = document_nodes("var x = 1;;;; var y = 2;");
+    assert_eq!(nodes.len(), 2);
+
+    // Leading semicolons in a block.
+    let f = first_function("function f() { ;;; var x = 1; }");
+    assert_eq!(f.body.stmts.len(), 1);
 }

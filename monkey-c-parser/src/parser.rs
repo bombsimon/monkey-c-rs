@@ -82,6 +82,8 @@ impl<'a> Parser<'a> {
         let mut nodes = Vec::new();
 
         loop {
+            self.skip_semicolons();
+
             let decl = self.parse_declaration()?;
             if decl == Ast::Eof {
                 break;
@@ -121,6 +123,14 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn current_token_is(&self, expect: &[token::Type]) -> bool {
         expect.contains(&self.current_token)
+    }
+
+    /// Monkey C compiler treats consecutive `;` as empty statement making them no-op and thus
+    /// supporting syntax like `var x = 1;;;`.
+    fn skip_semicolons(&mut self) {
+        while self.current_token == token::Type::Semicolon {
+            self.next_token_span();
+        }
     }
 
     /// Advance past `current_token`, drain any intervening comments into the
@@ -1001,9 +1011,16 @@ impl<'a> Parser<'a> {
     /// Consumes the closing `}`.
     pub(crate) fn parse_block(&mut self, brace_start: usize) -> Result<BlockStmt, ParserError> {
         let mut stmts = Vec::new();
-        while self.current_token != token::Type::RBrace {
+        loop {
+            self.skip_semicolons();
+
+            if self.current_token == token::Type::RBrace {
+                break;
+            }
+
             stmts.push(self.parse_statement()?);
         }
+
         let end = self.current_token_end;
         self.next_token_span(); // consume }
 
