@@ -22,6 +22,14 @@ struct Cli {
     #[arg(short, long)]
     check: bool,
 
+    /// Wrap multiple  declarations similar to the Prettier formatter.
+    #[arg(short, long, default_value_t = false)]
+    wrap_declarations: bool,
+
+    /// Align enums and fat-commans (=>)
+    #[arg(short, long = "no-alignment", action = clap::ArgAction::SetFalse, default_value_t = true)]
+    alignment: bool,
+
     /// Target line width before wrapping.
     #[arg(short = 'l', long, default_value_t = 111)]
     line_width: usize,
@@ -72,7 +80,7 @@ fn run(cli: &Cli) -> io::Result<bool> {
 /// formatted text in place. Returns `true` for a no-op match too.
 fn format_file(file: &Path, cli: &Cli) -> io::Result<bool> {
     let source = fs::read_to_string(file)?;
-    let formatted = format_source(&source, cli.line_width)?;
+    let formatted = format_source(&source, cli)?;
 
     if cli.check {
         if formatted != source {
@@ -95,7 +103,7 @@ fn run_stdin(cli: &Cli) -> io::Result<bool> {
     let mut source = String::new();
     io::stdin().read_to_string(&mut source)?;
 
-    let formatted = format_source(&source, cli.line_width)?;
+    let formatted = format_source(&source, cli)?;
 
     if cli.check {
         let ok = formatted == source;
@@ -111,16 +119,16 @@ fn run_stdin(cli: &Cli) -> io::Result<bool> {
     Ok(true)
 }
 
-fn format_source(source: &str, line_width: usize) -> io::Result<String> {
+fn format_source(source: &str, cli: &Cli) -> io::Result<String> {
     let parser = monkey_c_parser::parser::Parser::new(source);
     let output = parser
         .parse()
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
 
     let formatter = Formatter::new(source)
-        .with_line_width(line_width)
-        .with_alignment()
-        .with_decl_wrap();
+        .with_line_width(cli.line_width)
+        .with_alignment(cli.alignment)
+        .with_decl_wrap(cli.wrap_declarations);
 
     Ok(formatter.format(&output))
 }

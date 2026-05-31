@@ -86,8 +86,8 @@ impl Formatter {
     ///
     /// When set, the affected constructs are rendered multi-line with their
     /// names padded so the separators form a vertical column.
-    pub fn with_alignment(mut self) -> Self {
-        self.align_pairs = true;
+    pub fn with_alignment(mut self, align_pairs: bool) -> Self {
+        self.align_pairs = align_pairs;
         self
     }
 
@@ -95,8 +95,8 @@ impl Formatter {
     /// (opt-in). When set, a declaration with two or more bindings is broken
     /// so the keyword sits alone and each binding lives on its own indented
     /// line. For-loop init clauses keep their flat form regardless.
-    pub fn with_decl_wrap(mut self) -> Self {
-        self.wrap_multi_bindings = true;
+    pub fn with_decl_wrap(mut self, decl_wrap: bool) -> Self {
+        self.wrap_multi_bindings = decl_wrap;
         self
     }
 

@@ -21,6 +21,10 @@ struct Cli {
     /// Apply machine-applicable fixes in place. Ignored for stdin input.
     #[arg(long)]
     fix: bool,
+
+    /// Comma-separated list of rule names to disable.
+    #[arg(long, value_delimiter = ',')]
+    disable: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -46,13 +50,13 @@ fn run(cli: &Cli) -> io::Result<bool> {
             ));
         }
 
-        return run_stdin();
+        return run_stdin(cli);
     }
 
     let files = collect_mc_files(&cli.paths)?;
     let mut all_clean = true;
     for file in &files {
-        match lint_file(file, cli.fix) {
+        match lint_file(file, cli) {
             Ok(true) => {}
             Ok(false) => all_clean = false,
             Err(e) => {
@@ -68,15 +72,11 @@ fn run(cli: &Cli) -> io::Result<bool> {
 /// Lint a single file. With `--fix`, applies any machine-applicable fixes
 /// in place and returns `true`. Without `--fix`, returns `true` when no
 /// findings remain.
-fn lint_file(file: &Path, fix: bool) -> io::Result<bool> {
+fn lint_file(file: &Path, cli: &Cli) -> io::Result<bool> {
     let source = fs::read_to_string(file)?;
-    let parser = monkey_c_parser::parser::Parser::new(&source);
-    let output = parser
-        .parse()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
-    let diagnostics = lint(&output, &source);
+    let diagnostics = run_lint(&source, cli)?;
 
-    if fix {
+    if cli.fix {
         let fixes = diagnostics
             .iter()
             .filter_map(|d| d.fix.clone())
@@ -97,15 +97,11 @@ fn lint_file(file: &Path, fix: bool) -> io::Result<bool> {
     Ok(diagnostics.is_empty())
 }
 
-fn run_stdin() -> io::Result<bool> {
+fn run_stdin(cli: &Cli) -> io::Result<bool> {
     let mut source = String::new();
     io::stdin().read_to_string(&mut source)?;
 
-    let parser = monkey_c_parser::parser::Parser::new(&source);
-    let output = parser
-        .parse()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
-    let diagnostics = lint(&output, &source);
+    let diagnostics = run_lint(&source, cli)?;
 
     let label = "<stdin>";
     for d in &diagnostics {
@@ -113,6 +109,22 @@ fn run_stdin() -> io::Result<bool> {
     }
 
     Ok(diagnostics.is_empty())
+}
+
+fn run_lint(source: &str, cli: &Cli) -> io::Result<Vec<Diagnostic>> {
+    let disabled: Vec<&str> = cli.disable.iter().map(String::as_str).collect();
+
+    let parser = monkey_c_parser::parser::Parser::new(source);
+    let output = parser
+        .parse()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
+
+    let diagnostics = lint(&output, source)
+        .into_iter()
+        .filter(|d| !disabled.contains(&d.rule))
+        .collect();
+
+    Ok(diagnostics)
 }
 
 /// Resolve `paths` into a deterministic, sorted list of `.mc` files.
