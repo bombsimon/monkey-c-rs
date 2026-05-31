@@ -15,7 +15,7 @@ struct Cli {
     /// for `.mc` files; hidden directories (those starting with `.`) are
     /// skipped. Use `-` to read source from stdin. Defaults to the
     /// current directory.
-    #[arg(default_value = ".")]
+    #[arg(default_value = "-")]
     paths: Vec<PathBuf>,
 
     /// Apply machine-applicable fixes in place. Ignored for stdin input.

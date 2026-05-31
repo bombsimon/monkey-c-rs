@@ -14,7 +14,7 @@ struct Cli {
     /// for `.mc` files; hidden directories (those starting with `.`) are
     /// skipped. Use `-` to read source from stdin and write the formatted
     /// result to stdout. Defaults to the current directory.
-    #[arg(default_value = ".")]
+    #[arg(default_value = "-")]
     paths: Vec<PathBuf>,
 
     /// Check whether each file is already formatted. Exits 0 when all
