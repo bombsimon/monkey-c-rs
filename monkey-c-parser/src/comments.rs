@@ -615,6 +615,12 @@ fn collect_spans_stmt(
         }
         Stmt::Switch(s) => {
             brace_starts.insert(s.span, (s.discriminant.close, s.brace_start));
+            let switch_body_span = Span {
+                start: s.brace_start,
+                end: s.span.end,
+            };
+            block_spans.insert(switch_body_span);
+            out.push(switch_body_span);
             collect_spans_expr(&s.discriminant.inner, out, block_spans);
             for case in &s.cases {
                 out.push(case.span);

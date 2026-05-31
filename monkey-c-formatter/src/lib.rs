@@ -1200,7 +1200,18 @@ impl Formatter {
     /// indented one further. Leading comments are emitted before the arm's
     /// `case`/`default` keyword.
     fn switch_stmt_to_doc(&self, s: &SwitchStmt) -> Doc {
+        let switch_body_span = Span {
+            start: s.brace_start,
+            end: s.span.end,
+        };
+
         let mut body = Vec::new();
+
+        for c in self.dangling(switch_body_span, DanglingPlacement::BeforeFirstChild) {
+            body.push(self.comment_to_doc(&c));
+            body.push(Doc::HardLine);
+        }
+
         for (i, case) in s.cases.iter().enumerate() {
             if i > 0 {
                 body.push(Doc::HardLine);
@@ -1235,13 +1246,15 @@ impl Formatter {
             body.push(Doc::Concat(header));
 
             let case_inner = self.stmts_to_doc(&case.stmts, body_span);
-            if !case.stmts.is_empty() || !matches!(case_inner, Doc::Empty) {
-                body.push(Doc::Indent(vec![Doc::HardLine, case_inner]));
+            let case_trailing = self.trailing_doc(case.span);
+            let has_content = !case.stmts.is_empty() || !matches!(case_inner, Doc::Empty);
+            if has_content || !matches!(case_trailing, Doc::Empty) {
+                body.push(Doc::Indent(vec![Doc::HardLine, case_inner, case_trailing]));
             }
         }
 
         // Dangling comments after the last case but before `}` of the switch.
-        for c in self.dangling(s.span, DanglingPlacement::AfterLastChild) {
+        for c in self.dangling(switch_body_span, DanglingPlacement::AfterLastChild) {
             body.push(Doc::HardLine);
             body.push(self.comment_to_doc(&c));
         }
@@ -1250,6 +1263,7 @@ impl Formatter {
             self.paren_condition_header("switch", &s.discriminant.inner),
             self.before_bracket_doc(s.span),
             Doc::text("{"),
+            self.after_open_brace_doc(switch_body_span),
             Doc::Indent(vec![Doc::HardLine, Doc::Concat(body)]),
             Doc::HardLine,
             Doc::text("}"),

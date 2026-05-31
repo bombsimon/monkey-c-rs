@@ -1,0 +1,12 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/switch_trailing_comment_in_case.mc
+---
+function f() {
+    switch (x) { // comment after open brace
+        case 1:
+            System.println("x"); // trailing comment
+        case 2:
+            foo();
+    }
+}
