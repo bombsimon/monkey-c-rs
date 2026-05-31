@@ -14,6 +14,7 @@ function basic(x) {
             baz();
     }
 }
+
 function instance_case(p) {
     switch (p) {
         case instanceof Number:
@@ -23,6 +24,7 @@ function instance_case(p) {
             bad();
     }
 }
+
 function fall_through(x) {
     switch (x) {
         case 1:

@@ -385,12 +385,26 @@ impl Formatter {
 
         let mut docs = Vec::new();
         let mut prev_end: Option<usize> = None;
+        let mut prev_is_block_decl = false;
+
         for item in &items {
             let start = self.effective_start(item);
+            let is_block_decl = matches!(
+                item,
+                BodyItem::Decl(ast, _)
+                    if matches!(ast, Ast::Function(_) | Ast::Class(_) | Ast::Module(_))
+            );
+
             if let Some(end) = prev_end {
                 let prev_span = Span { start: 0, end };
                 let next_span = Span { start, end: start };
-                docs.push(self.gap_between_spans(Some(&prev_span), Some(&next_span)));
+                let gap = self.gap_between_spans(Some(&prev_span), Some(&next_span));
+
+                docs.push(if prev_is_block_decl && matches!(gap, Doc::HardLine) {
+                    Doc::BlankLine
+                } else {
+                    gap
+                });
             }
 
             match item {
@@ -406,6 +420,7 @@ impl Formatter {
             }
 
             prev_end = Some(self.effective_end(item));
+            prev_is_block_decl = is_block_decl;
         }
 
         Doc::Concat(docs)

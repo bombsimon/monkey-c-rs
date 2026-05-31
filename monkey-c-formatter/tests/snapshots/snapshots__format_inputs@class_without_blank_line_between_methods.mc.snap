@@ -4,5 +4,6 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/class_without_blank_line_be
 ---
 class C {
     function a() {}
+
     function b() {}
 }

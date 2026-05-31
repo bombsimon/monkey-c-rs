@@ -9,6 +9,7 @@ function basic() {
         log(e);
     }
 }
+
 function typed_and_finally() {
     try {
         foo();
