@@ -257,10 +257,22 @@ impl<'a> Parser<'a> {
     ///
     /// Use this for variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
-        let mut ty = self.parse_simple_type()?;
+        self.parse_type_inner(true)
+    }
+
+    /// Like [`parse_type`] but does not consume a trailing `?` as a nullable
+    /// marker. Use this when parsing the target type of an `as` cast expression
+    /// so that `expr as T ? a : b` is not misread as `expr as T?` followed by
+    /// a stray hex literal.
+    pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
+        self.parse_type_inner(false)
+    }
+
+    fn parse_type_inner(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
+        let mut ty = self.parse_simple_type(allow_optional)?;
         while self.current_token == token::Type::OrKeyword {
             self.next_token_span(); // consume `or`
-            ty.alternatives.push(self.parse_simple_type()?);
+            ty.alternatives.push(self.parse_simple_type(allow_optional)?);
         }
 
         Ok(ty)
@@ -272,7 +284,7 @@ impl<'a> Parser<'a> {
     /// Generic params are separated by `,` only. `or` inside `<…>` belongs
     /// to a single param's union (`Array<Number or Null>` → one param whose
     /// `alternatives` is `[Null]`), not to the param list itself.
-    pub(crate) fn parse_simple_type(&mut self) -> Result<Type, ParserError> {
+    pub(crate) fn parse_simple_type(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
         let kind = if self.current_token == token::Type::LBrace {
             let (entries, trailing_comma) = self.parse_inline_dict_type()?;
             TypeKind::Dict {
@@ -348,7 +360,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let optional = self.current_token == token::Type::Question;
+        let optional = allow_optional && self.current_token == token::Type::Question;
         if optional {
             self.next_token_span(); // consume ?
         }

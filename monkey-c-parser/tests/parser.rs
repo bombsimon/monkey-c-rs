@@ -766,3 +766,25 @@ fn test_extra_semicolons_are_dropped() {
     let f = first_function("function f() { ;;; var x = 1; }");
     assert_eq!(f.body.stmts.len(), 1);
 }
+
+#[test]
+fn test_cast_then_ternary() {
+    // `expr as T ? a : b` must parse as `(expr as T) ? a : b`, not as a
+    // nullable cast `expr as T?` with a stray operand.
+    let f = first_function(
+        r#"function f() { var x = getValue() as Boolean ? 0xFFFFFF : 0x000000; }"#,
+    );
+    let Stmt::Var(v) = &f.body.stmts[0] else {
+        panic!("expected var");
+    };
+    let init = v.bindings[0].initializer.as_ref().unwrap();
+    assert!(
+        matches!(init.as_ref(), Expr::Ternary(_)),
+        "expected ternary at top level, got {:?}",
+        init
+    );
+    let Expr::Ternary(t) = init.as_ref() else {
+        unreachable!()
+    };
+    assert!(matches!(t.cond.as_ref(), Expr::TypeCast(_)));
+}

@@ -396,7 +396,7 @@ impl Parser<'_> {
 
             if self.current_token == token::Type::As {
                 self.next_token_span(); // consume `as`
-                let target_type = self.parse_type()?;
+                let target_type = self.parse_cast_type()?;
                 // current_token_start is the start of the token after the type
                 let end = self.current_token_start;
                 expr = Expr::TypeCast(TypeCastExpr {
