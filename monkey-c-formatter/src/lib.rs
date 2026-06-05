@@ -1495,7 +1495,22 @@ impl Formatter {
                     .inner
                     .update
                     .as_ref()
-                    .map(|e| self.expr_to_doc(e))
+                    .map(|exprs| {
+                        Doc::concat(
+                            exprs
+                                .iter()
+                                .enumerate()
+                                .flat_map(|(i, e)| {
+                                    let sep = if i > 0 {
+                                        vec![Doc::text(", ")]
+                                    } else {
+                                        vec![]
+                                    };
+                                    sep.into_iter().chain(std::iter::once(self.expr_to_doc(e)))
+                                })
+                                .collect(),
+                        )
+                    })
                     .unwrap_or(Doc::Empty);
 
                 Doc::concat(vec![

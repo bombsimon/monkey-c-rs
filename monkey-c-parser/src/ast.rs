@@ -639,7 +639,7 @@ pub enum ForInit {
 pub struct ForHeader {
     pub init: Option<ForInit>,
     pub condition: Option<Expr>,
-    pub update: Option<Expr>,
+    pub update: Option<Vec<Expr>>,
 }
 
 #[derive(Debug, PartialEq)]

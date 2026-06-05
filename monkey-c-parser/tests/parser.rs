@@ -833,3 +833,22 @@ fn test_nullable_cast() {
         "cast type should be optional (nullable)"
     );
 }
+
+#[test]
+fn test_for_loop_multi_update() {
+    for src in [
+        "function f() { for (var i = 0; i < 10; i++, j++) {} }",
+        "function f() { for (var i = 0; i < 10; i++, j++, k = 0) {} }",
+        "function f() { for (var i = 0, j = 0; i < 10; i += 3, j += 1) {} }",
+    ] {
+        let f = first_function(src);
+        let Stmt::For(s) = &f.body.stmts[0] else {
+            panic!("expected for in `{src}`");
+        };
+
+        assert!(
+            s.header.inner.update.as_ref().is_some_and(|u| u.len() > 1),
+            "expected multiple update expressions in `{src}`"
+        );
+    }
+}

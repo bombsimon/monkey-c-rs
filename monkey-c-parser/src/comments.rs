@@ -602,8 +602,10 @@ fn collect_spans_stmt(
                 collect_spans_expr(c, out, block_spans);
             }
 
-            if let Some(u) = &s.header.inner.update {
-                collect_spans_expr(u, out, block_spans);
+            if let Some(updates) = &s.header.inner.update {
+                for u in updates {
+                    collect_spans_expr(u, out, block_spans);
+                }
             }
 
             for sub in &s.body.stmts {

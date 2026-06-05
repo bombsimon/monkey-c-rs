@@ -1184,7 +1184,13 @@ impl<'a> Parser<'a> {
         let update = if self.current_token == token::Type::RParen {
             None
         } else {
-            Some(self.parse_expression()?)
+            let mut exprs = vec![self.parse_expression()?];
+            while self.current_token == token::Type::Comma {
+                self.next_token_span(); // consume `,`
+                exprs.push(self.parse_expression()?);
+            }
+
+            Some(exprs)
         };
         let header_close = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;

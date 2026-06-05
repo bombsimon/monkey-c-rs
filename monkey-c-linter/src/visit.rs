@@ -203,8 +203,10 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
                 walk_expr(c, ExprPosition::Condition, ctx, diags);
             }
 
-            if let Some(u) = &s.header.inner.update {
-                walk_expr(u, ExprPosition::Other, ctx, diags);
+            if let Some(updates) = &s.header.inner.update {
+                for u in updates {
+                    walk_expr(u, ExprPosition::Other, ctx, diags);
+                }
             }
 
             for sub in &s.body.stmts {
