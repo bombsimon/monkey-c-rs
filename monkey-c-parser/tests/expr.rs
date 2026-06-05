@@ -10,7 +10,7 @@ fn parse_expr(src: &str) -> Expr {
     let ast = Parser::new(&wrapped).parse().expect("should parse").ast;
     if let Ast::Document(nodes, _) = ast
         && let Ast::Function(f) = nodes.into_iter().next().unwrap()
-        && let Stmt::Return(r) = f.body.stmts.into_iter().next().unwrap()
+        && let Stmt::Return(r) = f.body.unwrap().stmts.into_iter().next().unwrap()
     {
         return r.value.unwrap();
     }
@@ -160,7 +160,7 @@ fn test_postfix_unary_operators() {
         ("--x;", UnaryOperator::PreDec),
     ] {
         let f = parse_function(&format!("function f() {{ {src} }}"));
-        let Stmt::Expr(Expr::Unary(u)) = &f.body.stmts[0] else {
+        let Stmt::Expr(Expr::Unary(u)) = &f.body.as_ref().unwrap().stmts[0] else {
             panic!("expected unary statement for `{src}`");
         };
         assert_eq!(u.operator, expected, "unary op in `{src}`");
@@ -181,7 +181,7 @@ fn test_assignment_operators() {
         ("x ^= 1;", AssignOperator::BitXorAssign),
     ] {
         let f = parse_function(&format!("function f() {{ {src} }}"));
-        let Stmt::Expr(Expr::Assign(a)) = &f.body.stmts[0] else {
+        let Stmt::Expr(Expr::Assign(a)) = &f.body.as_ref().unwrap().stmts[0] else {
             panic!("expected Assign statement for `{src}`");
         };
         assert_eq!(a.operator, expected, "assign op in `{src}`");

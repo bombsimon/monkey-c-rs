@@ -733,10 +733,17 @@ impl<'a> Parser<'a> {
             None
         };
 
-        let brace_start = self.current_token_start;
-        self.assert_next_token(&[token::Type::LBrace])?;
-        let body = self.parse_block(brace_start)?;
-        let end = body.span.end;
+        let (body, end) = if self.current_token == token::Type::Semicolon {
+            let end = self.current_token_end;
+            self.next_token_span(); // consume `;`
+            (None, end)
+        } else {
+            let brace_start = self.current_token_start;
+            self.assert_next_token(&[token::Type::LBrace])?;
+            let block = self.parse_block(brace_start)?;
+            let end = block.span.end;
+            (Some(block), end)
+        };
 
         Ok(Ast::Function(FunctionDecl {
             name,

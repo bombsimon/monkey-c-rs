@@ -492,7 +492,10 @@ fn collect_spans_ast(
             }
         }
         Ast::Function(decl) => {
-            brace_starts.insert(decl.span, (decl.header_end, decl.body.span.start));
+            if let Some(body) = &decl.body {
+                brace_starts.insert(decl.span, (decl.header_end, body.span.start));
+            }
+
             for arg in &decl.args.inner {
                 out.push(arg.span);
                 if let Some(ty) = &arg.type_ {
@@ -507,12 +510,14 @@ fn collect_spans_ast(
                 collect_spans_type(ret, out, block_spans);
             }
 
-            for stmt in &decl.body.stmts {
-                collect_spans_stmt(stmt, out, brace_starts, block_spans);
-            }
+            if let Some(body) = &decl.body {
+                for stmt in &body.stmts {
+                    collect_spans_stmt(stmt, out, brace_starts, block_spans);
+                }
 
-            block_spans.insert(decl.body.span);
-            out.push(decl.body.span);
+                block_spans.insert(body.span);
+                out.push(body.span);
+            }
         }
         Ast::Enum(decl) => {
             brace_starts.insert(decl.span, (0, decl.brace_start));

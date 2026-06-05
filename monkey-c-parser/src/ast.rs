@@ -861,7 +861,8 @@ pub struct FunctionDecl {
     pub args_trailing_comma: bool,
     /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
-    pub body: BlockStmt,
+    /// `None` for abstract / interface method declarations (`function f() as T;`).
+    pub body: Option<BlockStmt>,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
     /// Byte offset where the "between header and `{`" region ends. With a

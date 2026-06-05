@@ -1,7 +1,12 @@
 use monkey_c_parser::ast::{
-    Ast, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl, Visibility,
+    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl,
+    Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
+
+fn fn_body(f: &FunctionDecl) -> &BlockStmt {
+    f.body.as_ref().expect("function has no body")
+}
 
 fn parse(src: &str) -> Ast {
     Parser::new(src).parse().expect("should parse").ast
@@ -258,7 +263,7 @@ fn test_switch_basic() {
     let f = first_function(
         "function f() { switch (x) { case 1: foo(); break; case 2: bar(); break; default: baz(); } }",
     );
-    let Stmt::Switch(s) = &f.body.stmts[0] else {
+    let Stmt::Switch(s) = &fn_body(&f).stmts[0] else {
         panic!("expected switch");
     };
     assert_eq!(s.cases.len(), 3);
@@ -271,7 +276,7 @@ fn test_switch_instanceof() {
     let f = first_function(
         "function f() { switch (p) { case instanceof Number: ok(); break; default: bad(); } }",
     );
-    let Stmt::Switch(s) = &f.body.stmts[0] else {
+    let Stmt::Switch(s) = &fn_body(&f).stmts[0] else {
         panic!("expected switch");
     };
     let CaseLabel::InstanceOf(ty) = &s.cases[0].label else {
@@ -284,7 +289,7 @@ fn test_switch_instanceof() {
 fn test_switch_fall_through() {
     // First case has no break, falls through to the second.
     let f = first_function("function f() { switch (x) { case 1: foo(); case 2: bar(); break; } }");
-    let Stmt::Switch(s) = &f.body.stmts[0] else {
+    let Stmt::Switch(s) = &fn_body(&f).stmts[0] else {
         panic!("expected switch");
     };
     assert_eq!(s.cases.len(), 2);
@@ -297,7 +302,7 @@ fn test_switch_fall_through() {
 #[test]
 fn test_try_catch() {
     let f = first_function("function f() { try { foo(); } catch (e) { log(e); } }");
-    let Stmt::Try(t) = &f.body.stmts[0] else {
+    let Stmt::Try(t) = &fn_body(&f).stmts[0] else {
         panic!("expected try");
     };
     assert_eq!(t.catches.len(), 1);
@@ -315,7 +320,7 @@ fn test_try_catch_typed_and_finally() {
                   finally { cleanup(); } \
               }";
     let f = first_function(src);
-    let Stmt::Try(t) = &f.body.stmts[0] else {
+    let Stmt::Try(t) = &fn_body(&f).stmts[0] else {
         panic!("expected try");
     };
     assert_eq!(t.catches.len(), 2);
@@ -343,13 +348,13 @@ fn test_try_without_catch_or_finally_fails() {
 #[test]
 fn test_throw() {
     let f = first_function("function f() { throw new Lang.Exception(); }");
-    assert!(matches!(&f.body.stmts[0], Stmt::Throw(_)));
+    assert!(matches!(&fn_body(&f).stmts[0], Stmt::Throw(_)));
 }
 
 #[test]
 fn test_ternary() {
     let f = first_function("function f() { var x = true ? 1 : 2; }");
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let Some(init) = &v.bindings[0].initializer else {
@@ -361,7 +366,7 @@ fn test_ternary() {
 #[test]
 fn test_ternary_right_associative() {
     let f = first_function("function f() { var x = a ? b : c ? d : e; }");
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let Some(init) = &v.bindings[0].initializer else {
@@ -516,14 +521,14 @@ fn test_statement_types() {
     ];
     for (src, check) in cases {
         let f = first_function(&format!("function f() {{ {src} }}"));
-        assert!(check(&f.body.stmts[0]), "statement type for `{src}`");
+        assert!(check(&fn_body(&f).stmts[0]), "statement type for `{src}`");
     }
 }
 
 #[test]
 fn test_if_else() {
     let f = first_function("function f() { if (x > 0) { return x; } else { return 0; } }");
-    let Stmt::If(s) = &f.body.stmts[0] else {
+    let Stmt::If(s) = &fn_body(&f).stmts[0] else {
         panic!("expected if");
     };
     assert!(matches!(s.else_branch, Some(ElseBranch::Block(_))));
@@ -534,7 +539,7 @@ fn test_else_if_chain() {
     let f = first_function(
         "function f() { if (a) { return 1; } else if (b) { return 2; } else { return 3; } }",
     );
-    let Stmt::If(outer) = &f.body.stmts[0] else {
+    let Stmt::If(outer) = &fn_body(&f).stmts[0] else {
         panic!("expected if");
     };
     let Some(ElseBranch::If(middle)) = &outer.else_branch else {
@@ -546,7 +551,7 @@ fn test_else_if_chain() {
 #[test]
 fn test_if_condition_with_member_access() {
     let f = first_function("function f() { if (obj.flag) { return 1; } }");
-    let Stmt::If(s) = &f.body.stmts[0] else {
+    let Stmt::If(s) = &fn_body(&f).stmts[0] else {
         panic!("expected if");
     };
     assert!(matches!(s.condition.inner, Expr::Member(_)));
@@ -557,7 +562,7 @@ fn test_dict_entry_trailing_comments_parse() {
     // Comment-slot fields have been removed; comments live in the CommentsMap.
     // This test is preserved as a structural sanity check on dict parsing.
     let f = first_function("function f() { var x = {:a => 1, :b => 2, // note\n}; }");
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let Some(init) = &v.bindings[0].initializer else {
@@ -573,7 +578,7 @@ fn test_dict_entry_trailing_comments_parse() {
 #[test]
 fn test_empty_dict_with_tail_comment_parse() {
     let f = first_function("function f() { var x = {/* tail */}; }");
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let Some(init) = &v.bindings[0].initializer else {
@@ -591,7 +596,7 @@ fn test_empty_dict_with_tail_comment_parse() {
 fn test_dict_standalone_comment_between_entries() {
     let src = "function f() {\n    var x = {\n        :a => 1,\n        // mid\n        :b => 2,\n    };\n}";
     let f = first_function(src);
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let Some(init) = &v.bindings[0].initializer else {
@@ -611,7 +616,7 @@ fn test_dict_blank_line_between_entries_does_not_add_members() {
     // AST marker. The parser sees two entries.
     let src = "function f() {\n    var x = {\n        :a => 1,\n\n        :b => 2,\n    };\n}";
     let f = first_function(src);
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let Some(init) = &v.bindings[0].initializer else {
@@ -634,7 +639,7 @@ fn test_if_else_chain_parses() {
                   else { return 3; }\n\
               }";
     let f = first_function(src);
-    let Stmt::If(outer) = &f.body.stmts[0] else {
+    let Stmt::If(outer) = &fn_body(&f).stmts[0] else {
         panic!("expected if");
     };
     assert!(matches!(outer.else_branch, Some(ElseBranch::If(_))));
@@ -643,13 +648,13 @@ fn test_if_else_chain_parses() {
 #[test]
 fn test_return_statements() {
     let f = first_function("function f() { return 42; }");
-    let Stmt::Return(r) = &f.body.stmts[0] else {
+    let Stmt::Return(r) = &fn_body(&f).stmts[0] else {
         panic!("expected return");
     };
     assert!(r.value.is_some());
 
     let f = first_function("function f() { return; }");
-    let Stmt::Return(r) = &f.body.stmts[0] else {
+    let Stmt::Return(r) = &fn_body(&f).stmts[0] else {
         panic!("expected return");
     };
     assert!(r.value.is_none());
@@ -658,7 +663,7 @@ fn test_return_statements() {
 #[test]
 fn test_break_continue() {
     let f = first_function("function f() { for (;;) { break; continue; } }");
-    let Stmt::For(s) = &f.body.stmts[0] else {
+    let Stmt::For(s) = &fn_body(&f).stmts[0] else {
         panic!("expected for");
     };
     assert!(matches!(s.body.stmts[0], Stmt::Break(_)));
@@ -778,9 +783,9 @@ function f() {
 fn test_extra_semicolons_are_dropped() {
     // Extra semicolons in a function body are treated as no-ops.
     let f = first_function("function f() { var x = 1;;;; var y = 2; }");
-    assert_eq!(f.body.stmts.len(), 2);
-    assert!(matches!(f.body.stmts[0], Stmt::Var(_)));
-    assert!(matches!(f.body.stmts[1], Stmt::Var(_)));
+    assert_eq!(fn_body(&f).stmts.len(), 2);
+    assert!(matches!(fn_body(&f).stmts[0], Stmt::Var(_)));
+    assert!(matches!(fn_body(&f).stmts[1], Stmt::Var(_)));
 
     // Extra semicolons at the top level between declarations.
     let nodes = document_nodes("var x = 1;;;; var y = 2;");
@@ -788,7 +793,7 @@ fn test_extra_semicolons_are_dropped() {
 
     // Leading semicolons in a block.
     let f = first_function("function f() { ;;; var x = 1; }");
-    assert_eq!(f.body.stmts.len(), 1);
+    assert_eq!(fn_body(&f).stmts.len(), 1);
 }
 
 #[test]
@@ -802,7 +807,7 @@ fn test_cast_then_ternary() {
         r#"function f() { var x = getValue() as Boolean? ? 0xFFFFFF : 0x000000; }"#,
     ] {
         let f = first_function(src);
-        let Stmt::Var(v) = &f.body.stmts[0] else {
+        let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
             panic!("expected var in `{src}`");
         };
         let init = v.bindings[0].initializer.as_ref().unwrap();
@@ -832,7 +837,7 @@ fn test_cast_then_ternary() {
 fn test_nullable_cast() {
     // `expr as Type?` followed by `;` is a nullable cast, not a ternary.
     let f = first_function(r#"function f() { var x = getValue() as Number?; }"#);
-    let Stmt::Var(v) = &f.body.stmts[0] else {
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
         panic!("expected var");
     };
     let init = v.bindings[0].initializer.as_ref().unwrap();
@@ -854,7 +859,7 @@ fn test_for_loop_multi_update() {
         "function f() { for (var i = 0, j = 0; i < 10; i += 3, j += 1) {} }",
     ] {
         let f = first_function(src);
-        let Stmt::For(s) = &f.body.stmts[0] else {
+        let Stmt::For(s) = &fn_body(&f).stmts[0] else {
             panic!("expected for in `{src}`");
         };
 

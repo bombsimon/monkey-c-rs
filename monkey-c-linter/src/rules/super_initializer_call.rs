@@ -33,7 +33,11 @@ pub fn check_ast(ast: &Ast, _ctx: &LintContext) -> Option<Diagnostic> {
         _ => None,
     })?;
 
-    if block_contains_super_init(&init.body, parent_last) {
+    let Some(body) = &init.body else {
+        return None;
+    };
+
+    if block_contains_super_init(body, parent_last) {
         return None;
     }
 

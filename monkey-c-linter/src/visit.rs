@@ -130,8 +130,10 @@ fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
                 walk_type(ret, ctx, diags);
             }
 
-            for stmt in &decl.body.stmts {
-                walk_stmt(stmt, ctx, diags);
+            if let Some(body) = &decl.body {
+                for stmt in &body.stmts {
+                    walk_stmt(stmt, ctx, diags);
+                }
             }
         }
         Ast::Variable(decl) => {

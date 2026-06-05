@@ -628,9 +628,14 @@ impl Formatter {
             parts.push(self.type_to_doc(ret));
         }
 
-        parts.push(Doc::text(" "));
-        parts.push(self.before_bracket_doc(decl.span));
-        parts.push(self.block_body_to_doc(&decl.body));
+        match &decl.body {
+            None => parts.push(Doc::text(";")),
+            Some(body) => {
+                parts.push(Doc::text(" "));
+                parts.push(self.before_bracket_doc(decl.span));
+                parts.push(self.block_body_to_doc(body));
+            }
+        }
 
         Doc::Concat(parts)
     }
@@ -1501,11 +1506,7 @@ impl Formatter {
                                 .iter()
                                 .enumerate()
                                 .flat_map(|(i, e)| {
-                                    let sep = if i > 0 {
-                                        vec![Doc::text(", ")]
-                                    } else {
-                                        vec![]
-                                    };
+                                    let sep = if i > 0 { vec![Doc::text(", ")] } else { vec![] };
                                     sep.into_iter().chain(std::iter::once(self.expr_to_doc(e)))
                                 })
                                 .collect(),
