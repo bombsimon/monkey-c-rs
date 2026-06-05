@@ -781,22 +781,55 @@ fn test_extra_semicolons_are_dropped() {
 
 #[test]
 fn test_cast_then_ternary() {
-    // `expr as T ? a : b` must parse as `(expr as T) ? a : b`, not as a
-    // nullable cast `expr as T?` with a stray operand.
-    let f = first_function(
+    for src in [
+        // Non-nullable cast as ternary condition.
         r#"function f() { var x = getValue() as Boolean ? 0xFFFFFF : 0x000000; }"#,
-    );
+        // Parenthesised nullable cast as ternary condition (recommended style).
+        r#"function f() { var x = (getValue() as Boolean?) ? 0xFFFFFF : 0x000000; }"#,
+        // Nullable cast immediately before ternary `?` (also valid Monkey C).
+        r#"function f() { var x = getValue() as Boolean? ? 0xFFFFFF : 0x000000; }"#,
+    ] {
+        let f = first_function(src);
+        let Stmt::Var(v) = &f.body.stmts[0] else {
+            panic!("expected var in `{src}`");
+        };
+        let init = v.bindings[0].initializer.as_ref().unwrap();
+        assert!(
+            matches!(init.as_ref(), Expr::Ternary(_)),
+            "expected ternary at top level in `{src}`, got {:?}",
+            init
+        );
+        let Expr::Ternary(t) = init.as_ref() else {
+            unreachable!()
+        };
+
+        // The condition must be a type cast (possibly wrapped in parens for the
+        // recommended `(expr as T?) ? …` style).
+        let cond = t.cond.as_ref();
+        let is_cast = matches!(cond, Expr::TypeCast(_))
+            || matches!(cond, Expr::Paren(inner) if matches!(inner.inner.as_ref(), Expr::TypeCast(_)));
+
+        assert!(
+            is_cast,
+            "expected type cast as ternary condition in `{src}`"
+        );
+    }
+}
+
+#[test]
+fn test_nullable_cast() {
+    // `expr as Type?` followed by `;` is a nullable cast, not a ternary.
+    let f = first_function(r#"function f() { var x = getValue() as Number?; }"#);
     let Stmt::Var(v) = &f.body.stmts[0] else {
         panic!("expected var");
     };
     let init = v.bindings[0].initializer.as_ref().unwrap();
-    assert!(
-        matches!(init.as_ref(), Expr::Ternary(_)),
-        "expected ternary at top level, got {:?}",
-        init
-    );
-    let Expr::Ternary(t) = init.as_ref() else {
-        unreachable!()
+    let Expr::TypeCast(cast) = init.as_ref() else {
+        panic!("expected type cast, got {:?}", init);
     };
-    assert!(matches!(t.cond.as_ref(), Expr::TypeCast(_)));
+
+    assert!(
+        cast.target_type.optional,
+        "cast type should be optional (nullable)"
+    );
 }

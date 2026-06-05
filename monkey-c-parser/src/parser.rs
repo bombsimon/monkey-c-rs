@@ -102,6 +102,38 @@ impl<'a> Parser<'a> {
         })
     }
 
+    pub(crate) fn is_expr_start(tok: &token::Type) -> bool {
+        matches!(
+            tok,
+            token::Type::Bang
+                | token::Type::Bling
+                | token::Type::Boolean(_)
+                | token::Type::Char(_)
+                | token::Type::Colon
+                | token::Type::Double(_)
+                | token::Type::Float(_)
+                | token::Type::Hex(_)
+                | token::Type::HexLong(_)
+                | token::Type::Identifier(_)
+                | token::Type::LBrace
+                | token::Type::LBracket
+                | token::Type::LParen
+                | token::Type::Long(_)
+                | token::Type::Me
+                | token::Type::Minus
+                | token::Type::MinusMinus
+                | token::Type::NaN
+                | token::Type::New
+                | token::Type::Null
+                | token::Type::Number(_)
+                | token::Type::Plus
+                | token::Type::PlusPlus
+                | token::Type::Self_
+                | token::Type::String(_)
+                | token::Type::Tilde
+        )
+    }
+
     pub(crate) fn assert_next_token(
         &mut self,
         expect: &[token::Type],
@@ -272,7 +304,8 @@ impl<'a> Parser<'a> {
         let mut ty = self.parse_simple_type(allow_optional)?;
         while self.current_token == token::Type::OrKeyword {
             self.next_token_span(); // consume `or`
-            ty.alternatives.push(self.parse_simple_type(allow_optional)?);
+            ty.alternatives
+                .push(self.parse_simple_type(allow_optional)?);
         }
 
         Ok(ty)
@@ -360,7 +393,14 @@ impl<'a> Parser<'a> {
             }
         };
 
-        let optional = allow_optional && self.current_token == token::Type::Question;
+        // In cast context (`allow_optional = false`) a trailing `?` is ambiguous:
+        // `as T ? a : b` uses `?` as a ternary operator while `as T?;` makes the
+        // type nullable. Peek one token ahead: a ternary `?` must be followed by an
+        // expression, so if the next token is not an expression start the `?` is a
+        // nullable marker.
+        let optional = self.current_token == token::Type::Question
+            && (allow_optional || !Self::is_expr_start(&self.lexer.peek_token().1));
+
         if optional {
             self.next_token_span(); // consume ?
         }
