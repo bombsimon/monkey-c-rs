@@ -592,11 +592,13 @@ impl<'a> Parser<'a> {
 
             entries.push(AnnotationEntry { name, args });
 
-            if self.current_token != token::Type::Comma {
-                break;
+            match self.current_token {
+                token::Type::Comma => {
+                    self.next_token_span();
+                } // comma-separated: `(:a, :b)`
+                token::Type::Colon => {} // space-separated: `(:a :b)`
+                _ => break,
             }
-
-            self.next_token_span(); // consume `,`
         }
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;

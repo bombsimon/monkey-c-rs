@@ -465,6 +465,18 @@ fn test_annotation_is_a_separate_node() {
 }
 
 #[test]
+fn test_annotation_multiple_space_separated_tags() {
+    // `(:tag1 :tag2)` — Monkey C allows space-separated tags (no comma).
+    let nodes = document_nodes("(:glance :exclForGlanceNone)\nfunction foo() {}");
+    let Ast::Annotation(entries, _) = &nodes[0] else {
+        panic!("expected annotation");
+    };
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].name, "glance");
+    assert_eq!(entries[1].name, "exclForGlanceNone");
+}
+
+#[test]
 fn test_comments_live_in_side_table_not_in_ast() {
     let out = Parser::new("// a comment\nvar x = 1;")
         .parse()
