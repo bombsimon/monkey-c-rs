@@ -852,6 +852,49 @@ fn test_nullable_cast() {
 }
 
 #[test]
+fn test_cast_union_type() {
+    for (src, alt_count) in [
+        // `|` as union in cast position when followed by an identifier (type name).
+        (r#"function f() { var x = v as Boolean | Null; }"#, 1),
+        // `or` as union in cast position.
+        (r#"function f() { var x = v as Boolean or Null; }"#, 1),
+        // Mixed `or` and `|` in cast union.
+        (
+            r#"function f() { var x = v as Boolean or String | Number; }"#,
+            2,
+        ),
+    ] {
+        let f = first_function(src);
+        let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
+            panic!("expected var in `{src}`");
+        };
+        let init = v.bindings[0].initializer.as_ref().unwrap();
+        let Expr::TypeCast(cast) = init.as_ref() else {
+            panic!("expected type cast in `{src}`, got {:?}", init);
+        };
+
+        assert_eq!(
+            cast.target_type.alternatives.len(),
+            alt_count,
+            "wrong union alternatives in `{src}`"
+        );
+    }
+
+    // `|` followed by a literal stays as bitwise OR, not a union type.
+    let f = first_function(r#"function f() { var x = 0x00 as U32 | 0xFF; }"#);
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
+        panic!("expected var");
+    };
+
+    let init = v.bindings[0].initializer.as_ref().unwrap();
+    assert!(
+        matches!(init.as_ref(), Expr::Binary(_)),
+        "expected bitwise OR binary expr, got {:?}",
+        init
+    );
+}
+
+#[test]
 fn test_for_loop_multi_update() {
     for src in [
         "function f() { for (var i = 0; i < 10; i++, j++) {} }",

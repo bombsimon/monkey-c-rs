@@ -285,33 +285,50 @@ impl<'a> Parser<'a> {
         Ok(name)
     }
 
-    /// Parse a full type, including `or`-joined union alternatives at the top level.
-    ///
-    /// Use this for variable/parameter/return type annotations.
+    /// Parse a full type including union alternatives (`or` / `|`) and
+    /// nullable `?`. Use this for variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
-        self.parse_type_inner(true)
-    }
-
-    /// Like [`parse_type`] but does not consume a trailing `?` as a nullable
-    /// marker. Use this when parsing the target type of an `as` cast expression
-    /// so that `expr as T ? a : b` is not misread as `expr as T?` followed by
-    /// a stray hex literal.
-    pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
-        self.parse_type_inner(false)
-    }
-
-    fn parse_type_inner(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
-        let mut ty = self.parse_simple_type(allow_optional)?;
+        let mut ty = self.parse_simple_type(true)?;
         while matches!(
             self.current_token,
             token::Type::OrKeyword | token::Type::BitOr
         ) {
             self.next_token_span(); // consume `or` or `|`
-            ty.alternatives
-                .push(self.parse_simple_type(allow_optional)?);
+            ty.alternatives.push(self.parse_simple_type(true)?);
         }
 
         Ok(ty)
+    }
+
+    /// Like [`parse_type`] but for the target type of an `as` cast expression.
+    ///
+    /// Two differences from [`parse_type`]:
+    /// - `?` uses lookahead to distinguish a nullable marker (`as T?;`) from a
+    ///   ternary operator (`as T ? a : b`).
+    /// - `|` uses lookahead: consumed as a union separator only when followed
+    ///   by a token that can start a type name, so `as T | Null` is a union
+    ///   cast while `0x00 as U32 | 0xFF` leaves `|` as a bitwise-OR operator.
+    pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
+        let mut ty = self.parse_simple_type(false)?;
+        while self.current_token == token::Type::OrKeyword
+            || (self.current_token == token::Type::BitOr
+                && Self::is_type_start(&self.lexer.peek_token().1))
+        {
+            self.next_token_span(); // consume `or` or `|`
+            ty.alternatives.push(self.parse_simple_type(false)?);
+        }
+
+        Ok(ty)
+    }
+
+    fn is_type_start(tok: &token::Type) -> bool {
+        matches!(
+            tok,
+            token::Type::Identifier(_)
+                | token::Type::LBrace
+                | token::Type::LBracket
+                | token::Type::LParen
+        )
     }
 
     /// Parse a single type with optional generic params, optional `?`, and
