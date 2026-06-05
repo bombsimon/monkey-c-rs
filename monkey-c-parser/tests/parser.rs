@@ -410,13 +410,25 @@ fn test_enum_trailing_comma() {
 
 #[test]
 fn test_typedef() {
-    let nodes = document_nodes("typedef Numeric as Number or Float or Long or Double;");
-    let Ast::Typedef(d) = &nodes[0] else {
-        panic!("expected typedef");
-    };
-    assert_eq!(d.name, "Numeric");
-    assert_eq!(d.type_.ident().unwrap(), "Number");
-    assert_eq!(d.type_.alternatives.len(), 3);
+    for (src, alt_count) in [
+        ("typedef Numeric as Number or Float or Long or Double;", 3),
+        // `|` is an alias for `or` in union types.
+        ("typedef Numeric as Number | Float | Long | Double;", 3),
+        // Mixed `or` and `|` in the same typedef.
+        ("typedef Numeric as Number or Float | Long;", 2),
+    ] {
+        let nodes = document_nodes(src);
+        let Ast::Typedef(d) = &nodes[0] else {
+            panic!("expected typedef in `{src}`");
+        };
+        assert_eq!(d.name, "Numeric");
+        assert_eq!(d.type_.ident().unwrap(), "Number");
+        assert_eq!(
+            d.type_.alternatives.len(),
+            alt_count,
+            "wrong alternative count in `{src}`"
+        );
+    }
 }
 
 #[test]

@@ -302,8 +302,11 @@ impl<'a> Parser<'a> {
 
     fn parse_type_inner(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type(allow_optional)?;
-        while self.current_token == token::Type::OrKeyword {
-            self.next_token_span(); // consume `or`
+        while matches!(
+            self.current_token,
+            token::Type::OrKeyword | token::Type::BitOr
+        ) {
+            self.next_token_span(); // consume `or` or `|`
             ty.alternatives
                 .push(self.parse_simple_type(allow_optional)?);
         }
