@@ -365,6 +365,16 @@ fn test_stray_control_character_skipped() {
 }
 
 #[test]
+fn test_stray_backtick_skipped() {
+    // `monkeyc` ignores stray backticks next to identifiers, e.g. an enum
+    // value written as `BATTERY\``.
+    assert_eq!(
+        tokens("BATTERY`,"),
+        vec![Type::Identifier("BATTERY".into()), Type::Comma]
+    );
+}
+
+#[test]
 fn test_at_resource_ref() {
     // `@Rez.Strings.foo` — legacy resource reference syntax.
     assert_eq!(
