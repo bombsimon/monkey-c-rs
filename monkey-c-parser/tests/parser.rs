@@ -912,6 +912,19 @@ fn test_cast_union_type() {
         "expected bitwise OR binary expr, got {:?}",
         init
     );
+
+    // `|` followed by a parenthesized expression also stays as bitwise OR.
+    let f = first_function(r#"function f() { var x = 0x00 as U32 | (a << 4); }"#);
+    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
+        panic!("expected var");
+    };
+
+    let init = v.bindings[0].initializer.as_ref().unwrap();
+    assert!(
+        matches!(init.as_ref(), Expr::Binary(_)),
+        "expected bitwise OR binary expr, got {:?}",
+        init
+    );
 }
 
 #[test]

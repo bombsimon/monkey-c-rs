@@ -316,7 +316,10 @@ impl<'a> Parser<'a> {
     ///   ternary operator (`as T ? a : b`).
     /// - `|` uses lookahead: consumed as a union separator only when followed
     ///   by a token that can start a type name, so `as T | Null` is a union
-    ///   cast while `0x00 as U32 | 0xFF` leaves `|` as a bitwise-OR operator.
+    ///   cast while `0x00 as U32 | 0xFF` and `0x00 as U32 | (a | b)` leave `|`
+    ///   as a bitwise-OR operator. `(` is deliberately excluded from
+    ///   "type-start" tokens here: `(expr)` after a cast type is virtually
+    ///   always a parenthesized bitwise-OR operand, not a parenthesized type.
     pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type(false)?;
         while self.current_token == token::Type::OrKeyword
@@ -333,10 +336,7 @@ impl<'a> Parser<'a> {
     fn is_type_start(tok: &token::Type) -> bool {
         matches!(
             tok,
-            token::Type::Identifier(_)
-                | token::Type::LBrace
-                | token::Type::LBracket
-                | token::Type::LParen
+            token::Type::Identifier(_) | token::Type::LBrace | token::Type::LBracket
         )
     }
 
