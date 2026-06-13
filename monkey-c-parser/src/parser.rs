@@ -701,6 +701,11 @@ impl<'a> Parser<'a> {
     fn parse_class_body(&mut self) -> Result<Vec<Ast>, ParserError> {
         let mut body = Vec::new();
         while self.current_token != token::Type::RBrace {
+            self.skip_semicolons();
+            if self.current_token == token::Type::RBrace {
+                break;
+            }
+
             body.push(self.parse_declaration()?);
         }
 

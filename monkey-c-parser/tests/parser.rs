@@ -127,6 +127,14 @@ fn test_var_declarations() {
 }
 
 #[test]
+fn test_class_body_stray_semicolons() {
+    // Stray `;` between members (e.g. `var x = 1;;`) are empty statements
+    // and should be ignored, not treated as unexpected top-level tokens.
+    let c = first_class("class C { var x = 1;; var y = 2; }");
+    assert_eq!(c.body.len(), 2);
+}
+
+#[test]
 fn test_var_visibility() {
     for (src, expected) in [
         ("class C { private var x; }", Some(Visibility::Private)),
