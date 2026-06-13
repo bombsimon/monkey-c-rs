@@ -38,6 +38,7 @@ fn test_literals() {
     for (src, expected) in [
         ("42", LiteralValue::Number(42)),
         ("42l", LiteralValue::Long(42)),
+        ("42L", LiteralValue::Long(42)),
         (
             "1.5",
             LiteralValue::Float(FloatLit {

@@ -104,7 +104,7 @@ impl<'a> Lexer<'a> {
             }
 
             let digits = self.input[digits_start..self.position].to_string();
-            if self.ch == b'l' {
+            if matches!(self.ch, b'l' | b'L') {
                 self.read_char();
                 return NumberLiteral::HexLong(digits);
             }
@@ -149,11 +149,11 @@ impl<'a> Lexer<'a> {
         let text = self.input[start_position..self.position].to_string();
 
         match self.ch {
-            b'l' => {
+            b'l' | b'L' => {
                 self.read_char();
                 NumberLiteral::Long(text)
             }
-            b'd' => {
+            b'd' | b'D' => {
                 self.read_char();
                 NumberLiteral::Double(DoubleLit {
                     value: text.parse().unwrap_or(0.0),
@@ -162,7 +162,7 @@ impl<'a> Lexer<'a> {
                     exponent,
                 })
             }
-            b'f' => {
+            b'f' | b'F' => {
                 self.read_char();
                 NumberLiteral::Float(FloatLit {
                     value: text.parse().unwrap_or(0.0),
