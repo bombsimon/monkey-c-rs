@@ -848,12 +848,16 @@ fn collect_spans_expr(expr: &Expr, out: &mut Vec<Span>, block_spans: &mut HashSe
             collect_spans_expr(&i.index, out, block_spans);
         }
         Expr::New(n) => {
-            let args_span = Span {
-                start: n.args_open,
-                end: n.span.end,
-            };
-            block_spans.insert(args_span);
-            out.push(args_span);
+            if let Some(args_open) = n.args_open {
+                let args_span = Span {
+                    start: args_open,
+                    end: n.span.end,
+                };
+
+                block_spans.insert(args_span);
+                out.push(args_span);
+            }
+
             for arg in &n.args {
                 collect_spans_expr(&arg.value, out, block_spans);
             }

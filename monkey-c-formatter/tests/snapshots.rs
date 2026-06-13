@@ -175,6 +175,12 @@ fn new_expression_dotted() {
 }
 
 #[test]
+fn new_expression_without_parens() {
+    // `new Foo` (no argument list) is normalised to `new Foo()`.
+    insta::assert_snapshot!(format("function f() { var x = new MyModule.Foo; }"));
+}
+
+#[test]
 fn new_array_variants() {
     insta::assert_snapshot!(format(
         r#"

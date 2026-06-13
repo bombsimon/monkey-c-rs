@@ -667,6 +667,20 @@ impl Parser<'_> {
                     ));
                 }
 
+                // `new Foo` without a trailing `(...)` is equivalent to `new Foo()`.
+                if self.current_token != token::Type::LParen {
+                    return Ok(Expr::New(NewExpr {
+                        class,
+                        args: Vec::new(),
+                        args_open: None,
+                        args_trailing_comma: false,
+                        span: Span {
+                            start,
+                            end: self.prev_token_end,
+                        },
+                    }));
+                }
+
                 let args_open = self.current_token_start;
                 self.assert_next_token(&[token::Type::LParen])?;
                 let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
@@ -676,7 +690,7 @@ impl Parser<'_> {
                 Ok(Expr::New(NewExpr {
                     class,
                     args,
-                    args_open,
+                    args_open: Some(args_open),
                     args_trailing_comma,
                     span: Span { start, end },
                 }))

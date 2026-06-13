@@ -1658,11 +1658,17 @@ impl Formatter {
                 Doc::text("]"),
             ]),
             Expr::New(e) => {
-                let args_span = Span {
-                    start: e.args_open,
-                    end: e.span.end,
-                };
-                let after_open = self.after_open_brace_doc(args_span);
+                // `new Foo` (no argument list) is normalised to `new Foo()`.
+                let after_open = e
+                    .args_open
+                    .map(|start| {
+                        self.after_open_brace_doc(Span {
+                            start,
+                            end: e.span.end,
+                        })
+                    })
+                    .unwrap_or(Doc::Empty);
+
                 Doc::concat(vec![
                     Doc::text(format!("new {}", e.class)),
                     self.format_list(

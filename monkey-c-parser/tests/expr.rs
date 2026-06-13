@@ -310,6 +310,17 @@ fn test_new_expressions() {
 }
 
 #[test]
+fn test_new_expression_without_parens() {
+    // `new Foo` (no argument list) is equivalent to `new Foo()`.
+    let Expr::New(e) = parse_expr("new MyModule.Foo") else {
+        panic!("expected New");
+    };
+    assert_eq!(e.class, "MyModule.Foo");
+    assert!(e.args_open.is_none());
+    assert!(e.args.is_empty());
+}
+
+#[test]
 fn test_type_cast() {
     let Expr::TypeCast(e) = parse_expr("x as Number") else {
         panic!("expected TypeCast");

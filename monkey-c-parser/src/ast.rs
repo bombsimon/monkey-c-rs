@@ -457,8 +457,9 @@ pub struct NewExpr {
     pub args: Vec<CallArg>,
     /// See [`CallExpr::args_trailing_comma`].
     pub args_trailing_comma: bool,
-    /// See [`CallExpr::args_open`].
-    pub args_open: usize,
+    /// See [`CallExpr::args_open`]. `None` when `new Foo` omits the
+    /// argument list entirely (equivalent to `new Foo()`).
+    pub args_open: Option<usize>,
     pub span: Span,
 }
 

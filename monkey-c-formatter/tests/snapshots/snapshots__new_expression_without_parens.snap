@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(\"function f() { var x = new MyModule.Foo; }\")"
+---
+function f() {
+    var x = new MyModule.Foo();
+}
