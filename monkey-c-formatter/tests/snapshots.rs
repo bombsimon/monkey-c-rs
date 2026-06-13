@@ -557,3 +557,22 @@ fn throw_new_exception() {
 fn block_comment_in_function_body() {
     insta::assert_snapshot!(format("function f() { /* note */ var x = 1; }"));
 }
+
+#[test]
+fn line_comment_after_binary_operand_forces_break() {
+    // A `//` comment after an operand runs to the end of the line, so the
+    // following operator must move to the next line rather than the usual
+    // flat-mode space — otherwise it would be swallowed by the comment.
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    if (((tm - tmStart) < tmMin()) || // we didn't rest long enough
+        (val == valMin))            // we are Slowing down - not the back swing
+    {
+        resetInternal(true);
+    }
+}
+"#
+        .trim()
+    ));
+}

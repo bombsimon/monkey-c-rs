@@ -224,6 +224,14 @@ impl Formatter {
     /// Render trailing comments as a suffix. Inline block comments on the
     /// same source line emit as ` <comment>`; everything else emits on a new
     /// line.
+    /// `true` if `span` has a trailing `//` comment. A line comment runs to
+    /// the end of the source line, so anything rendered after it on the same
+    /// line — e.g. an operator continuing a binary chain — must move to the
+    /// next line instead of the usual flat-mode space.
+    fn has_trailing_line_comment(&self, span: Span) -> bool {
+        self.trailing(span).iter().any(|c| !c.is_block)
+    }
+
     fn trailing_doc(&self, span: Span) -> Doc {
         let comments = self.trailing(span);
         if comments.is_empty() {
@@ -1031,38 +1039,50 @@ impl Formatter {
         }
     }
 
-    /// Render `<keyword> (cond)` followed by either a space (when `cond` fits
-    /// flat) or a hard line break (when it wraps), so the trailing `{` lands
-    /// on its own line in the wrapped case. Used by `if`, `while`, `switch`.
+    /// Render `<keyword> (cond)` followed by the `span`'s
+    /// [`Self::before_bracket_doc`], so a `<keyword> (cond) // comment`
+    /// trailing comment stays glued to `)` instead of floating onto its own
+    /// line before `{`.
+    ///
+    /// When there's no such comment, `cond` is followed by either a space
+    /// (when it fits flat) or a hard line break (when it wraps), so the
+    /// trailing `{` lands on its own line in the wrapped case. Used by `if`,
+    /// `while`, `switch`.
     ///
     /// For non-binary conditions there's nothing to wrap at, so a plain
     /// `<keyword> (cond) ` is emitted regardless of width.
-    fn paren_condition_header(&self, keyword: &str, cond: &Expr) -> Doc {
+    fn paren_condition_header(&self, keyword: &str, cond: &Expr, span: Span) -> Doc {
         let wrappable = matches!(cond, Expr::Binary(_));
         let cond_doc = self.condition_to_doc(cond);
+        let before_bracket = self.before_bracket_doc(span);
+
         if wrappable {
+            let sep = if matches!(before_bracket, Doc::Empty) {
+                Doc::flat_or_break(Doc::text(" "), Doc::HardLine)
+            } else {
+                Doc::text(" ")
+            };
+
             Doc::Group(vec![
                 Doc::text(format!("{keyword} (")),
                 Doc::Indent(vec![cond_doc]),
                 Doc::text(")"),
-                Doc::flat_or_break(Doc::text(" "), Doc::HardLine),
+                sep,
+                before_bracket,
             ])
         } else {
             Doc::concat(vec![
                 Doc::text(format!("{keyword} (")),
                 cond_doc,
                 Doc::text(") "),
+                before_bracket,
             ])
         }
     }
 
     fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {
-        let header = self.paren_condition_header("if", &s.condition.inner);
-        let mut parts = vec![
-            header,
-            self.before_bracket_doc(s.span),
-            self.block_body_to_doc(&s.then_branch),
-        ];
+        let header = self.paren_condition_header("if", &s.condition.inner, s.span);
+        let mut parts = vec![header, self.block_body_to_doc(&s.then_branch)];
 
         // block_body_to_doc already emits the trailing on then_branch.span.
         // We only need to know whether a trailing was present so the `else`
@@ -1118,7 +1138,12 @@ impl Formatter {
         let mut inner: Vec<Doc> = Vec::new();
         for (i, operand) in operands.iter().enumerate() {
             if i > 0 {
-                inner.push(Doc::Line);
+                if self.has_trailing_line_comment(*operands[i - 1].span()) {
+                    inner.push(Doc::HardLine);
+                } else {
+                    inner.push(Doc::Line);
+                }
+
                 inner.push(Doc::text(format!("{} ", operators::binary_op(ops[i - 1]))));
             }
 
@@ -1169,7 +1194,12 @@ impl Formatter {
             let mut parts: Vec<Doc> = Vec::new();
             for (i, operand) in operands.iter().enumerate() {
                 if i > 0 {
-                    parts.push(Doc::Line);
+                    if self.has_trailing_line_comment(*operands[i - 1].span()) {
+                        parts.push(Doc::HardLine);
+                    } else {
+                        parts.push(Doc::Line);
+                    }
+
                     parts.push(Doc::text(format!("{} ", operators::binary_op(ops[i - 1]))));
                 }
 
@@ -1278,8 +1308,7 @@ impl Formatter {
         }
 
         Doc::concat(vec![
-            self.paren_condition_header("switch", &s.discriminant.inner),
-            self.before_bracket_doc(s.span),
+            self.paren_condition_header("switch", &s.discriminant.inner, s.span),
             Doc::text("{"),
             self.after_open_brace_doc(switch_body_span),
             Doc::Indent(vec![Doc::HardLine, Doc::Concat(body)]),
@@ -1468,8 +1497,7 @@ impl Formatter {
             Stmt::Block(block) => Doc::concat(vec![Doc::text("{"), self.block_inner_to_doc(block)]),
             Stmt::If(s) => self.if_stmt_to_doc(s),
             Stmt::While(s) => Doc::concat(vec![
-                self.paren_condition_header("while", &s.condition.inner),
-                self.before_bracket_doc(s.span),
+                self.paren_condition_header("while", &s.condition.inner, s.span),
                 self.block_body_to_doc(&s.body),
             ]),
             Stmt::DoWhile(s) => Doc::concat(vec![
@@ -2358,6 +2386,11 @@ fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {
 /// and each end with a trailing comment. Within a run, the code portion is
 /// padded with spaces so every comment starts at the same column.
 ///
+/// A more-indented line continues the run if it's a wrapped binary-chain
+/// continuation (starts with an operator, e.g. `|| (val == valMin))  // …`)
+/// — its deeper indent is just the chain's continuation indent, not a new
+/// nesting level, so its comment aligns with the line above.
+///
 /// Strings (`"…"`) and char literals (`'…'`) are tracked so a `//` inside a
 /// string doesn't get mistaken for a trailing comment.
 fn align_trailing_comments(text: &str) -> String {
@@ -2378,7 +2411,10 @@ fn align_trailing_comments(text: &str) -> String {
         };
 
         let mut j = i;
-        while j < analyzed.len() && matches!(analyzed[j], Some((ind, _, _)) if ind == indent) {
+        while j < analyzed.len()
+            && matches!(analyzed[j], Some((ind, _, _)) if ind == indent
+                || (ind > indent && is_binary_chain_continuation(lines[j])))
+        {
             j += 1;
         }
 
@@ -2404,6 +2440,41 @@ fn align_trailing_comments(text: &str) -> String {
     }
 
     out.join("\n")
+}
+
+/// `true` if `line`'s code starts (after indentation) with a binary operator
+/// followed by a space — the shape [`Formatter::binary_chain_to_doc`] and
+/// [`Formatter::condition_to_doc`] emit for a wrapped chain's continuation
+/// lines (`|| operand`, `+ operand`, …).
+fn is_binary_chain_continuation(line: &str) -> bool {
+    const OPS: &[&str] = &[
+        "==",
+        "!=",
+        "<=",
+        ">=",
+        "<<",
+        ">>",
+        "&&",
+        "||",
+        "and",
+        "or",
+        "instanceof",
+        "has",
+        "+",
+        "-",
+        "*",
+        "/",
+        "%",
+        "<",
+        ">",
+        "&",
+        "|",
+        "^",
+    ];
+
+    let trimmed = line.trim_start();
+    OPS.iter()
+        .any(|op| trimmed.starts_with(op) && trimmed[op.len()..].starts_with(' '))
 }
 
 /// Return `(indent, code_end, comment_start)` when `line` contains a trailing

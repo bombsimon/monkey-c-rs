@@ -1,0 +1,11 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    if (((tm - tmStart) < tmMin()) || // we didn't rest long enough\n        (val == valMin))            // we are Slowing down - not the back swing\n    {\n        resetInternal(true);\n    }\n}\n\"#.trim())"
+---
+function f() {
+    if (((tm - tmStart) < tmMin()) // we didn't rest long enough
+        || (val == valMin))        // we are Slowing down - not the back swing
+    {
+        resetInternal(true);
+    }
+}
