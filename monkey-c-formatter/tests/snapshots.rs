@@ -257,6 +257,13 @@ fn dict_symbol_keys_inline() {
 }
 
 #[test]
+fn dict_expression_key() {
+    insta::assert_snapshot!(format(
+        r#"var d = {Activity.SPORT_GENERIC * 1000 + Activity.SUB_SPORT_GENERIC => "generic"};"#
+    ));
+}
+
+#[test]
 fn dict_no_trailing_comma_fits_inline() {
     insta::assert_snapshot!(format(r#"var d = {"k" => 1};"#));
 }

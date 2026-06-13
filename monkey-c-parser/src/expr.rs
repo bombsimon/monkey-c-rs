@@ -785,10 +785,10 @@ impl Parser<'_> {
                 break;
             }
 
-            // Key-value entry. Keys may be a symbol/string literal or any
-            // variable-like reference (`x`, `Module.CONST`), parsed via the
-            // postfix chain so `.member` access threads through correctly.
-            let key = self.parse_postfix()?;
+            // Key-value entry. Keys may be a symbol/string literal, a
+            // variable-like reference (`x`, `Module.CONST`), or an arbitrary
+            // expression (e.g. `Activity.SPORT_GENERIC * 1000 + ...`).
+            let key = self.parse_expression()?;
             self.assert_next_token(&[token::Type::FatArrow])?;
             let value = self.parse_expression()?;
             let entry = DictEntry { key, value };

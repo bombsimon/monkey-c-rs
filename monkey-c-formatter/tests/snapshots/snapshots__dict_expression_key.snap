@@ -1,0 +1,5 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"var d = {Activity.SPORT_GENERIC * 1000 + Activity.SUB_SPORT_GENERIC => \"generic\"};\"#)"
+---
+var d = {Activity.SPORT_GENERIC * 1000 + Activity.SUB_SPORT_GENERIC => "generic"};

@@ -363,6 +363,18 @@ fn test_dict_literals() {
 }
 
 #[test]
+fn test_dict_key_expression() {
+    let Expr::Dict(e) =
+        parse_expr("{Activity.SPORT_GENERIC * 1000 + Activity.SUB_SPORT_GENERIC => \"generic\"}")
+    else {
+        panic!("expected Dict");
+    };
+    let entries: Vec<_> = e.entries.iter().collect();
+    assert_eq!(entries.len(), 1);
+    assert!(matches!(&entries[0].key, Expr::Binary(b) if b.operator == BinaryOperator::Add));
+}
+
+#[test]
 fn test_null_check() {
     let Expr::Binary(e) = parse_expr("x == null") else {
         panic!("expected Binary");
