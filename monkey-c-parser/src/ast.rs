@@ -751,6 +751,7 @@ pub struct VarDecl {
 pub struct AnnotationEntry {
     pub name: Symbol,
     pub args: Vec<Expr>,
+    pub span: Span,
 }
 
 /// A top-level AST node. Also used for class and module body members.

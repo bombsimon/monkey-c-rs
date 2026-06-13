@@ -327,32 +327,30 @@ impl Formatter {
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
             Ast::Annotation(entries, _) => {
-                let parts: Vec<Doc> = entries
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, entry)| {
-                        let mut bits = Vec::new();
-                        if i > 0 {
-                            bits.push(Doc::text(", "));
-                        }
+                let mut parts: Vec<Doc> = Vec::new();
+                for (i, entry) in entries.iter().enumerate() {
+                    if i > 0 {
+                        parts.push(Doc::text(", "));
+                    }
 
-                        bits.push(Doc::text(format!(":{}", entry.name)));
-                        if !entry.args.is_empty() {
-                            bits.push(Doc::text("("));
-                            for (j, arg) in entry.args.iter().enumerate() {
-                                if j > 0 {
-                                    bits.push(Doc::text(", "));
-                                }
-
-                                bits.push(self.expr_to_doc(arg));
+                    parts.push(self.leading_doc(entry.span));
+                    parts.push(Doc::text(format!(":{}", entry.name)));
+                    if !entry.args.is_empty() {
+                        parts.push(Doc::text("("));
+                        for (j, arg) in entry.args.iter().enumerate() {
+                            if j > 0 {
+                                parts.push(Doc::text(", "));
                             }
 
-                            bits.push(Doc::text(")"));
+                            parts.push(self.expr_to_doc(arg));
                         }
 
-                        bits
-                    })
-                    .collect();
+                        parts.push(Doc::text(")"));
+                    }
+
+                    parts.push(self.trailing_doc(entry.span));
+                }
+
                 Doc::concat(vec![Doc::text("("), Doc::Concat(parts), Doc::text(")")])
             }
             Ast::Eof => Doc::Empty,

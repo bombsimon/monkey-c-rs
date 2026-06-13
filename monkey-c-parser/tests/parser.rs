@@ -490,6 +490,18 @@ fn test_annotation_is_a_separate_node() {
 }
 
 #[test]
+fn test_annotation_with_comments() {
+    // Comments between the parens and the `:tag` shouldn't prevent the
+    // `(...)` from being recognised as an annotation.
+    let nodes = document_nodes("(/*bar*/ :background_app /*baz*/)\nfunction foo() {}");
+    let Ast::Annotation(entries, _) = &nodes[0] else {
+        panic!("expected annotation");
+    };
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "background_app");
+}
+
+#[test]
 fn test_annotation_multiple_space_separated_tags() {
     // `(:tag1 :tag2)` — Monkey C allows space-separated tags (no comma).
     let nodes = document_nodes("(:glance :exclForGlanceNone)\nfunction foo() {}");

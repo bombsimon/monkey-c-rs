@@ -526,6 +526,17 @@ function typed_and_finally() {
 }
 
 #[test]
+fn annotation_with_comments() {
+    insta::assert_snapshot!(format(
+        r#"
+(/*bar*/ :background_app /*baz*/)
+class Foo {}
+"#
+        .trim()
+    ));
+}
+
+#[test]
 fn throw_new_exception() {
     insta::assert_snapshot!(format("function f() { throw new Lang.Exception(); }"));
 }

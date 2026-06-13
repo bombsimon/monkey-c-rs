@@ -298,6 +298,27 @@ impl<'a> Lexer<'a> {
         .next_token()
     }
 
+    /// Like [`peek_token`](Self::peek_token), but skips over any comments
+    /// between the current token and the next significant one.
+    pub fn peek_token_skip_comments(&self) -> (usize, token::Type, usize) {
+        let mut lexer = Self {
+            input: self.input,
+            position: self.position,
+            read_position: self.read_position,
+            ch: self.ch,
+        };
+
+        loop {
+            let token = lexer.next_token();
+            if !matches!(
+                token.1,
+                token::Type::Comment(_) | token::Type::BlockComment(_)
+            ) {
+                return token;
+            }
+        }
+    }
+
     pub fn next_token(&mut self) -> (usize, token::Type, usize) {
         self.skip_whitespace();
 

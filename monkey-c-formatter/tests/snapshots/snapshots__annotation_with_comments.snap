@@ -1,0 +1,6 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"\n(/*bar*/ :background_app /*baz*/)\nclass Foo {}\n\"#.trim())"
+---
+(/*bar*/ :background_app /*baz*/)
+class Foo {}

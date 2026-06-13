@@ -554,7 +554,12 @@ fn collect_spans_ast(
         }
         Ast::Typedef(decl) => collect_spans_type(&decl.type_, out, block_spans),
         Ast::Import(_) | Ast::Using(_) => {}
-        Ast::Annotation(_, _) | Ast::Eof => {}
+        Ast::Annotation(entries, _) => {
+            for entry in entries {
+                out.push(entry.span);
+            }
+        }
+        Ast::Eof => {}
     }
 }
 

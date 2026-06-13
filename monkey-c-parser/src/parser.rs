@@ -609,7 +609,9 @@ impl<'a> Parser<'a> {
         }
 
         match self.current_token.clone() {
-            token::Type::LParen if matches!(self.lexer.peek_token().1, token::Type::Colon) => {
+            token::Type::LParen
+                if matches!(self.lexer.peek_token_skip_comments().1, token::Type::Colon) =>
+            {
                 self.parse_annotation_decl(start)
             }
             token::Type::Class => self.parse_class_decl(start),
@@ -638,6 +640,7 @@ impl<'a> Parser<'a> {
         let mut entries = Vec::new();
 
         loop {
+            let entry_start = self.current_token_start;
             self.assert_next_token(&[token::Type::Colon])?; // consume `:`
             let name = self.parse_symbol_name()?;
 
@@ -650,7 +653,14 @@ impl<'a> Parser<'a> {
                 Vec::new()
             };
 
-            entries.push(AnnotationEntry { name, args });
+            entries.push(AnnotationEntry {
+                name,
+                args,
+                span: Span {
+                    start: entry_start,
+                    end: self.prev_token_end,
+                },
+            });
 
             match self.current_token {
                 token::Type::Comma => {
