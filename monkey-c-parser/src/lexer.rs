@@ -121,11 +121,18 @@ impl<'a> Lexer<'a> {
         }
 
         let mut has_dot = false;
-        while self.ch.is_ascii_digit() || self.ch == b'.' {
-            if self.ch == b'.' {
+        loop {
+            if self.ch.is_ascii_digit() {
+                self.read_char();
+            } else if self.ch == b'.' && !has_dot && self.peek_char().is_ascii_digit() {
+                // A `.` only belongs to the number if followed by a digit;
+                // otherwise it's a member access on an integer literal, e.g.
+                // `0.toFloat()`.
                 has_dot = true;
+                self.read_char();
+            } else {
+                break;
             }
-            self.read_char();
         }
 
         // Scientific notation exponent: e.g. `e3`, `E-2`, `e+10`.

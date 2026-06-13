@@ -255,6 +255,22 @@ fn test_leading_dot_float() {
 }
 
 #[test]
+fn test_integer_method_call() {
+    // `0.toFloat()` — the `.` is member access, not a decimal point, since
+    // it isn't followed by a digit.
+    assert_eq!(
+        tokens("0.toFloat()"),
+        vec![
+            Type::Number(0),
+            Type::Dot,
+            Type::Identifier("toFloat".into()),
+            Type::LParen,
+            Type::RParen,
+        ]
+    );
+}
+
+#[test]
 fn test_char_literal() {
     assert_eq!(
         tokens(r#"'a' 'B' '\n' '\'' '°'"#),
