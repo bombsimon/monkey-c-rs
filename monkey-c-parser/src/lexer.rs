@@ -62,7 +62,10 @@ impl<'a> Lexer<'a> {
 
     fn skip_whitespace(&mut self) {
         loop {
-            if self.ch.is_ascii_whitespace() {
+            // `monkeyc` tolerates stray C0 control characters between tokens
+            // (e.g. a leftover `DC3` byte before a `{`). `0x00` is excluded
+            // since it's this lexer's EOF sentinel.
+            if self.ch.is_ascii_whitespace() || (self.ch != 0 && self.ch < 0x20) {
                 self.read_char();
             } else if self.ch == b'\\' && self.peek_char() == b'\n' {
                 // Line continuation: `\` immediately followed by a newline

@@ -355,6 +355,16 @@ fn test_bling() {
 }
 
 #[test]
+fn test_stray_control_character_skipped() {
+    // `monkeyc` tolerates stray C0 control characters (e.g. a leftover `DC3`
+    // byte, 0x13) between tokens.
+    assert_eq!(
+        tokens("extends Foo \x13{"),
+        vec![Type::Extends, Type::Identifier("Foo".into()), Type::LBrace,]
+    );
+}
+
+#[test]
 fn test_at_resource_ref() {
     // `@Rez.Strings.foo` — legacy resource reference syntax.
     assert_eq!(
