@@ -244,14 +244,15 @@ pub enum BinaryOperator {
 /// A unary (single-operand) operator.
 #[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
-    Pos,     // +
-    Neg,     // -
-    Not,     // !
-    BitNot,  // ~
-    PreInc,  // ++x
-    PreDec,  // --x
-    PostInc, // x++
-    PostDec, // x--
+    Pos,         // +
+    Neg,         // -
+    Not,         // !
+    BitNot,      // ~
+    PreInc,      // ++x
+    PreDec,      // --x
+    PostInc,     // x++
+    PostDec,     // x--
+    ResourceRef, // @Rez.Strings.foo
 }
 
 /// A compound assignment operator.

@@ -355,6 +355,22 @@ fn test_bling() {
 }
 
 #[test]
+fn test_at_resource_ref() {
+    // `@Rez.Strings.foo` — legacy resource reference syntax.
+    assert_eq!(
+        tokens("@Rez.Strings.foo"),
+        vec![
+            Type::At,
+            Type::Identifier("Rez".into()),
+            Type::Dot,
+            Type::Identifier("Strings".into()),
+            Type::Dot,
+            Type::Identifier("foo".into()),
+        ]
+    );
+}
+
+#[test]
 fn test_compound_operators() {
     assert_eq!(
         tokens("x += 1; y -= 2; z *= 3;"),

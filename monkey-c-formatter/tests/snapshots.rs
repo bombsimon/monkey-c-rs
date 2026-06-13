@@ -542,6 +542,13 @@ class Foo {}
 }
 
 #[test]
+fn resource_ref() {
+    insta::assert_snapshot!(format(
+        "function f() { statusLabel.setText(@Rez.Strings.cpr_string); }"
+    ));
+}
+
+#[test]
 fn throw_new_exception() {
     insta::assert_snapshot!(format("function f() { throw new Lang.Exception(); }"));
 }

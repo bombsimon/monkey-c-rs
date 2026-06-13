@@ -474,6 +474,7 @@ impl<'a> Lexer<'a> {
                 return (start, token::Type::Char(content), self.position);
             }
             b'$' => (token::Type::Bling, 1),
+            b'@' => (token::Type::At, 1),
             0 => (token::Type::Eof, 0),
             _ => {
                 let first = self.input[self.position..].chars().next().unwrap_or('\0');

@@ -63,6 +63,10 @@ fn dispatch_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext, diags: &mut 
     if let Some(d) = rules::compound_assignment::check_expr(expr, pos, ctx) {
         diags.push(d);
     }
+
+    if let Some(d) = rules::redundant_resource_ref::check_expr(expr, pos, ctx) {
+        diags.push(d);
+    }
 }
 
 /// Called for each list of sibling [`Ast`] declarations (document body,

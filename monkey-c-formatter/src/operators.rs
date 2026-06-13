@@ -43,6 +43,7 @@ pub(crate) fn unary_prefix_op(op: &UnaryOperator) -> &'static str {
         UnaryOperator::BitNot => "~",
         UnaryOperator::PreInc => "++",
         UnaryOperator::PreDec => "--",
+        UnaryOperator::ResourceRef => "@",
         UnaryOperator::PostInc | UnaryOperator::PostDec => unreachable!(),
     }
 }

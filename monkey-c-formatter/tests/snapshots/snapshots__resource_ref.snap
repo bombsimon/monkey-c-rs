@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(\"function f() { statusLabel.setText(@Rez.Strings.cpr_string); }\")"
+---
+function f() {
+    statusLabel.setText(@Rez.Strings.cpr_string);
+}

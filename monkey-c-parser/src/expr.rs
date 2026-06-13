@@ -306,6 +306,7 @@ impl Parser<'_> {
             token::Type::Tilde => UnaryOperator::BitNot,
             token::Type::PlusPlus => UnaryOperator::PreInc,
             token::Type::MinusMinus => UnaryOperator::PreDec,
+            token::Type::At => UnaryOperator::ResourceRef,
             _ => unreachable!(),
         };
         let right = self.parse_unary()?;
@@ -336,6 +337,7 @@ impl Parser<'_> {
                 | token::Type::Tilde
                 | token::Type::PlusPlus
                 | token::Type::MinusMinus
+                | token::Type::At
         ) {
             self.handle_unary_operator()
         } else {

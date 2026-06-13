@@ -18,6 +18,7 @@ Once `--fix` has been applied the user is expected to run the
 | [`import-order`][import-order]                     | ⚠️       | Suppressed when comments interleave |
 | [`naming-convention`][naming-convention]           | ❌       | [Coding Conventions]                |
 | [`one-class-per-file`][one-class-per-file]         | ❌       | [Coding Conventions]                |
+| [`redundant-resource-ref`][redundant-resource-ref] | ✅       | Drops legacy `@` on `Rez.*` refs    |
 | [`super-initializer-call`][super-initializer-call] | ❌       | Flags missing `Base.initialize(…)`  |
 | [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses       |
 
@@ -29,5 +30,6 @@ Once `--fix` has been applied the user is expected to run the
 [import-order]: ./import-order
 [naming-convention]: ./naming-convention
 [one-class-per-file]: ./one-class-per-file
+[redundant-resource-ref]: ./redundant-resource-ref
 [super-initializer-call]: ./super-initializer-call
 [unneeded-parens]: ./unneeded-parens

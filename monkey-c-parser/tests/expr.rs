@@ -144,6 +144,17 @@ fn test_prefix_unary_operators() {
 }
 
 #[test]
+fn test_resource_ref() {
+    // `@Rez.Strings.foo` — legacy resource reference, `@` applies to the
+    // whole dotted member-access chain.
+    let Expr::Unary(e) = parse_expr("@Rez.Strings.foo") else {
+        panic!("expected Unary");
+    };
+    assert_eq!(e.operator, UnaryOperator::ResourceRef);
+    assert!(matches!(e.operand.as_ref(), Expr::Member(_)));
+}
+
+#[test]
 fn test_explicit_positive_number() {
     let Expr::Unary(e) = parse_expr("+1") else {
         panic!("expected Unary for `+1`");
