@@ -426,9 +426,12 @@ impl<'a> Parser<'a> {
         // `as T ? a : b` uses `?` as a ternary operator while `as T?;` makes the
         // type nullable. Peek one token ahead: a ternary `?` must be followed by an
         // expression, so if the next token is not an expression start the `?` is a
-        // nullable marker.
+        // nullable marker. A following `:` is treated as a nullable marker too —
+        // `cond ? expr as T? : fallback` is far more common than a cast directly
+        // followed by a ternary whose branches are symbol literals (`as T ? :a : :b`).
+        let peek = self.lexer.peek_token().1;
         let optional = self.current_token == token::Type::Question
-            && (allow_optional || !Self::is_expr_start(&self.lexer.peek_token().1));
+            && (allow_optional || peek == token::Type::Colon || !Self::is_expr_start(&peek));
 
         if optional {
             self.next_token_span(); // consume ?

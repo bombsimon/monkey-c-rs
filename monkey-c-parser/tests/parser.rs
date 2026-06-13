@@ -872,6 +872,30 @@ fn test_nullable_cast() {
 }
 
 #[test]
+fn test_nullable_cast_as_ternary_branch() {
+    // `cond ? expr as T? : fallback` — the `?` after `T` is a nullable marker,
+    // not the start of a nested ternary with a symbol-literal true-branch.
+    let f = first_function(
+        r#"function f() { return cond ? dict[hash] as Graphics.FontDefinition? : DEFAULT_LABEL_FONT; }"#,
+    );
+    let Stmt::Return(r) = &fn_body(&f).stmts[0] else {
+        panic!("expected return");
+    };
+    let Expr::Ternary(t) = r.value.as_ref().unwrap() else {
+        panic!("expected ternary, got {:?}", r.value);
+    };
+
+    let Expr::TypeCast(cast) = t.then_expr.as_ref() else {
+        panic!("expected type cast in then-branch, got {:?}", t.then_expr);
+    };
+    assert!(
+        cast.target_type.optional,
+        "cast type should be optional (nullable)"
+    );
+    assert!(matches!(t.else_expr.as_ref(), Expr::Ident(_)));
+}
+
+#[test]
 fn test_cast_union_type() {
     for (src, alt_count) in [
         // `|` as union in cast position when followed by an identifier (type name).
