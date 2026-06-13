@@ -1486,7 +1486,7 @@ impl Formatter {
                 let init_doc = match &s.header.inner.init {
                     None => Doc::Empty,
                     Some(ForInit::Var(v)) => self.var_decl_to_doc(v),
-                    Some(ForInit::Expr(e)) => self.expr_to_doc(e),
+                    Some(ForInit::Expr(exprs)) => self.expr_list_to_doc(exprs),
                 };
                 let cond_doc = s
                     .header
@@ -1500,18 +1500,7 @@ impl Formatter {
                     .inner
                     .update
                     .as_ref()
-                    .map(|exprs| {
-                        Doc::concat(
-                            exprs
-                                .iter()
-                                .enumerate()
-                                .flat_map(|(i, e)| {
-                                    let sep = if i > 0 { vec![Doc::text(", ")] } else { vec![] };
-                                    sep.into_iter().chain(std::iter::once(self.expr_to_doc(e)))
-                                })
-                                .collect(),
-                        )
-                    })
+                    .map(|exprs| self.expr_list_to_doc(exprs))
                     .unwrap_or(Doc::Empty);
 
                 Doc::concat(vec![
@@ -1560,6 +1549,21 @@ impl Formatter {
             Doc::HardLine,
             Doc::text("}"),
         ])
+    }
+
+    /// Render a comma-separated list of expressions, as used in a `for`
+    /// loop's init or update clauses (`for (i = 0, j = 1; ...; i++, j--)`).
+    fn expr_list_to_doc(&self, exprs: &[Expr]) -> Doc {
+        Doc::concat(
+            exprs
+                .iter()
+                .enumerate()
+                .flat_map(|(i, e)| {
+                    let sep = if i > 0 { vec![Doc::text(", ")] } else { vec![] };
+                    sep.into_iter().chain(std::iter::once(self.expr_to_doc(e)))
+                })
+                .collect(),
+        )
     }
 
     /// Render an expression and prepend/append any leading or trailing

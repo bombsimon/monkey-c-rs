@@ -1,6 +1,6 @@
 use monkey_c_parser::ast::{
-    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, FunctionDecl, Stmt, VarDecl,
-    Visibility,
+    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, ForInit, FunctionDecl, Stmt,
+    VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -917,6 +917,27 @@ fn test_for_loop_multi_update() {
         assert!(
             s.header.inner.update.as_ref().is_some_and(|u| u.len() > 1),
             "expected multiple update expressions in `{src}`"
+        );
+    }
+}
+
+#[test]
+fn test_for_loop_multi_init() {
+    for src in [
+        "function f() { for (i = 0, j = 1; i < 10; i++) {} }",
+        "function f() { for (i = 1, k = (i - j) * 2; i < 10; i++, k -= 2) {} }",
+    ] {
+        let f = first_function(src);
+        let Stmt::For(s) = &fn_body(&f).stmts[0] else {
+            panic!("expected for in `{src}`");
+        };
+
+        let Some(ForInit::Expr(exprs)) = &s.header.inner.init else {
+            panic!("expected ForInit::Expr in `{src}`");
+        };
+        assert!(
+            exprs.len() > 1,
+            "expected multiple init expressions in `{src}`"
         );
     }
 }

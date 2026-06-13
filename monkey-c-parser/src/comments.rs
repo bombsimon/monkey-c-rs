@@ -599,7 +599,11 @@ fn collect_spans_stmt(
             if let Some(init) = &s.header.inner.init {
                 match init {
                     ForInit::Var(_) => {}
-                    ForInit::Expr(e) => collect_spans_expr(e, out, block_spans),
+                    ForInit::Expr(exprs) => {
+                        for e in exprs {
+                            collect_spans_expr(e, out, block_spans);
+                        }
+                    }
                 }
             }
 

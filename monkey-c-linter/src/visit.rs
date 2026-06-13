@@ -186,7 +186,11 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
         Stmt::For(s) => {
             if let Some(init) = &s.header.inner.init {
                 match init {
-                    ForInit::Expr(e) => walk_expr(e, ExprPosition::Other, ctx, diags),
+                    ForInit::Expr(exprs) => {
+                        for e in exprs {
+                            walk_expr(e, ExprPosition::Other, ctx, diags);
+                        }
+                    }
                     ForInit::Var(v) => {
                         for b in &v.bindings {
                             if let Some(t) = &b.type_ {

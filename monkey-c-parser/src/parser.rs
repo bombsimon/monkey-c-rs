@@ -1200,9 +1200,13 @@ impl<'a> Parser<'a> {
                 Some(ForInit::Var(var_decl))
             }
             _ => {
-                let expr = self.parse_expression()?;
+                let mut exprs = vec![self.parse_expression()?];
+                while self.current_token == token::Type::Comma {
+                    self.next_token_span(); // consume `,`
+                    exprs.push(self.parse_expression()?);
+                }
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Some(ForInit::Expr(expr))
+                Some(ForInit::Expr(exprs))
             }
         };
 

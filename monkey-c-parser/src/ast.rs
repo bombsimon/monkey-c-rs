@@ -627,11 +627,12 @@ pub struct DoWhileStmt {
     pub span: Span,
 }
 
-/// The init clause of a `for` loop — either a `var` declaration or an expression.
+/// The init clause of a `for` loop — either a `var` declaration or one or
+/// more comma-separated expressions (`for (i = 0, j = 1; ...; ...)`).
 #[derive(Debug, PartialEq)]
 pub enum ForInit {
     Var(VarDecl),
-    Expr(Expr),
+    Expr(Vec<Expr>),
 }
 
 /// The `(init; cond; update)` triple of a `for` loop.
