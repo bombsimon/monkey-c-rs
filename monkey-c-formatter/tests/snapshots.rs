@@ -175,6 +175,11 @@ fn new_expression_dotted() {
 }
 
 #[test]
+fn new_expression_with_self_reference() {
+    insta::assert_snapshot!(format("function f() { return new self.classDef_(); }"));
+}
+
+#[test]
 fn new_expression_without_parens() {
     // `new Foo` (no argument list) is normalised to `new Foo()`.
     insta::assert_snapshot!(format("function f() { var x = new MyModule.Foo; }"));

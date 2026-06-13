@@ -638,8 +638,16 @@ impl Parser<'_> {
                     return self.parse_new_array(start, None);
                 }
 
-                // Type follows. Could be `new Foo.Bar(...)` or `new Array<T>[size]`.
-                let class = self.parse_dotted_identifier()?;
+                // Type follows. Could be `new Foo.Bar(...)`, `new Array<T>[size]`,
+                // or `new self.classDef_(...)` — instantiating via a
+                // `Lang.Class` reference stored on `self`/`me`.
+                let class = if matches!(self.current_token, token::Type::Self_ | token::Type::Me) {
+                    let name = self.current_token.to_string();
+                    self.next_token_span();
+                    self.parse_dotted_identifier_continuation(name)?
+                } else {
+                    self.parse_dotted_identifier()?
+                };
                 let generic_params = if self.current_token == token::Type::Less {
                     self.parse_generic_params()?
                 } else {

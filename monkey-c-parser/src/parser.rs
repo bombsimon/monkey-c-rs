@@ -231,7 +231,7 @@ impl<'a> Parser<'a> {
     }
 
     pub(crate) fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
-        let mut name = if self.current_token == token::Type::Bling {
+        let name = if self.current_token == token::Type::Bling {
             self.next_token_span();
             "$".to_string()
         } else {
@@ -240,6 +240,15 @@ impl<'a> Parser<'a> {
             n
         };
 
+        self.parse_dotted_identifier_continuation(name)
+    }
+
+    /// Continue a dotted identifier after its first segment has already been
+    /// consumed, e.g. `self` in `self.classDef_`.
+    pub(crate) fn parse_dotted_identifier_continuation(
+        &mut self,
+        mut name: String,
+    ) -> Result<String, ParserError> {
         while self.current_token == token::Type::Dot {
             self.next_token_span(); // consume dot
             let next = self.parse_identifier()?;

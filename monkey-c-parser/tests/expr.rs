@@ -321,6 +321,16 @@ fn test_new_expression_without_parens() {
 }
 
 #[test]
+fn test_new_expression_with_self_reference() {
+    // `new self.classDef_()` — instantiating via a `Lang.Class` reference
+    // stored on `self`.
+    let Expr::New(e) = parse_expr("new self.classDef_()") else {
+        panic!("expected New");
+    };
+    assert_eq!(e.class, "self.classDef_");
+}
+
+#[test]
 fn test_type_cast() {
     let Expr::TypeCast(e) = parse_expr("x as Number") else {
         panic!("expected TypeCast");

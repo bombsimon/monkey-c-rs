@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(\"function f() { return new self.classDef_(); }\")"
+---
+function f() {
+    return new self.classDef_();
+}
