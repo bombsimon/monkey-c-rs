@@ -485,6 +485,23 @@ fn test_increment_decrement() {
 }
 
 #[test]
+fn test_line_continuation() {
+    // A `\` immediately followed by a newline lets an expression span
+    // multiple lines and is skipped like whitespace.
+    assert_eq!(
+        tokens(
+            r#"a + \
+b"#
+        ),
+        vec![
+            Type::Identifier("a".into()),
+            Type::Plus,
+            Type::Identifier("b".into()),
+        ]
+    );
+}
+
+#[test]
 fn test_visibility_keywords() {
     assert_eq!(
         tokens("private protected public hidden static"),

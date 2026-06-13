@@ -61,8 +61,16 @@ impl<'a> Lexer<'a> {
     }
 
     fn skip_whitespace(&mut self) {
-        while self.ch.is_ascii_whitespace() {
-            self.read_char();
+        loop {
+            if self.ch.is_ascii_whitespace() {
+                self.read_char();
+            } else if self.ch == b'\\' && self.peek_char() == b'\n' {
+                // Line continuation: `\` immediately followed by a newline
+                // lets an expression span multiple lines.
+                self.read_n_chars(2);
+            } else {
+                break;
+            }
         }
     }
 
