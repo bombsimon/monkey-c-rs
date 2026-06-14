@@ -12,7 +12,8 @@
 //! `unneeded-parens` rule only fires for expressions in slots where any
 //! expression is unambiguously parseable.
 use monkey_c_parser::ast::{
-    Ast, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, InterfaceMember, Stmt, Type, TypeKind,
+    Ast, BinaryOperator, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, InterfaceMember, Stmt, Type,
+    TypeKind,
 };
 
 use crate::{Diagnostic, rules};
@@ -30,8 +31,13 @@ pub enum ExprPosition {
     ReturnValue,
     /// Condition expression of `if`/`while`/`do-while`/`for`.
     Condition,
-    /// Operand of a binary operator.
-    BinaryOperand,
+    /// Operand of a binary operator. Carries the parent operator and which
+    /// side the operand is on, so rules can reason about precedence and
+    /// associativity (e.g. whether `(a + b) - c` can drop its parens).
+    BinaryOperand {
+        parent_op: BinaryOperator,
+        side: OperandSide,
+    },
     /// Operand of a unary operator (prefix or postfix).
     UnaryOperand,
     /// Function-call argument or `new`-expression argument.
@@ -41,6 +47,16 @@ pub enum ExprPosition {
     /// Anywhere else not covered above. New positions are promoted as rules
     /// need to distinguish them.
     Other,
+}
+
+/// Which side of a binary operator an operand is on. Matters because all
+/// binary operators in Monkey C are left-associative: `(a + b) - c` is
+/// equivalent to `a + b - c`, but `a - (b + c)` is not equivalent to
+/// `a - b + c`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperandSide {
+    Left,
+    Right,
 }
 
 /// Shared context passed to every rule. Currently just the source text used
@@ -359,8 +375,24 @@ fn walk_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext, diags: &mut Vec<
 
     match expr {
         Expr::Binary(b) => {
-            walk_expr(&b.left, ExprPosition::BinaryOperand, ctx, diags);
-            walk_expr(&b.right, ExprPosition::BinaryOperand, ctx, diags);
+            walk_expr(
+                &b.left,
+                ExprPosition::BinaryOperand {
+                    parent_op: b.operator,
+                    side: OperandSide::Left,
+                },
+                ctx,
+                diags,
+            );
+            walk_expr(
+                &b.right,
+                ExprPosition::BinaryOperand {
+                    parent_op: b.operator,
+                    side: OperandSide::Right,
+                },
+                ctx,
+                diags,
+            );
         }
         Expr::Unary(u) => walk_expr(&u.operand, ExprPosition::UnaryOperand, ctx, diags),
         Expr::Ternary(t) => {

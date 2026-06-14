@@ -84,25 +84,26 @@ fn run(cli: &Cli) -> io::Result<bool> {
 /// in place and returns `true`. Without `--fix`, returns `true` when no
 /// findings remain.
 fn lint_file(file: &Path, cli: &Cli) -> io::Result<bool> {
-    let source = read_source(file)?;
+    let original = read_source(file)?;
     let label = file.display().to_string();
-    let diagnostics = run_lint(&source, cli, &label)?;
+
+    let diagnostics = run_lint(&original, cli, &label)?;
 
     if cli.fix {
         let fixes = diagnostics
             .iter()
             .filter_map(|d| d.fix.clone())
             .collect::<Vec<_>>();
-        if !fixes.is_empty() {
-            let patched = apply_fixes(&source, fixes);
-            fs::write(file, patched)?;
+        let fixed = apply_fixes(&original, fixes);
+        if fixed != original {
+            fs::write(file, fixed)?;
         }
 
         return Ok(true);
     }
 
     for d in &diagnostics {
-        render_diagnostic(&label, &source, d);
+        render_diagnostic(&label, &original, d);
     }
 
     Ok(diagnostics.is_empty())
