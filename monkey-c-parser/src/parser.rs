@@ -17,6 +17,8 @@ pub struct ParserError {
     pub line: u32,
     /// 1-indexed column number of the offending token.
     pub col: u32,
+    /// Byte span of the offending token, for rendering a source snippet.
+    pub span: std::ops::Range<usize>,
 }
 
 impl std::fmt::Display for ParserError {
@@ -227,6 +229,7 @@ impl<'a> Parser<'a> {
             message: message.into(),
             line: lc.line + 1,
             col: lc.col + 1,
+            span: self.current_token_start..self.current_token_end,
         }
     }
 

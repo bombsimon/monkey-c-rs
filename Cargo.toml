@@ -3,7 +3,8 @@ resolver = "3"
 members = [
   "monkey-c-parser",
   "monkey-c-formatter",
-  "monkey-c-linter"
+  "monkey-c-linter",
+  "monkey-c-diagnostics",
 ]
 
 [workspace.package]
@@ -13,5 +14,7 @@ license = "MIT"
 repository = "https://github.com/bombsimon/monkey-c-rs"
 
 [workspace.dependencies]
+ariadne = "0.6"
 clap = { version = "4", features = ["derive"] }
+monkey-c-diagnostics = { path = "monkey-c-diagnostics" }
 monkey-c-parser = { path = "monkey-c-parser" }

@@ -1,8 +1,9 @@
 use clap::Parser;
+use monkey_c_diagnostics::{already_reported, read_source, read_stdin_source, render_parse_error};
 use monkey_c_formatter::Formatter;
 
 use std::fs;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -41,7 +42,12 @@ fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::from(1),
         Err(e) => {
-            eprintln!("{e}");
+            // Diagnostics for `io::ErrorKind::Other` are already printed via
+            // ariadne by `read_source`/`format_source`.
+            if e.kind() != io::ErrorKind::Other {
+                eprintln!("{e}");
+            }
+
             ExitCode::from(2)
         }
     }
@@ -66,7 +72,11 @@ fn run(cli: &Cli) -> io::Result<bool> {
             Ok(true) => {}
             Ok(false) => all_ok = false,
             Err(e) => {
-                eprintln!("{}: {e}", file.display());
+                // Invalid-UTF-8 diagnostics are already printed via ariadne
+                // by `read_source`.
+                if e.kind() != io::ErrorKind::Other {
+                    eprintln!("{}: {e}", file.display());
+                }
                 all_ok = false;
             }
         }
@@ -79,8 +89,8 @@ fn run(cli: &Cli) -> io::Result<bool> {
 /// when the file would change; otherwise returns `true` and writes the
 /// formatted text in place. Returns `true` for a no-op match too.
 fn format_file(file: &Path, cli: &Cli) -> io::Result<bool> {
-    let source = fs::read_to_string(file)?;
-    let formatted = format_source(&source, cli)?;
+    let source = read_source(file)?;
+    let formatted = format_source(&source, cli, &file.display().to_string())?;
 
     if cli.check {
         if formatted != source {
@@ -100,10 +110,8 @@ fn format_file(file: &Path, cli: &Cli) -> io::Result<bool> {
 }
 
 fn run_stdin(cli: &Cli) -> io::Result<bool> {
-    let mut source = String::new();
-    io::stdin().read_to_string(&mut source)?;
-
-    let formatted = format_source(&source, cli)?;
+    let source = read_stdin_source()?;
+    let formatted = format_source(&source, cli, "<stdin>")?;
 
     if cli.check {
         let ok = formatted == source;
@@ -119,11 +127,12 @@ fn run_stdin(cli: &Cli) -> io::Result<bool> {
     Ok(true)
 }
 
-fn format_source(source: &str, cli: &Cli) -> io::Result<String> {
+fn format_source(source: &str, cli: &Cli, label: &str) -> io::Result<String> {
     let parser = monkey_c_parser::parser::Parser::new(source);
-    let output = parser
-        .parse()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
+    let output = parser.parse().map_err(|e| {
+        render_parse_error(label, source, &e);
+        already_reported()
+    })?;
 
     let formatter = Formatter::new(source)
         .with_line_width(cli.line_width)

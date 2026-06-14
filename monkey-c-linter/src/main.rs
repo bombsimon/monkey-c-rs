@@ -1,9 +1,12 @@
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 use clap::Parser;
+use monkey_c_diagnostics::{
+    already_reported, byte_range_to_char_range, read_source, read_stdin_source, render_parse_error,
+};
 use monkey_c_linter::{Diagnostic, apply_fixes, lint};
 
 use std::fs;
-use std::io::{self, Read};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -33,7 +36,11 @@ fn main() -> ExitCode {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::from(1),
         Err(e) => {
-            eprintln!("{e}");
+            // Diagnostics for `io::ErrorKind::Other` are already printed via
+            // ariadne by `read_source`/`run_lint`.
+            if e.kind() != io::ErrorKind::Other {
+                eprintln!("{e}");
+            }
             ExitCode::from(2)
         }
     }
@@ -60,7 +67,11 @@ fn run(cli: &Cli) -> io::Result<bool> {
             Ok(true) => {}
             Ok(false) => all_clean = false,
             Err(e) => {
-                eprintln!("{}: {e}", file.display());
+                // Invalid-UTF-8 diagnostics are already printed via ariadne
+                // by `read_source`.
+                if e.kind() != io::ErrorKind::Other {
+                    eprintln!("{}: {e}", file.display());
+                }
                 all_clean = false;
             }
         }
@@ -73,8 +84,9 @@ fn run(cli: &Cli) -> io::Result<bool> {
 /// in place and returns `true`. Without `--fix`, returns `true` when no
 /// findings remain.
 fn lint_file(file: &Path, cli: &Cli) -> io::Result<bool> {
-    let source = fs::read_to_string(file)?;
-    let diagnostics = run_lint(&source, cli)?;
+    let source = read_source(file)?;
+    let label = file.display().to_string();
+    let diagnostics = run_lint(&source, cli, &label)?;
 
     if cli.fix {
         let fixes = diagnostics
@@ -89,7 +101,6 @@ fn lint_file(file: &Path, cli: &Cli) -> io::Result<bool> {
         return Ok(true);
     }
 
-    let label = file.display().to_string();
     for d in &diagnostics {
         render_diagnostic(&label, &source, d);
     }
@@ -98,12 +109,10 @@ fn lint_file(file: &Path, cli: &Cli) -> io::Result<bool> {
 }
 
 fn run_stdin(cli: &Cli) -> io::Result<bool> {
-    let mut source = String::new();
-    io::stdin().read_to_string(&mut source)?;
-
-    let diagnostics = run_lint(&source, cli)?;
-
+    let source = read_stdin_source()?;
     let label = "<stdin>";
+    let diagnostics = run_lint(&source, cli, label)?;
+
     for d in &diagnostics {
         render_diagnostic(label, &source, d);
     }
@@ -111,13 +120,14 @@ fn run_stdin(cli: &Cli) -> io::Result<bool> {
     Ok(diagnostics.is_empty())
 }
 
-fn run_lint(source: &str, cli: &Cli) -> io::Result<Vec<Diagnostic>> {
+fn run_lint(source: &str, cli: &Cli, label: &str) -> io::Result<Vec<Diagnostic>> {
     let disabled: Vec<&str> = cli.disable.iter().map(String::as_str).collect();
 
     let parser = monkey_c_parser::parser::Parser::new(source);
-    let output = parser
-        .parse()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("parse error: {e}")))?;
+    let output = parser.parse().map_err(|e| {
+        render_parse_error(label, source, &e);
+        already_reported()
+    })?;
 
     let diagnostics = lint(&output, source)
         .into_iter()
@@ -210,37 +220,4 @@ fn render_diagnostic(file: &str, source: &str, d: &Diagnostic) {
         .finish()
         .eprint((file, Source::from(source)))
         .expect("ariadne write to stderr");
-}
-
-/// Convert a `[byte_start, byte_end)` range in `source` into the matching
-/// `[char_start, char_end)` range. Ariadne's `Source` indexes by char, so
-/// passing byte offsets unchanged misplaces labels whenever the source
-/// contains any multibyte UTF-8 character earlier in the file.
-fn byte_range_to_char_range(
-    source: &str,
-    byte_start: usize,
-    byte_end: usize,
-) -> std::ops::Range<usize> {
-    let mut char_start = 0;
-    let mut char_end = 0;
-    let mut byte_pos = 0;
-
-    for c in source.chars() {
-        if byte_pos == byte_start {
-            char_start = char_end;
-        }
-
-        if byte_pos == byte_end {
-            return char_start..char_end;
-        }
-
-        byte_pos += c.len_utf8();
-        char_end += 1;
-    }
-
-    if byte_pos == byte_start {
-        char_start = char_end;
-    }
-
-    char_start..char_end
 }

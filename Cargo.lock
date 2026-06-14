@@ -321,11 +321,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "monkey-c-diagnostics"
+version = "0.2.0"
+dependencies = [
+ "ariadne",
+ "monkey-c-parser",
+]
+
+[[package]]
 name = "monkey-c-formatter"
 version = "0.2.0"
 dependencies = [
+ "ariadne",
  "clap",
  "insta",
+ "monkey-c-diagnostics",
  "monkey-c-parser",
 ]
 
@@ -336,6 +346,7 @@ dependencies = [
  "ariadne",
  "clap",
  "convert_case",
+ "monkey-c-diagnostics",
  "monkey-c-parser",
 ]
 

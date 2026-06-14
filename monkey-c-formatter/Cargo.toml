@@ -6,7 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ariadne.workspace = true
 clap.workspace = true
+monkey-c-diagnostics.workspace = true
 monkey-c-parser.workspace = true
 
 [dev-dependencies]

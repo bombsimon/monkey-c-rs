@@ -1,13 +1,10 @@
 [package]
-name = "monkey-c-linter"
-version.workspace = true
+name = "monkey-c-diagnostics"
 edition.workspace = true
+version.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
 ariadne.workspace = true
-clap.workspace = true
-convert_case = "0.6"
-monkey-c-diagnostics.workspace = true
 monkey-c-parser.workspace = true
