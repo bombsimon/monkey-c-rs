@@ -622,7 +622,10 @@ impl<'a> Parser<'a> {
 
         match self.current_token.clone() {
             token::Type::LParen
-                if matches!(self.lexer.peek_token_skip_comments().1, token::Type::Colon) =>
+                if matches!(
+                    self.lexer.peek_token_skip_comments().1,
+                    token::Type::Colon | token::Type::RParen
+                ) =>
             {
                 self.parse_annotation_decl(start)
             }
@@ -643,45 +646,49 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a `(:Name)` or `(:Name1, :Name2, …)` annotation at a declaration
-    /// position. Each entry is a `:Name` pair — the parser consumes the colon
-    /// and identifier separately. In expression scope the same bytes parse as a
-    /// parenthesised symbol expression.
+    /// Parse a `(:Name)`, `(:Name1, :Name2, …)`, or empty `()`/`( /* … */ )`
+    /// annotation at a declaration position. Each entry is a `:Name` pair —
+    /// the parser consumes the colon and identifier separately. In
+    /// expression scope the same bytes parse as a parenthesised symbol
+    /// expression.
     fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
         let mut entries = Vec::new();
 
-        loop {
-            let entry_start = self.current_token_start;
-            self.assert_next_token(&[token::Type::Colon])?; // consume `:`
-            let name = self.parse_symbol_name()?;
+        if self.current_token != token::Type::RParen {
+            loop {
+                let entry_start = self.current_token_start;
+                self.assert_next_token(&[token::Type::Colon])?; // consume `:`
+                let name = self.parse_symbol_name()?;
 
-            let args = if self.current_token == token::Type::LParen {
-                self.next_token_span(); // consume `(`
-                let (args, _trailing) = self.parse_call_args(token::Type::RParen)?;
-                self.assert_next_token(&[token::Type::RParen])?;
-                args.into_iter().map(|a| a.value).collect()
-            } else {
-                Vec::new()
-            };
+                let args = if self.current_token == token::Type::LParen {
+                    self.next_token_span(); // consume `(`
+                    let (args, _trailing) = self.parse_call_args(token::Type::RParen)?;
+                    self.assert_next_token(&[token::Type::RParen])?;
+                    args.into_iter().map(|a| a.value).collect()
+                } else {
+                    Vec::new()
+                };
 
-            entries.push(AnnotationEntry {
-                name,
-                args,
-                span: Span {
-                    start: entry_start,
-                    end: self.prev_token_end,
-                },
-            });
+                entries.push(AnnotationEntry {
+                    name,
+                    args,
+                    span: Span {
+                        start: entry_start,
+                        end: self.prev_token_end,
+                    },
+                });
 
-            match self.current_token {
-                token::Type::Comma => {
-                    self.next_token_span();
-                } // comma-separated: `(:a, :b)`
-                token::Type::Colon => {} // space-separated: `(:a :b)`
-                _ => break,
+                match self.current_token {
+                    token::Type::Comma => {
+                        self.next_token_span();
+                    } // comma-separated: `(:a, :b)`
+                    token::Type::Colon => {} // space-separated: `(:a :b)`
+                    _ => break,
+                }
             }
         }
+
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
 

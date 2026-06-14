@@ -542,6 +542,20 @@ class Foo {}
 }
 
 #[test]
+fn empty_annotation() {
+    insta::assert_snapshot!(format(
+        r#"
+()
+function fn1() {}
+
+( /* Nothing */ )
+function fn2() {}
+"#
+        .trim()
+    ));
+}
+
+#[test]
 fn resource_ref() {
     insta::assert_snapshot!(format(
         "function f() { statusLabel.setText(@Rez.Strings.cpr_string); }"

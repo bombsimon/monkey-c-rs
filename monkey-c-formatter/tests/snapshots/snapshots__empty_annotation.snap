@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"\n()\nfunction fn1() {}\n\n( /* Nothing */ )\nfunction fn2() {}\n\"#.trim())"
+---
+()
+function fn1() {}
+
+(/* Nothing */)
+function fn2() {}

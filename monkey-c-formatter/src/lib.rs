@@ -334,7 +334,25 @@ impl Formatter {
             Ast::Enum(decl) => self.enum_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
-            Ast::Annotation(entries, _) => {
+            Ast::Annotation(entries, span) => {
+                if entries.is_empty() {
+                    let dangling_comments = self.all_dangling(*span);
+                    if dangling_comments.is_empty() {
+                        return Doc::text("()");
+                    }
+
+                    let mut inner = Vec::new();
+                    for (i, c) in dangling_comments.iter().enumerate() {
+                        if i > 0 {
+                            inner.push(Doc::text(" "));
+                        }
+
+                        inner.push(self.comment_to_doc(c));
+                    }
+
+                    return Doc::concat(vec![Doc::text("("), Doc::Concat(inner), Doc::text(")")]);
+                }
+
                 let mut parts: Vec<Doc> = Vec::new();
                 for (i, entry) in entries.iter().enumerate() {
                     if i > 0 {
