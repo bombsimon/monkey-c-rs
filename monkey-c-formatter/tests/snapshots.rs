@@ -576,3 +576,23 @@ function f() {
         .trim()
     ));
 }
+
+#[test]
+fn line_comment_trailing_whole_condition_moves_paren() {
+    // A `//` comment trailing the whole condition runs to the end of the
+    // line, so `)` must render before it. A standalone comment between that
+    // and `{` must not be dropped either.
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    if (a || // c1
+        (b > 0 || c < -1) // c2
+        // c3
+        ) {
+        foo();
+    }
+}
+"#
+        .trim()
+    ));
+}

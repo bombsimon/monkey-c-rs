@@ -154,16 +154,16 @@ impl Formatter {
             return Doc::Empty;
         }
 
-        let last = comments.len() - 1;
         let mut parts = Vec::new();
-        for (i, c) in comments.iter().enumerate() {
+        for c in &comments {
             parts.push(self.comment_to_doc(c));
-            // A line comment ends the source line, so the opening `{` must
-            // move to the next line. Block comments stay inline with a space.
-            if i == last && !c.is_block {
-                parts.push(Doc::HardLine);
-            } else {
+            // A line comment ends the source line, so whatever follows —
+            // another comment or the opening `{`, must move to the next
+            // line. Block comments stay inline with a space.
+            if c.is_block {
                 parts.push(Doc::text(" "));
+            } else {
+                parts.push(Doc::HardLine);
             }
         }
 
@@ -1041,8 +1041,8 @@ impl Formatter {
 
     /// Render `<keyword> (cond)` followed by the `span`'s
     /// [`Self::before_bracket_doc`], so a `<keyword> (cond) // comment`
-    /// trailing comment stays glued to `)` instead of floating onto its own
-    /// line before `{`.
+    /// comment dangling on `span` (the whole `if`/`while`/`switch`) stays
+    /// glued to `)` instead of floating onto its own line before `{`.
     ///
     /// When there's no such comment, `cond` is followed by either a space
     /// (when it fits flat) or a hard line break (when it wraps), so the
@@ -1051,30 +1051,64 @@ impl Formatter {
     ///
     /// For non-binary conditions there's nothing to wrap at, so a plain
     /// `<keyword> (cond) ` is emitted regardless of width.
+    ///
+    /// Separately, `cond` itself may have its own trailing comment (`if (a
+    /// == 0 /* T */)`, `if (a || b) // c`). A trailing `//` comment runs to
+    /// the end of the line, so `)` must render *before* it, followed by a
+    /// hard line break, placed outside the wrapping [`Doc::Group`] so it
+    /// doesn't force `cond` itself to break. A trailing `/* … */` block
+    /// comment can stay inline before `)`, as part of the group's
+    /// flat-width.
     fn paren_condition_header(&self, keyword: &str, cond: &Expr, span: Span) -> Doc {
         let wrappable = matches!(cond, Expr::Binary(_));
         let cond_doc = self.condition_to_doc(cond);
         let before_bracket = self.before_bracket_doc(span);
 
-        if wrappable {
-            let sep = if matches!(before_bracket, Doc::Empty) {
-                Doc::flat_or_break(Doc::text(" "), Doc::HardLine)
+        // For a non-binary `cond`, `condition_to_doc` falls back to
+        // `expr_to_doc`, which already renders `cond`'s trailing comment as
+        // part of `cond_doc`, rendering it again here would duplicate it.
+        let (before_paren, after_paren) = if wrappable {
+            let cond_trailing = self.trailing_doc(*cond.span());
+            if self.has_trailing_line_comment(*cond.span()) {
+                (Doc::Empty, Doc::concat(vec![cond_trailing, Doc::HardLine]))
             } else {
-                Doc::text(" ")
-            };
+                (cond_trailing, Doc::Empty)
+            }
+        } else {
+            (Doc::Empty, Doc::Empty)
+        };
 
-            Doc::Group(vec![
+        if wrappable {
+            let mut group_parts = vec![
                 Doc::text(format!("{keyword} (")),
                 Doc::Indent(vec![cond_doc]),
+                before_paren,
                 Doc::text(")"),
-                sep,
-                before_bracket,
-            ])
+            ];
+
+            if matches!(after_paren, Doc::Empty) {
+                let sep = if matches!(before_bracket, Doc::Empty) {
+                    Doc::flat_or_break(Doc::text(" "), Doc::HardLine)
+                } else {
+                    Doc::text(" ")
+                };
+                group_parts.push(sep);
+            }
+
+            Doc::concat(vec![Doc::Group(group_parts), after_paren, before_bracket])
         } else {
+            let close = if matches!(after_paren, Doc::Empty) {
+                Doc::text(") ")
+            } else {
+                Doc::text(")")
+            };
+
             Doc::concat(vec![
                 Doc::text(format!("{keyword} (")),
                 cond_doc,
-                Doc::text(") "),
+                before_paren,
+                close,
+                after_paren,
                 before_bracket,
             ])
         }
@@ -1207,15 +1241,11 @@ impl Formatter {
             }
 
             // The chain-flattening loop above emits each operand individually
-            // and bypasses the outer Binary's `expr_to_doc` wrap — so any
-            // trailing comment attached to the outer Binary's span needs to
-            // be appended here. (`if (a == 0 /* T */)`: comment attaches to
-            // `a == 0`, not `0`.)
-            let trailing = self.trailing_doc(*expr.span());
-            if !matches!(trailing, Doc::Empty) {
-                parts.push(trailing);
-            }
-
+            // and bypasses the outer Binary's `expr_to_doc` wrap, so any
+            // trailing comment attached to the outer Binary's span (`if (a ==
+            // 0 /* T */)`: comment attaches to `a == 0`, not `0`) isn't picked
+            // up here, `paren_condition_header` renders it instead, since it
+            // also needs to know whether `)` must move before the comment.
             return Doc::Concat(parts);
         }
 
@@ -1345,14 +1375,22 @@ impl Formatter {
     }
 
     fn block_body_to_doc(&self, block: &BlockStmt) -> Doc {
+        let leading = self.leading_doc(block.span);
         let trailing = self.trailing_doc(block.span);
         let after_open = self.after_open_brace_doc(block.span);
         let inner = self.stmts_to_doc(&block.stmts, block.span);
         if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
-            return Doc::concat(vec![Doc::text("{"), after_open, Doc::text("}"), trailing]);
+            return Doc::concat(vec![
+                leading,
+                Doc::text("{"),
+                after_open,
+                Doc::text("}"),
+                trailing,
+            ]);
         }
 
         Doc::concat(vec![
+            leading,
             Doc::text("{"),
             after_open,
             Doc::Indent(vec![Doc::HardLine, inner]),
@@ -1364,14 +1402,22 @@ impl Formatter {
 
     /// Render a block as ` {\n    …\n}` with the opening brace on the same line.
     fn block_to_doc(&self, block: &BlockStmt) -> Doc {
+        let leading = self.leading_doc(block.span);
         let trailing = self.trailing_doc(block.span);
         let after_open = self.after_open_brace_doc(block.span);
         let inner = self.stmts_to_doc(&block.stmts, block.span);
         if block.stmts.is_empty() && matches!(inner, Doc::Empty) {
-            return Doc::concat(vec![Doc::text(" {"), after_open, Doc::text("}"), trailing]);
+            return Doc::concat(vec![
+                leading,
+                Doc::text(" {"),
+                after_open,
+                Doc::text("}"),
+                trailing,
+            ]);
         }
 
         Doc::concat(vec![
+            leading,
             Doc::text(" {"),
             after_open,
             Doc::Indent(vec![Doc::HardLine, inner]),
