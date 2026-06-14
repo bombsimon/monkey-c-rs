@@ -1,0 +1,12 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    if (a || b || // c1\n        c) {\n        foo();\n    }\n}\n\"#.trim())"
+---
+function f() {
+    if (a
+        || b || // c1
+        c)
+    {
+        foo();
+    }
+}

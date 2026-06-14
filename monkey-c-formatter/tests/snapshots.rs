@@ -560,9 +560,11 @@ fn block_comment_in_function_body() {
 
 #[test]
 fn line_comment_after_binary_operand_forces_break() {
-    // A `//` comment after an operand runs to the end of the line, so the
-    // following operator must move to the next line rather than the usual
-    // flat-mode space — otherwise it would be swallowed by the comment.
+    // A `//` comment after an operand runs to the end of the line. The
+    // operator that follows it in source (`|| // comment`) stays glued to
+    // this line, before the comment, and the next operand starts a fresh
+    // line without a leading operator — so the comment isn't repositioned
+    // relative to `||`, matching rustfmt's behavior.
     insta::assert_snapshot!(format(
         r#"
 function f() {
@@ -589,6 +591,25 @@ function f() {
         (b > 0 || c < -1) // c2
         // c3
         ) {
+        foo();
+    }
+}
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn line_comment_after_middle_operand_in_chain() {
+    // A `//` comment after the middle operand of a 3+ operand chain attaches
+    // to the flattened-away `(a || b)` node — same end offset as `b`, so
+    // `attach_comments` prefers it over `b`'s own span. Regression test for
+    // that comment being silently dropped.
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    if (a || b || // c1
+        c) {
         foo();
     }
 }

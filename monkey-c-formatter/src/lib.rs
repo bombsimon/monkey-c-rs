@@ -1150,12 +1150,77 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
+    /// Build the operand/operator sequence shared by [`Self::condition_to_doc`]
+    /// and [`Self::binary_chain_to_doc`]. Each operand carries its own
+    /// leading/trailing comments (mirroring [`Self::expr_to_doc`]); nested
+    /// [`Expr::Binary`] operands recurse into [`Self::binary_chain_to_doc`]
+    /// with `outermost = false` so their wrap lands at the same indent.
+    ///
+    /// A `//` comment trailing an operand runs to the end of the source
+    /// line, so the operator that follows it in source must stay on *this*
+    /// line, before the comment (`a || // comment`) — moving it down past
+    /// the comment to lead the next line would reposition the comment
+    /// relative to `||`, which other formatters (e.g. rustfmt) avoid. The
+    /// next operand then starts a fresh line without a leading operator.
+    ///
+    /// For a "middle" operand (`0 < i < operands.len() - 1`), a trailing
+    /// comment doesn't attach to that operand's own span — it attaches to
+    /// the larger `(operands[0]..operands[i])` node that
+    /// [`collect_binary_chain`] flattens away, since that node shares the
+    /// same end offset and `attach_comments` prefers the larger of two
+    /// same-end spans. Querying that synthetic span here recovers the
+    /// comment; the first and last operands don't need this (the first has
+    /// no such wrapping node within this chain, and the last operand's
+    /// would-be wrapper is this chain's own span, queried by the caller).
+    fn binary_chain_parts(&self, operands: &[&Expr], ops: &[&BinaryOperator]) -> Vec<Doc> {
+        let mut parts: Vec<Doc> = Vec::new();
+        let chain_start = operands[0].span().start;
+
+        for (i, operand) in operands.iter().enumerate() {
+            let span = *operand.span();
+            let leading = self.leading_doc(span);
+
+            let trailing_span = if i == 0 || i == operands.len() - 1 {
+                span
+            } else {
+                Span {
+                    start: chain_start,
+                    end: span.end,
+                }
+            };
+            let trailing = self.trailing_doc(trailing_span);
+
+            let inner = match operand {
+                Expr::Binary(e) => self.binary_chain_to_doc(operand, &e.operator, false),
+                _ => self.expr_inner_to_doc(operand),
+            };
+
+            parts.push(leading);
+            parts.push(inner);
+
+            if i + 1 < operands.len() {
+                if self.has_trailing_line_comment(trailing_span) {
+                    parts.push(Doc::text(format!(" {}", operators::binary_op(ops[i]))));
+                    parts.push(trailing);
+                    parts.push(Doc::HardLine);
+                } else {
+                    parts.push(trailing);
+                    parts.push(Doc::Line);
+                    parts.push(Doc::text(format!("{} ", operators::binary_op(ops[i]))));
+                }
+            } else {
+                parts.push(trailing);
+            }
+        }
+
+        parts
+    }
+
     /// Render a chain of binary operators sharing one
     /// [`precedence_group`](operators::precedence_group) wrapped in a
     /// breakable [`Doc::Group`]. Same-precedence operators are flattened
-    /// into one list by [`collect_binary_chain`]; sub-chains at a *different*
-    /// precedence are reached by recursing through
-    /// [`Self::binary_chain_operand`] with `outermost = false`.
+    /// into one list by [`collect_binary_chain`] and laid out by
+    /// [`Self::binary_chain_parts`].
     ///
     /// Only the outermost call (`outermost = true`) adds a continuation
     /// [`Doc::Indent`]; nested sub-chains get a plain Group, so when they
@@ -1169,46 +1234,12 @@ impl Formatter {
         let mut ops: Vec<&BinaryOperator> = Vec::new();
         collect_binary_chain(expr, op, &mut operands, &mut ops);
 
-        let mut inner: Vec<Doc> = Vec::new();
-        for (i, operand) in operands.iter().enumerate() {
-            if i > 0 {
-                if self.has_trailing_line_comment(*operands[i - 1].span()) {
-                    inner.push(Doc::HardLine);
-                } else {
-                    inner.push(Doc::Line);
-                }
-
-                inner.push(Doc::text(format!("{} ", operators::binary_op(ops[i - 1]))));
-            }
-
-            inner.push(self.binary_chain_operand(operand));
-        }
+        let inner = self.binary_chain_parts(&operands, &ops);
 
         if outermost {
             Doc::Group(vec![Doc::Indent(inner)])
         } else {
             Doc::Group(inner)
-        }
-    }
-
-    /// Render one operand inside a binary chain. Mirrors [`Self::expr_to_doc`]
-    /// — attaches leading/trailing comments to the operand's span — but when
-    /// the operand is itself a [`Expr::Binary`], dispatches to
-    /// [`Self::binary_chain_to_doc`] with `outermost = false` so the nested
-    /// sub-chain doesn't add its own continuation indent.
-    fn binary_chain_operand(&self, expr: &Expr) -> Doc {
-        let span = *expr.span();
-        let leading = self.leading_doc(span);
-        let trailing = self.trailing_doc(span);
-
-        let inner = match expr {
-            Expr::Binary(e) => self.binary_chain_to_doc(expr, &e.operator, false),
-            _ => self.expr_inner_to_doc(expr),
-        };
-
-        match (&leading, &trailing) {
-            (Doc::Empty, Doc::Empty) => inner,
-            _ => Doc::concat(vec![leading, inner, trailing]),
         }
     }
 
@@ -1225,28 +1256,13 @@ impl Formatter {
             let mut ops: Vec<&BinaryOperator> = Vec::new();
             collect_binary_chain(expr, &e.operator, &mut operands, &mut ops);
 
-            let mut parts: Vec<Doc> = Vec::new();
-            for (i, operand) in operands.iter().enumerate() {
-                if i > 0 {
-                    if self.has_trailing_line_comment(*operands[i - 1].span()) {
-                        parts.push(Doc::HardLine);
-                    } else {
-                        parts.push(Doc::Line);
-                    }
-
-                    parts.push(Doc::text(format!("{} ", operators::binary_op(ops[i - 1]))));
-                }
-
-                parts.push(self.binary_chain_operand(operand));
-            }
-
             // The chain-flattening loop above emits each operand individually
             // and bypasses the outer Binary's `expr_to_doc` wrap, so any
             // trailing comment attached to the outer Binary's span (`if (a ==
             // 0 /* T */)`: comment attaches to `a == 0`, not `0`) isn't picked
-            // up here, `paren_condition_header` renders it instead, since it
+            // up here — `paren_condition_header` renders it instead, since it
             // also needs to know whether `)` must move before the comment.
-            return Doc::Concat(parts);
+            return Doc::Concat(self.binary_chain_parts(&operands, &ops));
         }
 
         self.expr_to_doc(expr)
