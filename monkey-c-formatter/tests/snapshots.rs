@@ -614,6 +614,14 @@ function f() {
 }
 
 #[test]
+fn double_literal_with_extreme_negative_exponent() {
+    // Re-emitting via `value / 10_f64.powi(-311)` underflowed to `inf`, since
+    // `powi` rounds such an extreme power of ten to `0`. `digits` now
+    // preserves the source digits verbatim, so this round-trips exactly.
+    insta::assert_snapshot!(format("var x = 1.16183573193898954669148418496e-311d;"));
+}
+
+#[test]
 fn line_comment_after_middle_operand_in_chain() {
     // A `//` comment after the middle operand of a 3+ operand chain attaches
     // to the flattened-away `(a || b)` node — same end offset as `b`, so

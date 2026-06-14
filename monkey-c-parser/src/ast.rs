@@ -272,12 +272,16 @@ pub enum AssignOperator {
 }
 
 /// A 32-bit floating point literal together with the source-form flags
-/// needed to round-trip it. The lexer parses `value` from the written digits;
-/// flags capture which surface form the user wrote so the formatter can
-/// re-emit the same shape (`0f`, `0.5`, `0.5f`, `.978`, `.5f`, `6371e3`).
+/// needed to round-trip it. The lexer captures `digits` verbatim from the
+/// source (rather than parsing it to `f32`, which would lose precision and
+/// is unnecessary for re-emitting it); flags capture which surface form the
+/// user wrote so the formatter can re-emit the same shape (`0f`, `0.5`,
+/// `0.5f`, `.978`, `.5f`, `6371e3`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatLit {
-    pub value: f32,
+    /// The digits as written in source, before any exponent or `f`/`F`
+    /// suffix (`0`, `0.5`, `.978`, `6371`).
+    pub digits: String,
     /// Source contained a `.` (`0.5`, `.978`). False for integer-form
     /// literals that gain Float-ness only through the `f` suffix (`0f`) or
     /// an exponent (`6371e3`).
@@ -295,7 +299,9 @@ pub struct FloatLit {
 /// always required in source, so there is no `has_suffix` flag.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoubleLit {
-    pub value: f64,
+    /// The digits as written in source, before any exponent or `d`/`D`
+    /// suffix (`78`, `78.0`, `.5`, `6371`). See [`FloatLit::digits`].
+    pub digits: String,
     /// Source contained a `.` (`78.0d`). False for integer-form Double
     /// literals (`78d`) or exponent-only form (`6371e3d`).
     pub has_dot: bool,
@@ -308,13 +314,23 @@ pub struct DoubleLit {
 
 impl std::fmt::Display for FloatLit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(
+            f,
+            "{}{}",
+            self.digits,
+            self.exponent.as_deref().unwrap_or("")
+        )
     }
 }
 
 impl std::fmt::Display for DoubleLit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(
+            f,
+            "{}{}",
+            self.digits,
+            self.exponent.as_deref().unwrap_or("")
+        )
     }
 }
 

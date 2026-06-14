@@ -1,0 +1,5 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(\"var x = 1.16183573193898954669148418496e-311d;\")"
+---
+var x = 1.16183573193898954669148418496e-311d;

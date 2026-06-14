@@ -42,7 +42,7 @@ fn test_literals() {
         (
             "1.5",
             LiteralValue::Float(FloatLit {
-                value: 1.5,
+                digits: "1.5".into(),
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: false,
@@ -52,7 +52,7 @@ fn test_literals() {
         (
             "1.5d",
             LiteralValue::Double(DoubleLit {
-                value: 1.5,
+                digits: "1.5".into(),
                 has_dot: true,
                 leading_dot: false,
                 exponent: None,

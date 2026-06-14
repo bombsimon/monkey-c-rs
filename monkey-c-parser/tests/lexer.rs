@@ -37,7 +37,7 @@ fn test_var_declaration() {
             Type::Identifier("x".into()),
             Type::Assign,
             Type::Float(FloatLit {
-                value: 5.0,
+                digits: "5.0".into(),
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: false,
@@ -207,21 +207,21 @@ fn test_float_suffix() {
         tokens("0f 5f 0.5f"),
         vec![
             Type::Float(FloatLit {
-                value: 0.0,
+                digits: "0".into(),
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: true,
                 exponent: None,
             }),
             Type::Float(FloatLit {
-                value: 5.0,
+                digits: "5".into(),
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: true,
                 exponent: None,
             }),
             Type::Float(FloatLit {
-                value: 0.5,
+                digits: "0.5".into(),
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: true,
@@ -237,14 +237,14 @@ fn test_leading_dot_float() {
         tokens(".978 .5f"),
         vec![
             Type::Float(FloatLit {
-                value: 0.978,
+                digits: ".978".into(),
                 has_dot: true,
                 leading_dot: true,
                 has_suffix: false,
                 exponent: None,
             }),
             Type::Float(FloatLit {
-                value: 0.5,
+                digits: ".5".into(),
                 has_dot: true,
                 leading_dot: true,
                 has_suffix: true,
@@ -458,7 +458,7 @@ fn test_float_literal() {
     assert_eq!(
         tokens("1.5"),
         vec![Type::Float(FloatLit {
-            value: 1.5,
+            digits: "1.5".into(),
             has_dot: true,
             leading_dot: false,
             has_suffix: false,
@@ -473,35 +473,35 @@ fn test_exponent_notation() {
         tokens("6371e3 6371E3 10e-2 1.5e+10 6371e3d"),
         vec![
             Type::Float(FloatLit {
-                value: 6371e3,
+                digits: "6371".into(),
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: false,
                 exponent: Some("e3".into()),
             }),
             Type::Float(FloatLit {
-                value: 6371e3,
+                digits: "6371".into(),
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: false,
                 exponent: Some("E3".into()),
             }),
             Type::Float(FloatLit {
-                value: 10e-2,
+                digits: "10".into(),
                 has_dot: false,
                 leading_dot: false,
                 has_suffix: false,
                 exponent: Some("e-2".into()),
             }),
             Type::Float(FloatLit {
-                value: 1.5e+10,
+                digits: "1.5".into(),
                 has_dot: true,
                 leading_dot: false,
                 has_suffix: false,
                 exponent: Some("e+10".into()),
             }),
             Type::Double(DoubleLit {
-                value: 6371e3,
+                digits: "6371".into(),
                 has_dot: false,
                 leading_dot: false,
                 exponent: Some("e3".into()),

@@ -140,6 +140,8 @@ impl<'a> Lexer<'a> {
             }
         }
 
+        let digits_end = self.position;
+
         // Scientific notation exponent: e.g. `e3`, `E-2`, `e+10`.
         // Only consume it when at least one digit follows the optional sign.
         let exponent = if matches!(self.ch, b'e' | b'E') {
@@ -167,6 +169,7 @@ impl<'a> Lexer<'a> {
         };
 
         let text = self.input[start_position..self.position].to_string();
+        let digits = self.input[start_position..digits_end].to_string();
 
         match self.ch {
             b'l' | b'L' => {
@@ -176,7 +179,7 @@ impl<'a> Lexer<'a> {
             b'd' | b'D' => {
                 self.read_char();
                 NumberLiteral::Double(DoubleLit {
-                    value: text.parse().unwrap_or(0.0),
+                    digits,
                     has_dot,
                     leading_dot,
                     exponent,
@@ -185,7 +188,7 @@ impl<'a> Lexer<'a> {
             b'f' | b'F' => {
                 self.read_char();
                 NumberLiteral::Float(FloatLit {
-                    value: text.parse().unwrap_or(0.0),
+                    digits,
                     has_dot,
                     leading_dot,
                     has_suffix: true,
@@ -193,7 +196,7 @@ impl<'a> Lexer<'a> {
                 })
             }
             _ if has_dot || exponent.is_some() => NumberLiteral::Float(FloatLit {
-                value: text.parse().unwrap_or(0.0),
+                digits,
                 has_dot,
                 leading_dot,
                 has_suffix: false,
