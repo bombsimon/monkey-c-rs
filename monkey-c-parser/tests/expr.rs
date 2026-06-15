@@ -36,9 +36,9 @@ fn parse_function(src: &str) -> FunctionDecl {
 #[test]
 fn test_literals() {
     for (src, expected) in [
-        ("42", LiteralValue::Number(42)),
-        ("42l", LiteralValue::Long(42)),
-        ("42L", LiteralValue::Long(42)),
+        ("42", LiteralValue::Number("42".to_string())),
+        ("42l", LiteralValue::Long("42".to_string())),
+        ("42L", LiteralValue::Long("42".to_string())),
         (
             "1.5",
             LiteralValue::Float(FloatLit {

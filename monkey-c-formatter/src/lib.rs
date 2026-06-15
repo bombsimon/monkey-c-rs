@@ -918,7 +918,7 @@ impl Formatter {
         let entry_doc = |entry: &DictTypeEntry| {
             let key = match &entry.key {
                 DictTypeKey::Symbol(s) => format!(":{s}"),
-                DictTypeKey::String(s) => format!("\"{}\"", escape_string(s)),
+                DictTypeKey::String(s) => format!("\"{s}\""),
             };
             Doc::concat(vec![
                 Doc::text(key),
@@ -1809,14 +1809,14 @@ impl Formatter {
             Expr::Array(e) => self.format_array(e),
             Expr::Dict(e) => self.format_dict(e),
             Expr::Lit(e) => Doc::text(match &e.value {
-                LiteralValue::Number(v) => v.to_string(),
+                LiteralValue::Number(v) => v.clone(),
                 LiteralValue::Long(v) => format!("{v}l"),
                 LiteralValue::Hex(s) => format!("0x{s}"),
                 LiteralValue::HexLong(s) => format!("0x{s}l"),
                 LiteralValue::Float(lit) => format_float_lit(lit),
                 LiteralValue::Double(lit) => format_double_lit(lit),
-                LiteralValue::String(v) => format!("\"{}\"", escape_string(v)),
-                LiteralValue::Char(v) => format!("'{}'", escape_char(v)),
+                LiteralValue::String(v) => format!("\"{v}\""),
+                LiteralValue::Char(v) => format!("'{v}'"),
                 LiteralValue::Boolean(v) => v.to_string(),
                 LiteralValue::Symbol(v) => format!(":{v}"),
                 LiteralValue::Null => "null".to_string(),
@@ -2304,39 +2304,6 @@ fn format_double_lit(lit: &DoubleLit) -> String {
     };
 
     format!("{body}d")
-}
-
-/// The lexer decodes escape sequences in string literals (`\"` → `"`, `\n` →
-/// newline, etc.), so emitting the stored value verbatim would produce invalid
-/// source. Re-encode the same set the lexer recognises.
-fn escape_string(s: &str) -> String {
-    escape_quoted(s, '"')
-}
-
-/// Same as [`escape_string`] but escapes single quotes — used for character
-/// literals (`'a'`).
-fn escape_char(s: &str) -> String {
-    escape_quoted(s, '\'')
-}
-
-fn escape_quoted(s: &str, quote: char) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-
-    for c in s.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            _ if c == quote => {
-                out.push('\\');
-                out.push(c);
-            }
-            _ => out.push(c),
-        }
-    }
-
-    out
 }
 
 /// Walk a left-associative binary tree and collect every operand joined by

@@ -81,12 +81,16 @@ fn test_string_literal() {
 
 #[test]
 fn test_string_escape_sequences() {
+    // The lexer preserves the raw source text between the quotes, with escape
+    // sequences left intact — `\n` stays the two characters `\` and `n`, and
+    // escapes the lexer doesn't decode (`\x41`) survive verbatim rather than
+    // being mangled. A `\"` does not terminate the string.
     assert_eq!(
-        tokens(r#"x = "line1\nline2";"#),
+        tokens(r#"x = "line1\nline2\x41\"end";"#),
         vec![
             Type::Identifier("x".into()),
             Type::Assign,
-            Type::String("line1\nline2".into()),
+            Type::String(r#"line1\nline2\x41\"end"#.into()),
             Type::Semicolon,
         ]
     );
@@ -99,13 +103,13 @@ fn test_shift_operators() {
         vec![
             Type::Identifier("x".into()),
             Type::LeftShift,
-            Type::Number(1),
+            Type::Number("1".to_string()),
             Type::RightShift,
-            Type::Number(2),
+            Type::Number("2".to_string()),
             Type::LeftShiftAssign,
-            Type::Number(3),
+            Type::Number("3".to_string()),
             Type::RightShiftAssign,
-            Type::Number(4),
+            Type::Number("4".to_string()),
         ]
     );
 }
@@ -132,7 +136,7 @@ fn test_comment() {
             Type::Var,
             Type::Identifier("x".into()),
             Type::Assign,
-            Type::Number(1),
+            Type::Number("1".to_string()),
             Type::Semicolon,
         ]
     );
@@ -261,7 +265,7 @@ fn test_integer_method_call() {
     assert_eq!(
         tokens("0.toFloat()"),
         vec![
-            Type::Number(0),
+            Type::Number("0".to_string()),
             Type::Dot,
             Type::Identifier("toFloat".into()),
             Type::LParen,
@@ -277,8 +281,10 @@ fn test_char_literal() {
         vec![
             Type::Char("a".into()),
             Type::Char("B".into()),
-            Type::Char("\n".into()),
-            Type::Char("'".into()),
+            // Raw text is preserved: `\n` stays two characters, and the
+            // escaped quote `\'` does not terminate the literal.
+            Type::Char(r#"\n"#.into()),
+            Type::Char(r#"\'"#.into()),
             Type::Char("°".into()),
         ]
     );
@@ -333,7 +339,7 @@ fn test_fat_arrow() {
             Type::Colon,
             Type::Identifier("key".into()),
             Type::FatArrow,
-            Type::Number(1),
+            Type::Number("1".to_string()),
         ]
     );
     // = alone is still Assign, == is still EqualEqual
@@ -397,15 +403,15 @@ fn test_compound_operators() {
         vec![
             Type::Identifier("x".into()),
             Type::AddAssign,
-            Type::Number(1),
+            Type::Number("1".to_string()),
             Type::Semicolon,
             Type::Identifier("y".into()),
             Type::SubAssign,
-            Type::Number(2),
+            Type::Number("2".to_string()),
             Type::Semicolon,
             Type::Identifier("z".into()),
             Type::MulAssign,
-            Type::Number(3),
+            Type::Number("3".to_string()),
             Type::Semicolon,
         ]
     );
@@ -450,7 +456,7 @@ fn test_span_skips_whitespace() {
 
 #[test]
 fn test_integer_literal() {
-    assert_eq!(tokens("42"), vec![Type::Number(42)]);
+    assert_eq!(tokens("42"), vec![Type::Number("42".to_string())]);
 }
 
 #[test]

@@ -165,7 +165,7 @@ fn same_pure_expr(a: &Expr, b: &Expr) -> bool {
 fn is_literal_one(expr: &Expr) -> bool {
     use monkey_c_parser::ast::LiteralValue;
 
-    matches!(expr, Expr::Lit(l) if matches!(l.value, LiteralValue::Number(1)))
+    matches!(expr, Expr::Lit(l) if matches!(&l.value, LiteralValue::Number(n) if n == "1"))
 }
 
 fn binary_op_str(op: &BinaryOperator) -> Option<&'static str> {

@@ -51,10 +51,10 @@ pub enum Type {
     Float(FloatLit),
     Hex(String),
     HexLong(String),
-    Long(i64),
+    Long(String),
     NaN,
     Null,
-    Number(i32),
+    Number(String),
     String(String),
 
     // Identifiers

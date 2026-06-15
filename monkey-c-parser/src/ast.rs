@@ -363,10 +363,13 @@ impl std::fmt::Display for DoubleLit {
 /// A compile-time constant value.
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
-    /// 32-bit signed integer (no suffix in source).
-    Number(i32),
-    /// 64-bit signed integer (`l` suffix in source).
-    Long(i64),
+    /// 32-bit signed integer (no suffix in source). Stores the raw digits
+    /// verbatim so the formatter preserves the exact written form and never
+    /// loses information by round-tripping through a fixed-width integer.
+    Number(String),
+    /// 64-bit signed integer (`l` suffix in source). Stores the raw digits
+    /// (without the suffix) for the same reason as [`LiteralValue::Number`].
+    Long(String),
     /// A hex-formatted integer literal (`0x…`). Stores the raw digits so the
     /// formatter can preserve the original casing.
     Hex(String),
@@ -379,9 +382,12 @@ pub enum LiteralValue {
     /// 64-bit floating point number. Source-form flags let the formatter
     /// round-trip the exact written form (`78d`, `78.0d`, `.5d`).
     Double(DoubleLit),
+    /// A string literal. Stores the raw source text between the double
+    /// quotes, with escape sequences left intact so the formatter emits the
+    /// literal exactly as written.
     String(String),
-    /// A character literal: `'a'`. Stores the decoded character(s) between
-    /// the single quotes.
+    /// A character literal: `'a'`. Stores the raw source text between the
+    /// single quotes, with escape sequences left intact.
     Char(String),
     Boolean(bool),
     /// A symbol literal, e.g. `:mySymbol`.

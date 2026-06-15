@@ -1,0 +1,10 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/hex_literal_forms.mc
+---
+function f() {
+    var lowerPrefix = 0xff;
+    var upperPrefix = 0xFF;
+    var upperLongSuffix = 0xFFl;
+    var mixedDigits = 0xAbCdEf;
+}

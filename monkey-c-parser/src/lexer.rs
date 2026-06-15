@@ -207,67 +207,44 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_string(&mut self) -> String {
-        let mut bytes: Vec<u8> = Vec::new();
-
-        loop {
-            match self.ch {
-                b'"' => break, // End of string, non escaped quote
-                0 => break,    // End of input
-                b'\\' => {
-                    self.read_char();
-
-                    match self.ch {
-                        b'n' => bytes.push(b'\n'),
-                        b'r' => bytes.push(b'\r'),
-                        b't' => bytes.push(b'\t'),
-                        b'\\' => bytes.push(b'\\'),
-                        b'"' => bytes.push(b'"'),
-                        _ => bytes.push(self.ch),
-                    }
-                }
-                _ => bytes.push(self.ch),
-            }
-
-            self.read_char();
-        }
-
-        self.read_char(); // Now advance past the closing quote
-
-        // The lexer is byte-oriented, so multi-byte UTF-8 sequences are read
-        // one byte at a time. Collect them as raw bytes and let `from_utf8`
-        // reassemble the codepoints — pushing `self.ch as char` would treat
-        // each byte as a separate codepoint and mangle non-ASCII input.
-        String::from_utf8(bytes).unwrap_or_default()
+        self.read_quoted(b'"')
     }
 
     fn read_char_literal(&mut self) -> String {
-        let mut bytes: Vec<u8> = Vec::new();
+        self.read_quoted(b'\'')
+    }
+
+    /// Read a quoted literal's content up to (but not consuming) the closing
+    /// `quote`, then consume the quote. The returned slice is the raw source
+    /// text with escape sequences left intact — decoding is intentionally not
+    /// done here, so the formatter can re-emit the literal exactly as written
+    /// (`\x41`, `A`, `\b` etc. survive verbatim instead of being lost).
+    ///
+    /// A backslash escapes the next byte so an escaped quote (`\"`) does not
+    /// terminate the literal. Slicing is byte-based but always lands on a
+    /// `char` boundary: the loop only stops on ASCII bytes, and UTF-8
+    /// continuation bytes (>= 0x80) never match them.
+    fn read_quoted(&mut self, quote: u8) -> String {
+        let start = self.position;
 
         loop {
             match self.ch {
-                b'\'' => break,
                 0 => break,
+                c if c == quote => break,
                 b'\\' => {
                     self.read_char();
-
-                    match self.ch {
-                        b'n' => bytes.push(b'\n'),
-                        b'r' => bytes.push(b'\r'),
-                        b't' => bytes.push(b'\t'),
-                        b'\\' => bytes.push(b'\\'),
-                        b'\'' => bytes.push(b'\''),
-                        _ => bytes.push(self.ch),
+                    if self.ch != 0 {
+                        self.read_char();
                     }
                 }
-                _ => bytes.push(self.ch),
+                _ => self.read_char(),
             }
-
-            self.read_char();
         }
 
+        let content = self.input[start..self.position].to_string();
         self.read_char(); // advance past closing quote
 
-        String::from_utf8(bytes).unwrap_or_default()
+        content
     }
 
     fn read_comment(&mut self) -> String {
@@ -495,8 +472,8 @@ impl<'a> Lexer<'a> {
                     }
                 } else if self.ch.is_ascii_digit() {
                     let token_type = match self.read_number() {
-                        NumberLiteral::Number(s) => token::Type::Number(s.parse().unwrap_or(0)),
-                        NumberLiteral::Long(s) => token::Type::Long(s.parse().unwrap_or(0)),
+                        NumberLiteral::Number(s) => token::Type::Number(s),
+                        NumberLiteral::Long(s) => token::Type::Long(s),
                         NumberLiteral::Float(lit) => token::Type::Float(lit),
                         NumberLiteral::Double(lit) => token::Type::Double(lit),
                         NumberLiteral::Hex(s) => token::Type::Hex(s),

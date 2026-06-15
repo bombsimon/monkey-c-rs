@@ -1,0 +1,12 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/float_double_exponents.mc
+---
+function f() {
+    var exp = 1e5;
+    var expSigned = 1E-5;
+    var expPlus = 1.5e+10;
+    var floatUpperSuffix = 1.0f;
+    var doubleUpperSuffix = 2.5d;
+    var expDouble = 1.5e3d;
+}

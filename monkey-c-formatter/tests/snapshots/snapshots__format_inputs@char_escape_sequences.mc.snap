@@ -1,0 +1,11 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/char_escape_sequences.mc
+---
+function f() {
+    var tab = '\t';
+    var carriageReturn = '\r';
+    var nullEscape = '\0';
+    var hexEscape = '\x41';
+    var doubleQuote = '\"';
+}
