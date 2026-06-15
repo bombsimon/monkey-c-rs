@@ -68,6 +68,26 @@ pub fn render_parse_error(label: &str, source: &str, err: &ParserError) {
         .expect("ariadne write to stderr");
 }
 
+/// Render a warning that the formatter could not preserve the comment at
+/// `[byte_start, byte_end)` — its content would be dropped from the formatted
+/// output. Points at the original comment so the user can see exactly what is
+/// at risk, mirroring the parse-error / UTF-8 diagnostics.
+pub fn render_lost_comment(label: &str, source: &str, byte_start: usize, byte_end: usize) {
+    let range = byte_range_to_char_range(source, byte_start, byte_end);
+    let range = clamp_range(range, source.chars().count());
+
+    Report::build(ReportKind::Warning, (label, range.clone()))
+        .with_message("comment cannot be preserved by the formatter")
+        .with_label(
+            Label::new((label, range))
+                .with_message("this comment would be dropped from the output")
+                .with_color(Color::Yellow),
+        )
+        .finish()
+        .eprint((label, Source::from(source)))
+        .expect("ariadne write to stderr");
+}
+
 /// Widen a (possibly empty, e.g. at end-of-file) char range to at least one
 /// char so `ariadne` always has something to underline.
 fn clamp_range(range: std::ops::Range<usize>, len: usize) -> std::ops::Range<usize> {

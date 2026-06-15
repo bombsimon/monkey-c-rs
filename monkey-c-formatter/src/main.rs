@@ -1,5 +1,7 @@
 use clap::Parser;
-use monkey_c_diagnostics::{already_reported, read_source, read_stdin_source, render_parse_error};
+use monkey_c_diagnostics::{
+    already_reported, read_source, read_stdin_source, render_lost_comment, render_parse_error,
+};
 use monkey_c_formatter::Formatter;
 
 use std::fs;
@@ -139,7 +141,15 @@ fn format_source(source: &str, cli: &Cli, label: &str) -> io::Result<String> {
         .with_alignment(cli.alignment)
         .with_decl_wrap(cli.wrap_declarations);
 
-    Ok(formatter.format(&output))
+    let formatted = formatter.format(&output);
+
+    // Warn (without failing) about any comment the formatter could not carry
+    // into the output, pointing at the original comment via ariadne.
+    for c in Formatter::lost_comments(&output, &formatted) {
+        render_lost_comment(label, source, c.span.start, c.span.end);
+    }
+
+    Ok(formatted)
 }
 
 /// Resolve `paths` into a deterministic, sorted list of `.mc` files.

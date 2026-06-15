@@ -11,6 +11,7 @@ use monkey_c_parser::ast::{
 use monkey_c_parser::comments::{CommentsMap, DanglingPlacement, attach_comments};
 use monkey_c_parser::line_index::LineIndex;
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 /// An item in a delimited list (array entry, dict pair, call arg, etc.) along
 /// with any comments that trail it inside the bracketed list. Used by
@@ -115,6 +116,50 @@ impl Formatter {
         }
 
         aligned
+    }
+
+    /// "No comment left behind": the source comments that did **not** survive
+    /// into `rendered`. A comment can attach to a `(node-span, role)` slot
+    /// that no renderer queries — `typedef T as /* C */ Number;` is one such
+    /// case — and would then be dropped silently; this surfaces exactly which
+    /// ones, with their original spans, so callers can report or assert on it.
+    ///
+    /// Detection re-lexes `rendered` and matches each source comment against
+    /// the output comments by kind plus whitespace-normalised content. The
+    /// normalisation absorbs block-comment reflow (trailing whitespace
+    /// trimmed, closing `*/` moved onto its own line), and re-lexing means
+    /// `//` / `/* */` sequences inside string literals are correctly skipped
+    /// rather than miscounted. Matching is multiset-based, so a duplicated
+    /// comment also shows up (as an unmatched leftover).
+    pub fn lost_comments(output: &ParseOutput, rendered: &str) -> Vec<CommentStmt> {
+        use monkey_c_parser::lexer::Lexer;
+        use monkey_c_parser::token::Type;
+
+        fn normalize(text: &str) -> String {
+            text.split_whitespace().collect::<Vec<_>>().join(" ")
+        }
+
+        let mut present: HashMap<(bool, String), usize> = HashMap::new();
+        let mut lexer = Lexer::new(rendered);
+        loop {
+            match lexer.next_token().1 {
+                Type::Eof => break,
+                Type::Comment(t) => *present.entry((false, normalize(&t))).or_default() += 1,
+                Type::BlockComment(t) => *present.entry((true, normalize(&t))).or_default() += 1,
+                _ => {}
+            }
+        }
+
+        let mut lost = Vec::new();
+        for c in &output.comments.comments {
+            let key = (c.is_block, normalize(&c.text));
+            match present.get_mut(&key) {
+                Some(n) if *n > 0 => *n -= 1,
+                _ => lost.push(c.clone()),
+            }
+        }
+
+        lost
     }
 
     /// True if any attached comment — line or block, in any role — has a span
