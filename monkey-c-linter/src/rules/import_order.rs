@@ -74,10 +74,7 @@ pub fn check_ast_seq(seq: &[Ast], ctx: &LintContext) -> Vec<Diagnostic> {
         let fix = if comments {
             None
         } else {
-            Some(Fix {
-                span,
-                replacement: canonical,
-            })
+            Some(Fix::single(span, canonical))
         };
 
         out.push(Diagnostic {

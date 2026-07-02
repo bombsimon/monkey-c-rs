@@ -65,10 +65,7 @@ pub fn check_expr(expr: &Expr, _pos: ExprPosition, ctx: &LintContext) -> Option<
         rule: RULE,
         message,
         span: assign.span,
-        fix: Some(Fix {
-            span: assign.span,
-            replacement,
-        }),
+        fix: Some(Fix::single(assign.span, replacement)),
     })
 }
 

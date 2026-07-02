@@ -78,10 +78,7 @@ fn paren_diagnostic(p: &ParenExpr, ctx: &LintContext) -> Option<Diagnostic> {
         rule: RULE,
         message: "unneeded parentheses around expression".into(),
         span,
-        fix: Some(Fix {
-            span,
-            replacement: reduced_text(p, ctx),
-        }),
+        fix: Some(Fix::single(span, reduced_text(p, ctx))),
     })
 }
 
@@ -203,7 +200,7 @@ pub fn check_type(ty: &Type, ctx: &LintContext) -> Option<Diagnostic> {
         rule: RULE,
         message: "unneeded parentheses around type".into(),
         span,
-        fix: Some(Fix { span, replacement }),
+        fix: Some(Fix::single(span, replacement)),
     })
 }
 
@@ -224,7 +221,7 @@ mod tests {
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].rule, "unneeded-parens");
         let fix = diags[0].fix.as_ref().expect("fix");
-        assert_eq!(fix.replacement, "1 + 2");
+        assert_eq!(fix.edits[0].replacement, "1 + 2");
     }
 
     #[test]
@@ -236,7 +233,7 @@ mod tests {
         assert_eq!(diags.len(), 1);
 
         let fix = diags[0].fix.as_ref().expect("fix");
-        assert_eq!(fix.replacement, "1 + 2");
+        assert_eq!(fix.edits[0].replacement, "1 + 2");
     }
 
     #[test]
@@ -274,7 +271,7 @@ mod tests {
         let diags = lints(src);
         assert_eq!(diags.len(), 1);
         let fix = diags[0].fix.as_ref().expect("fix");
-        assert_eq!(fix.replacement, "a + b");
+        assert_eq!(fix.edits[0].replacement, "a + b");
     }
 
     #[test]
@@ -293,7 +290,7 @@ mod tests {
         let diags = lints(src);
         assert_eq!(diags.len(), 1);
         let fix = diags[0].fix.as_ref().expect("fix");
-        assert_eq!(fix.replacement, "b * c");
+        assert_eq!(fix.edits[0].replacement, "b * c");
     }
 
     #[test]
@@ -344,7 +341,7 @@ mod tests {
         let diags = lints(src);
         let fix = diags[0].fix.as_ref().expect("fix");
         assert_eq!(
-            fix.replacement,
+            fix.edits[0].replacement,
             "/* BATTERY_LINE_WIDTH */ 2 + BATTERY_MARGIN"
         );
         let fixes = diags.into_iter().filter_map(|d| d.fix).collect();
@@ -359,7 +356,7 @@ mod tests {
         let src = "var x = (1 + 2 /* sum */);";
         let diags = lints(src);
         let fix = diags[0].fix.as_ref().expect("fix");
-        assert_eq!(fix.replacement, "1 + 2 /* sum */");
+        assert_eq!(fix.edits[0].replacement, "1 + 2 /* sum */");
     }
 
     #[test]

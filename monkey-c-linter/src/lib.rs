@@ -35,12 +35,35 @@ pub struct Diagnostic {
     pub fix: Option<Fix>,
 }
 
-/// A source-byte-range replacement. Applying a fix means: take `span` in the
-/// original source and replace it with `replacement`.
+/// A single source-byte-range replacement: replace `span` with `replacement`.
+/// An empty `replacement` is a pure deletion.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Fix {
+pub struct Edit {
     pub span: Span,
     pub replacement: String,
+}
+
+/// A machine-applicable fix — one or more [`Edit`]s applied together as a unit.
+///
+/// Most fixes are a single edit ([`Fix::single`]). Multiple edits let a fix
+/// touch disjoint ranges — e.g. rewrite a header and delete a now-redundant
+/// closing brace — without copying the untouched span between them into a
+/// replacement string, which matters when that span is large.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fix {
+    pub edits: Vec<Edit>,
+}
+
+impl Fix {
+    /// A fix consisting of a single edit — the common case.
+    pub fn single(span: Span, replacement: impl Into<String>) -> Self {
+        Self {
+            edits: vec![Edit {
+                span,
+                replacement: replacement.into(),
+            }],
+        }
+    }
 }
 
 /// Run all rules over `output` and return their diagnostics, in source order.
@@ -55,22 +78,35 @@ pub fn lint(output: &ParseOutput, source: &str) -> Vec<Diagnostic> {
     diags
 }
 
-/// Apply `fixes` to `source` and return the patched text. Overlapping fixes
-/// are detected and dropped (earliest wins).
+/// Apply `fixes` to `source` and return the patched text.
+///
+/// Fixes are processed left to right by their earliest edit. Each fix is
+/// applied atomically: if any of its edits would overlap already-emitted output
+/// the whole fix is skipped, so a fix never lands half-applied. Edits within a
+/// fix must be disjoint and are applied in source order.
 pub fn apply_fixes(source: &str, mut fixes: Vec<Fix>) -> String {
-    fixes.sort_by_key(|f| f.span.start);
+    fixes.sort_by_key(|f| f.edits.iter().map(|e| e.span.start).min().unwrap_or(0));
 
     let mut out = String::with_capacity(source.len());
     let mut cursor = 0;
 
-    for fix in fixes {
-        if fix.span.start < cursor {
-            continue;
+    for fix in &fixes {
+        let mut edits: Vec<&Edit> = fix.edits.iter().collect();
+        edits.sort_by_key(|e| e.span.start);
+
+        // Skip the whole fix unless its first (earliest) edit starts at or after
+        // the cursor. Since edits are sorted and disjoint, that guarantees none
+        // overlap what's already been emitted.
+        match edits.first() {
+            Some(first) if first.span.start >= cursor => {}
+            _ => continue,
         }
 
-        out.push_str(&source[cursor..fix.span.start]);
-        out.push_str(&fix.replacement);
-        cursor = fix.span.end;
+        for edit in edits {
+            out.push_str(&source[cursor..edit.span.start]);
+            out.push_str(&edit.replacement);
+            cursor = edit.span.end;
+        }
     }
 
     out.push_str(&source[cursor..]);

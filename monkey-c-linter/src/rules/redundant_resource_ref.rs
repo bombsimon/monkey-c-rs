@@ -26,10 +26,7 @@ pub fn check_expr(expr: &Expr, _pos: ExprPosition, ctx: &LintContext) -> Option<
         rule: RULE,
         message: "`@` prefix on resource reference is redundant".into(),
         span: u.span,
-        fix: Some(Fix {
-            span: u.span,
-            replacement,
-        }),
+        fix: Some(Fix::single(u.span, replacement)),
     })
 }
 

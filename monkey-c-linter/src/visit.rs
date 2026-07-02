@@ -359,6 +359,13 @@ fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
 }
 
 fn walk_if(s: &IfStmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    // Hooked here rather than in `dispatch_*` because `walk_if` is the single
+    // point every `IfStmt` flows through — chain head, nested `if`, and each
+    // `else if` arm alike — so the collapsible check runs exactly once per node.
+    if let Some(d) = rules::collapsible_if::check_if(s, ctx) {
+        diags.push(d);
+    }
+
     walk_expr(&s.condition.inner, ExprPosition::Condition, ctx, diags);
     for sub in &s.then_branch.stmts {
         walk_stmt(sub, ctx, diags);

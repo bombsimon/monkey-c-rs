@@ -14,6 +14,8 @@ Once `--fix` has been applied the user is expected to run the
 
 | Rule                                               | Auto-fix | Notes                                                           |
 | -------------------------------------------------- | -------- | --------------------------------------------------------------- |
+| [`collapsible-else-if`][collapsible-else-if]       | ✅       | Rewrites `else { if … }` as `else if …`                         |
+| [`collapsible-if`][collapsible-if]                 | ✅       | Merges a nested `if` with `&&`; skipped when comments intervene |
 | [`compound-assignment`][compound-assignment]       | ✅       | Rewrites `x = x + n` as `x += n`                                |
 | [`ifs-same-cond`][ifs-same-cond]                   | ❌       | Checks for consecutive ifs with the same condition              |
 | [`import-order`][import-order]                     | ⚠️       | Suppressed when comments interleave                             |
@@ -24,6 +26,8 @@ Once `--fix` has been applied the user is expected to run the
 | [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses                                   |
 
 [Coding Conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
+[collapsible-else-if]: ./collapsible-else-if
+[collapsible-if]: ./collapsible-if
 [compound-assignment]: ./compound-assignment
 [diagnostic]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [fix]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs

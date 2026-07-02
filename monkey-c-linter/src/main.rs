@@ -232,22 +232,53 @@ fn render_diagnostic(file: &str, source: &str, d: &Diagnostic) {
         );
 
     if let Some(fix) = &d.fix {
-        // Wrap each line with its own ANSI codes — ariadne's per-line note
-        // decoration resets the active color at the line break, so a single
-        // open/close around the whole string only colours the first line.
-        let colored = fix
-            .replacement
-            .lines()
-            .map(|line| line.fg(Color::BrightGreen).to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        builder = builder.with_note(format!("fix: replace with `{colored}`"));
+        builder = builder.with_note(fix_note(fix));
     }
 
     builder
         .finish()
         .eprint((file, Source::from(source)))
         .expect("ariadne write to stderr");
+}
+
+/// The `fix:` note for a diagnostic. A fix's first non-empty replacement is the
+/// headline; any remaining edits (e.g. a brace removal) are summarised as a
+/// count so the note stays compact even when the untouched body is large.
+fn fix_note(fix: &monkey_c_linter::Fix) -> String {
+    let headline = fix.edits.iter().find(|e| !e.replacement.is_empty());
+
+    match headline {
+        Some(edit) => {
+            // Wrap each line with its own ANSI codes — ariadne's per-line note
+            // decoration resets the active color at the line break, so a single
+            // open/close around the whole string only colours the first line.
+            let colored = edit
+                .replacement
+                .lines()
+                .map(|line| line.fg(Color::BrightGreen).to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            let others = fix.edits.len() - 1;
+            if others == 0 {
+                format!("fix: replace with `{colored}`")
+            } else {
+                format!(
+                    "fix: replace with `{colored}` (+{others} more edit{})",
+                    plural(others)
+                )
+            }
+        }
+        None => format!(
+            "fix: remove {} range{}",
+            fix.edits.len(),
+            plural(fix.edits.len())
+        ),
+    }
+}
+
+fn plural(n: usize) -> &'static str {
+    if n == 1 { "" } else { "s" }
 }
 
 #[cfg(test)]
