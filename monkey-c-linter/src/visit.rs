@@ -190,7 +190,13 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
                 walk_stmt(s, ctx, diags);
             }
         }
-        Stmt::If(s) => walk_if(s, ctx, diags),
+        Stmt::If(s) => {
+            // Dispatch the whole-chain check only at the chain head; `walk_if`
+            // recurses through `else if` arms but never re-runs this check, so
+            // each chain is analyzed exactly once.
+            diags.extend(rules::ifs_same_cond::check_if(s, ctx));
+            walk_if(s, ctx, diags);
+        }
         Stmt::While(s) => {
             walk_expr(&s.condition.inner, ExprPosition::Condition, ctx, diags);
             for sub in &s.body.stmts {
