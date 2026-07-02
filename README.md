@@ -25,8 +25,8 @@
 
 A lexer, parser and AST for [Monkey C]. See [`monkey-c-parser`][parser]
 
-A full representation of the Monkey C AST to support future development of
-tools, for now primarily the `monkey-c-formatter`.
+A full representation of the Monkey C AST to support development of tools like
+formatters and linters.
 
 ---
 
@@ -52,6 +52,16 @@ Run the formatter after `--fix` if you want whitespace normalised.
 
 ---
 
+### `monkey-c-lsp`
+
+A [Language Server][lsp] for [Monkey C]. See [`monkey-c-lsp`][lsp-crate]
+
+Exposes the parser, linter, and formatter over LSP so any compatible editor
+gets live diagnostics (parse errors and lints) and document formatting. It
+speaks over stdio and keeps whole documents in memory (full sync).
+
+---
+
 ## Notes on AI
 
 For transparency: this project is being built with assistance of AI. However,
@@ -68,6 +78,8 @@ This repository is licensed under the [MIT License][license]
 [formatter]: monkey-c-formatter
 [license]: LICENSE
 [linter]: monkey-c-linter
+[lsp]: https://microsoft.github.io/language-server-protocol/
+[lsp-crate]: monkey-c-lsp
 [parser]: monkey-c-parser
 [ruff]: https://github.com/astral-sh/ruff
 [rustfmt]: https://github.com/rust-lang/rustfmt

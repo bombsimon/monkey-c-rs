@@ -4,7 +4,7 @@ members = [
   "monkey-c-parser",
   "monkey-c-formatter",
   "monkey-c-linter",
-  "monkey-c-diagnostics",
+  "monkey-c-diagnostics", "monkey-c-lsp",
 ]
 
 [workspace.package]
@@ -17,4 +17,6 @@ repository = "https://github.com/bombsimon/monkey-c-rs"
 ariadne = "0.6"
 clap = { version = "4", features = ["derive"] }
 monkey-c-diagnostics = { path = "monkey-c-diagnostics" }
+monkey-c-formatter = { path = "monkey-c-formatter" }
+monkey-c-linter = { path = "monkey-c-linter" }
 monkey-c-parser = { path = "monkey-c-parser" }
