@@ -1,6 +1,9 @@
 /// An identifier — a plain string name.
 pub type Ident = String;
 
+/// Byte offset into the original source string.
+pub type Position = usize;
+
 /// A symbol name — the string part of a `:symbolName` literal.
 pub type Symbol = String;
 
@@ -33,6 +36,7 @@ pub struct Type {
     pub alternatives: Vec<Type>,
     /// Whether the type is nullable (`?` suffix).
     pub optional: bool,
+    pub span: Span,
 }
 
 /// What kind of type this is, before alternatives/optional are applied.
@@ -103,9 +107,10 @@ pub enum InterfaceMember {
 /// [`FunctionDecl`] minus the body.
 #[derive(Debug, PartialEq)]
 pub struct InterfaceMethod {
-    pub name: Ident,
+    pub name: Spanned<Ident>,
     pub args: Vec<Variable>,
     pub returns: Option<Type>,
+    pub as_kw_start: Option<Position>,
     pub span: Span,
 }
 
@@ -113,7 +118,8 @@ pub struct InterfaceMethod {
 /// annotation is required since the variable has no initializer.
 #[derive(Debug, PartialEq)]
 pub struct InterfaceVar {
-    pub name: Ident,
+    pub name: Spanned<Ident>,
+    pub as_kw_start: Position,
     pub type_: Type,
     pub span: Span,
 }
@@ -123,6 +129,7 @@ pub struct InterfaceVar {
 pub struct DictTypeEntry {
     pub key: DictTypeKey,
     pub value_type: Type,
+    pub span: Span,
 }
 
 /// A key in an inline dictionary type. Either a symbol literal (`:name`)
@@ -165,10 +172,8 @@ impl Type {
 /// Use [`LineIndex`](crate::line_index::LineIndex) to convert to line/column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
-    /// Byte offset of the first character of this node.
-    pub start: usize,
-    /// Byte offset one past the last character of this node.
-    pub end: usize,
+    pub start: Position,
+    pub end: Position,
 }
 
 impl From<(usize, usize)> for Span {
@@ -185,11 +190,9 @@ impl From<(usize, usize)> for Span {
 /// field.
 #[derive(Debug, PartialEq)]
 pub struct Parens<T> {
-    /// Byte offset of the opening `(`.
-    pub open: usize,
+    pub open: Position,
     pub inner: T,
-    /// Byte offset just past the closing `)`.
-    pub close: usize,
+    pub close: Position,
 }
 
 impl<T> std::ops::Deref for Parens<T> {
@@ -199,18 +202,29 @@ impl<T> std::ops::Deref for Parens<T> {
     }
 }
 
+/// An AST node paired with its source [`Span`]. Used for identifier nodes that
+/// need both their value and source position for comment placement.
+#[derive(Debug, PartialEq)]
+pub struct Spanned<T> {
+    pub span: Span,
+    pub node: T,
+}
+
+impl<T> Spanned<T> {
+    pub fn start(&self) -> usize {
+        self.span.start
+    }
+}
+
 /// A named, optionally-typed binding used for function parameters.
 #[derive(Debug, PartialEq)]
 pub struct Variable {
-    pub name: Ident,
-    /// Declared type (`as Type`), if present.
+    pub name: Spanned<Ident>,
     pub type_: Option<Type>,
+    pub as_kw_start: Option<Position>,
     pub visibility: Option<Visibility>,
-    /// Default value (`= expr`), if present.
     pub initializer: Option<Box<Expr>>,
     pub is_static: bool,
-    /// Source span of this parameter, used to attach comments via the
-    /// [`crate::comments::CommentsMap`].
     pub span: Span,
 }
 
@@ -434,6 +448,9 @@ pub struct ParenExpr {
 pub struct BinaryExpr {
     pub left: Box<Expr>,
     pub operator: BinaryOperator,
+    /// Byte offset of the operator token — used to split comments between the
+    /// left operand and the operator vs between the operator and the right operand.
+    pub op_pos: Position,
     pub right: Box<Expr>,
     pub span: Span,
 }
@@ -471,10 +488,8 @@ pub struct CallExpr {
     /// Drives the magic trailing comma formatting rule — forces multi-line
     /// rendering even when the call would otherwise fit on a single line.
     pub args_trailing_comma: bool,
-    /// Byte offset of the opening `(`. Combined with `span.end`, this defines
-    /// the argument list zone used by the comment-attachment pass to correctly
-    /// place comments that appear immediately after `(`.
-    pub args_open: usize,
+    /// Combined with `span.end`, defines the argument list zone for comment placement.
+    pub args_open: Position,
     pub span: Span,
 }
 
@@ -508,7 +523,7 @@ pub struct NewExpr {
     pub args_trailing_comma: bool,
     /// See [`CallExpr::args_open`]. `None` when `new Foo` omits the
     /// argument list entirely (equivalent to `new Foo()`).
-    pub args_open: Option<usize>,
+    pub args_open: Option<Position>,
     pub span: Span,
 }
 
@@ -640,6 +655,7 @@ pub struct IfStmt {
     pub condition: Parens<Expr>,
     pub then_branch: BlockStmt,
     pub else_branch: Option<ElseBranch>,
+    pub else_kw_start: Option<Position>,
     pub span: Span,
 }
 
@@ -671,9 +687,8 @@ pub struct WhileStmt {
 pub struct DoWhileStmt {
     pub body: BlockStmt,
     pub condition: Expr,
-    /// Byte offset just past the `do` keyword. Used by the comment-attachment
-    /// pass to recognise comments in the `do /* C */ {` slot.
-    pub header_end: usize,
+    /// Used by the comment-attachment pass to recognise comments in the `do /* C */ {` slot.
+    pub header_end: Position,
     pub span: Span,
 }
 
@@ -697,12 +712,15 @@ pub struct ForHeader {
 pub struct ForStmt {
     pub header: Parens<ForHeader>,
     pub body: BlockStmt,
+    pub first_semi: Position,
+    pub second_semi: Position,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ReturnStmt {
     pub value: Option<Expr>,
+    pub semi_pos: Position,
     pub span: Span,
 }
 
@@ -712,8 +730,7 @@ pub struct ReturnStmt {
 pub struct SwitchStmt {
     pub discriminant: Parens<Expr>,
     pub cases: Vec<SwitchCase>,
-    /// Byte offset of the body's opening `{`.
-    pub brace_start: usize,
+    pub brace_start: Position,
     pub span: Span,
 }
 
@@ -749,9 +766,8 @@ pub struct TryStmt {
     pub body: BlockStmt,
     pub catches: Vec<CatchClause>,
     pub finally: Option<BlockStmt>,
-    /// Byte offset just past the `try` keyword. Used by the comment-attachment
-    /// pass to recognise comments in the `try /* C */ {` slot.
-    pub header_end: usize,
+    /// Used by the comment-attachment pass to recognise comments in the `try /* C */ {` slot.
+    pub header_end: Position,
     pub span: Span,
 }
 
@@ -769,6 +785,7 @@ pub struct CatchClause {
 #[derive(Debug, PartialEq)]
 pub struct ThrowStmt {
     pub value: Expr,
+    pub semi_pos: Position,
     pub span: Span,
 }
 
@@ -777,9 +794,11 @@ pub struct ThrowStmt {
 /// annotation and initializer independently.
 #[derive(Debug, PartialEq)]
 pub struct Binding {
-    pub name: Ident,
+    pub name: Spanned<Ident>,
     pub type_: Option<Type>,
+    pub as_kw_start: Option<Position>,
     pub initializer: Option<Box<Expr>>,
+    pub assign_kw_start: Option<Position>,
     pub span: Span,
 }
 
@@ -790,6 +809,8 @@ pub struct VarDecl {
     pub bindings: Vec<Binding>,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
+    /// `0` when `var` appears in a `for`-init — the loop's first `;` acts as terminator.
+    pub semi_pos: Position,
     pub span: Span,
 }
 
@@ -832,7 +853,7 @@ pub enum Ast {
 #[derive(Debug, PartialEq)]
 pub struct ImportDecl {
     /// Fully qualified import path, e.g. `Toybox.WatchUi`.
-    pub name: Ident,
+    pub name: Spanned<Ident>,
     pub span: Span,
 }
 
@@ -841,8 +862,9 @@ pub struct ImportDecl {
 /// under an alias.
 #[derive(Debug, PartialEq)]
 pub struct UsingDecl {
-    pub name: Ident,
-    pub alias: Option<Ident>,
+    pub name: Spanned<Ident>,
+    pub alias: Option<Spanned<Ident>>,
+    pub as_kw_start: Option<Position>,
     pub span: Span,
 }
 
@@ -851,28 +873,27 @@ pub struct UsingDecl {
 /// `typedef Numeric as Number or Float or Long or Double;`).
 #[derive(Debug, PartialEq)]
 pub struct TypedefDecl {
-    pub name: Ident,
+    pub name: Spanned<Ident>,
+    pub as_kw_start: Position,
     pub type_: Type,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ModuleDecl {
-    pub name: Ident,
+    pub name: Spanned<Ident>,
     pub body: Vec<Ast>,
-    /// Byte offset of the body's opening `{`.
-    pub brace_start: usize,
+    pub brace_start: Position,
     pub span: Span,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ClassDecl {
-    pub name: Ident,
-    /// Base class name from `extends BaseClass`.
-    pub extends: Option<Ident>,
+    pub name: Spanned<Ident>,
+    pub extends: Option<Spanned<Ident>>,
+    pub extends_kw_start: Option<Position>,
     pub body: Vec<Ast>,
-    /// Byte offset of the body's opening `{`.
-    pub brace_start: usize,
+    pub brace_start: Position,
     pub span: Span,
 }
 
@@ -884,11 +905,10 @@ pub struct ClassDecl {
 #[derive(Debug, PartialEq)]
 pub struct EnumDecl {
     /// `Some` when the source had `enum Name {`; `None` for `enum {`.
-    pub name: Option<Ident>,
+    pub name: Option<Spanned<Ident>>,
     pub variants: Vec<EnumVariant>,
     pub trailing_comma: bool,
-    /// Byte offset of the body's opening `{`.
-    pub brace_start: usize,
+    pub brace_start: Position,
     pub span: Span,
 }
 
@@ -899,6 +919,7 @@ pub struct EnumVariant {
     /// Explicit value (`= <expr>`); `None` means the variant is implicitly
     /// `previous + 1`.
     pub value: Option<Expr>,
+    pub assign_kw_start: Option<Position>,
     /// Span from the variant's name through its value (or just the name if
     /// no `= value`). Used by the [`crate::comments`] attachment pass to
     /// place leading/trailing comments.
@@ -907,21 +928,19 @@ pub struct EnumVariant {
 
 #[derive(Debug, PartialEq)]
 pub struct FunctionDecl {
-    pub name: Ident,
+    pub name: Spanned<Ident>,
     pub args: Parens<Vec<Variable>>,
     /// See [`CallExpr::args_trailing_comma`].
     pub args_trailing_comma: bool,
     /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
+    pub as_kw_start: Option<Position>,
     /// `None` for abstract / interface method declarations (`function f() as T;`).
     pub body: Option<BlockStmt>,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
-    /// Byte offset where the "between header and `{`" region ends. With a
-    /// return type this is the end of `as ReturnType`; without, it equals
-    /// `args.close`. Used by the comment-attachment pass to recognise
-    /// `function f() as X /* C */ {` style header comments.
-    pub header_end: usize,
+    /// Used by the comment-attachment pass to recognise `function f() as X /* C */ {` header comments.
+    pub header_end: Position,
     pub span: Span,
 }
 
@@ -937,6 +956,7 @@ pub struct ConstDecl {
     pub bindings: Vec<Binding>,
     pub visibility: Option<Visibility>,
     pub is_static: bool,
+    pub semi_pos: Position,
     pub span: Span,
 }
 

@@ -69,18 +69,18 @@ fn class_const(src: &str) -> ConstDecl {
 #[test]
 fn test_class() {
     let c = first_class("class Foo {}");
-    assert_eq!(c.name, "Foo");
+    assert_eq!(c.name.node, "Foo");
     assert!(c.body.is_empty());
 
     let c = first_class("class Foo extends Bar {}");
-    assert_eq!(c.extends.as_deref(), Some("Bar"));
+    assert_eq!(c.extends.as_ref().map(|e| e.node.as_str()), Some("Bar"));
 }
 
 #[test]
 fn test_var_declarations() {
     let v = class_var("class C { var x as Float; }");
     let b = v.bindings.into_iter().next().unwrap();
-    assert_eq!(b.name, "x");
+    assert_eq!(b.name.node, "x");
     assert_eq!(b.type_.unwrap().ident().unwrap(), "Float");
 
     // `Array<Number or Float>` is one generic param whose type is a union,
@@ -158,7 +158,7 @@ fn test_var_static() {
 fn test_const_declarations() {
     let c = class_const("class C { const PI = 3; }");
     let b = c.bindings.into_iter().next().unwrap();
-    assert_eq!(b.name, "PI");
+    assert_eq!(b.name.node, "PI");
     assert!(matches!(*b.initializer.unwrap(), Expr::Lit(_)));
 
     let c = class_const("class C { const MAX as Number = 100; }");
@@ -181,9 +181,9 @@ fn test_const_declarations() {
 fn test_var_multiple_bindings() {
     let v = class_var("class C { var a, b, c; }");
     assert_eq!(v.bindings.len(), 3);
-    assert_eq!(v.bindings[0].name, "a");
-    assert_eq!(v.bindings[1].name, "b");
-    assert_eq!(v.bindings[2].name, "c");
+    assert_eq!(v.bindings[0].name.node, "a");
+    assert_eq!(v.bindings[1].name.node, "b");
+    assert_eq!(v.bindings[2].name.node, "c");
     assert!(v.bindings.iter().all(|b| b.initializer.is_none()));
 
     let v = class_var("class C { var a = 1, b = 2; }");
@@ -214,9 +214,9 @@ fn test_const_multiple_bindings() {
 fn test_function_signature() {
     let f = first_function("function foo(a as Number, b as String) {}");
     assert_eq!(f.args.len(), 2);
-    assert_eq!(f.args[0].name, "a");
+    assert_eq!(f.args[0].name.node, "a");
     assert_eq!(f.args[0].type_.as_ref().unwrap().ident().unwrap(), "Number");
-    assert_eq!(f.args[1].name, "b");
+    assert_eq!(f.args[1].name.node, "b");
 
     let f = first_function("function foo() as Void {}");
     assert_eq!(f.returns.unwrap().ident().unwrap(), "Void");
@@ -250,7 +250,7 @@ fn test_imports() {
     let Ast::Import(d) = &nodes[0] else {
         panic!("expected import");
     };
-    assert_eq!(d.name, "Toybox.WatchUi");
+    assert_eq!(d.name.node, "Toybox.WatchUi");
 }
 
 #[test]
@@ -434,7 +434,7 @@ fn test_typedef() {
         let Ast::Typedef(d) = &nodes[0] else {
             panic!("expected typedef in `{src}`");
         };
-        assert_eq!(d.name, "Numeric");
+        assert_eq!(d.name.node, "Numeric");
         assert_eq!(d.type_.ident().unwrap(), "Number");
         assert_eq!(
             d.type_.alternatives.len(),
@@ -450,15 +450,15 @@ fn test_using() {
     let Ast::Using(d) = &nodes[0] else {
         panic!("expected using");
     };
-    assert_eq!(d.name, "Toybox.Lang");
+    assert_eq!(d.name.node, "Toybox.Lang");
     assert!(d.alias.is_none());
 
     let nodes = document_nodes("using Toybox.Lang as Lng;");
     let Ast::Using(d) = &nodes[0] else {
         panic!("expected using");
     };
-    assert_eq!(d.name, "Toybox.Lang");
-    assert_eq!(d.alias.as_deref(), Some("Lng"));
+    assert_eq!(d.name.node, "Toybox.Lang");
+    assert_eq!(d.alias.as_ref().map(|a| a.node.as_str()), Some("Lng"));
 }
 
 #[test]
@@ -467,7 +467,7 @@ fn test_module() {
     let Ast::Module(m) = &nodes[0] else {
         panic!("expected module");
     };
-    assert_eq!(m.name, "MyModule");
+    assert_eq!(m.name.node, "MyModule");
     assert_eq!(m.body.len(), 1);
 }
 
@@ -480,7 +480,7 @@ fn test_nested_module() {
     let Ast::Module(inner) = &outer.body[0] else {
         panic!("expected inner module");
     };
-    assert_eq!(inner.name, "Inner");
+    assert_eq!(inner.name.node, "Inner");
 }
 
 #[test]

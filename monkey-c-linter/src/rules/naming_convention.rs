@@ -30,7 +30,7 @@ pub fn check_ast(ast: &Ast, _ctx: &LintContext) -> Vec<Diagnostic> {
     match ast {
         Ast::Class(c) => {
             check_pascal(
-                &c.name,
+                &c.name.node,
                 header_span(c.span, c.brace_start),
                 "class",
                 &mut diags,
@@ -42,7 +42,7 @@ pub fn check_ast(ast: &Ast, _ctx: &LintContext) -> Vec<Diagnostic> {
         }
         Ast::Module(m) => {
             check_pascal(
-                &m.name,
+                &m.name.node,
                 header_span(m.span, m.brace_start),
                 "module",
                 &mut diags,
@@ -74,7 +74,7 @@ fn check_class_member(member: &Ast, diags: &mut Vec<Diagnostic>) {
 fn check_module_member(member: &Ast, diags: &mut Vec<Diagnostic>) {
     if let Ast::Variable(v) = member {
         for b in &v.bindings {
-            check_camel(&b.name, b.span, "module variable", diags);
+            check_camel(&b.name.node, b.span, "module variable", diags);
         }
     }
 }
@@ -89,18 +89,23 @@ fn check_class_var(v: &VarDecl, diags: &mut Vec<Diagnostic>) {
 
     for b in &v.bindings {
         if private {
-            check_underscore_camel(&b.name, b.span, label, diags);
+            check_underscore_camel(&b.name.node, b.span, label, diags);
         } else {
-            check_camel(&b.name, b.span, label, diags);
+            check_camel(&b.name.node, b.span, label, diags);
         }
     }
 }
 
 fn check_function(f: &FunctionDecl, diags: &mut Vec<Diagnostic>) {
-    check_camel(&f.name, header_span(f.span, f.args.open), "function", diags);
+    check_camel(
+        &f.name.node,
+        header_span(f.span, f.args.open),
+        "function",
+        diags,
+    );
 
     for arg in &f.args.inner {
-        check_camel(&arg.name, arg.span, "function parameter", diags);
+        check_camel(&arg.name.node, arg.span, "function parameter", diags);
     }
 }
 

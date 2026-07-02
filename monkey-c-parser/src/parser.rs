@@ -2,9 +2,9 @@ use crate::ast::{
     AnnotationEntry, Ast, Binding, BlockStmt, CaseLabel, CatchClause, ClassDecl, CommentStmt,
     CommentTable, ConstDecl, DictTypeEntry, DictTypeKey, DoWhileStmt, ElseBranch, EnumDecl,
     EnumVariant, ForHeader, ForInit, ForStmt, FunctionDecl, IfStmt, ImportDecl, InterfaceMember,
-    InterfaceMethod, InterfaceVar, ModuleDecl, Parens, ParseOutput, ReturnStmt, Span, Stmt,
-    SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl, VarDecl,
-    Variable, Visibility, WhileStmt,
+    InterfaceMethod, InterfaceVar, ModuleDecl, Parens, ParseOutput, ReturnStmt, Span, Spanned,
+    Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, Type, TypeKind, TypedefDecl, UsingDecl,
+    VarDecl, Variable, Visibility, WhileStmt,
 };
 use crate::line_index::LineIndex;
 use crate::token;
@@ -309,6 +309,10 @@ impl<'a> Parser<'a> {
             ty.alternatives.push(self.parse_simple_type(true)?);
         }
 
+        if !ty.alternatives.is_empty() {
+            ty.span.end = self.prev_token_end;
+        }
+
         Ok(ty)
     }
 
@@ -333,6 +337,10 @@ impl<'a> Parser<'a> {
             ty.alternatives.push(self.parse_simple_type(false)?);
         }
 
+        if !ty.alternatives.is_empty() {
+            ty.span.end = self.prev_token_end;
+        }
+
         Ok(ty)
     }
 
@@ -350,6 +358,7 @@ impl<'a> Parser<'a> {
     /// to a single param's union (`Array<Number or Null>` → one param whose
     /// `alternatives` is `[Null]`), not to the param list itself.
     pub(crate) fn parse_simple_type(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
+        let start = self.current_token_start;
         let kind = if self.current_token == token::Type::LBrace {
             let (entries, trailing_comma) = self.parse_inline_dict_type()?;
             TypeKind::Dict {
@@ -444,6 +453,10 @@ impl<'a> Parser<'a> {
             kind,
             alternatives: Vec::new(),
             optional,
+            span: Span {
+                start,
+                end: self.prev_token_end,
+            },
         })
     }
 
@@ -486,14 +499,23 @@ impl<'a> Parser<'a> {
     fn parse_interface_method(&mut self) -> Result<InterfaceMethod, ParserError> {
         let start = self.current_token_start;
         self.assert_next_token(&[token::Type::Function])?;
-        let name = self.parse_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_identifier()?;
         self.next_token_span();
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
         let (args, _trailing) = self.parse_function_args()?;
-        let returns = if self.current_token == token::Type::As {
+        let (as_kw_start, returns) = if self.current_token == token::Type::As {
+            let ak = self.current_token_start;
             self.next_token_span();
-            Some(self.parse_type()?)
+            (Some(ak), Some(self.parse_type()?))
         } else {
-            None
+            (None, None)
         };
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
@@ -502,6 +524,7 @@ impl<'a> Parser<'a> {
             name,
             args: args.inner,
             returns,
+            as_kw_start,
             span: Span { start, end },
         })
     }
@@ -509,8 +532,17 @@ impl<'a> Parser<'a> {
     fn parse_interface_var(&mut self) -> Result<InterfaceVar, ParserError> {
         let start = self.current_token_start;
         self.assert_next_token(&[token::Type::Var])?;
-        let name = self.parse_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_identifier()?;
         self.next_token_span();
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
+        let as_kw_start = self.current_token_start;
         self.assert_next_token(&[token::Type::As])?;
         let type_ = self.parse_type()?;
         let end = self.current_token_end;
@@ -518,6 +550,7 @@ impl<'a> Parser<'a> {
 
         Ok(InterfaceVar {
             name,
+            as_kw_start,
             type_,
             span: Span { start, end },
         })
@@ -556,6 +589,7 @@ impl<'a> Parser<'a> {
         let mut trailing_comma = false;
 
         while self.current_token != token::Type::RBrace {
+            let entry_start = self.current_token_start;
             let key = match self.current_token.clone() {
                 token::Type::Colon => {
                     self.next_token_span(); // consume `:`
@@ -574,7 +608,15 @@ impl<'a> Parser<'a> {
             };
             self.assert_next_token(&[token::Type::As])?;
             let value_type = self.parse_type()?;
-            entries.push(DictTypeEntry { key, value_type });
+            let entry_span = Span {
+                start: entry_start,
+                end: self.prev_token_end,
+            };
+            entries.push(DictTypeEntry {
+                key,
+                value_type,
+                span: entry_span,
+            });
 
             if self.current_token == token::Type::Comma {
                 self.next_token_span();
@@ -700,16 +742,35 @@ impl<'a> Parser<'a> {
 
     fn parse_class_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span();
-        let name = self.parse_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_identifier()?;
         self.next_token_span();
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
 
-        let extends = if self.current_token == token::Type::Extends {
+        let (extends_kw_start, extends) = if self.current_token == token::Type::Extends {
+            let ek = self.current_token_start;
             self.next_token_span();
+            let es = self.current_token_start;
             let n = self.parse_dotted_identifier()?;
-
-            Some(n)
+            let extends_end = self.prev_token_end;
+            (
+                Some(ek),
+                Some(Spanned {
+                    span: Span {
+                        start: es,
+                        end: extends_end,
+                    },
+                    node: n,
+                }),
+            )
         } else {
-            None
+            (None, None)
         };
 
         let brace_start = self.current_token_start;
@@ -721,6 +782,7 @@ impl<'a> Parser<'a> {
         Ok(Ast::Class(ClassDecl {
             name,
             extends,
+            extends_kw_start,
             body,
             brace_start,
             span: Span {
@@ -752,6 +814,7 @@ impl<'a> Parser<'a> {
     ) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `const`
         let bindings = self.parse_bindings()?;
+        let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
@@ -759,6 +822,7 @@ impl<'a> Parser<'a> {
             bindings,
             visibility,
             is_static,
+            semi_pos,
             span: Span {
                 start,
                 end: semi_end,
@@ -773,18 +837,27 @@ impl<'a> Parser<'a> {
         is_static: bool,
     ) -> Result<Ast, ParserError> {
         self.next_token_span();
-        let name = self.parse_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_identifier()?;
         self.next_token_span();
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
         let (args, args_trailing_comma) = self.parse_function_args()?;
 
         let mut header_end = args.close;
-        let returns = if self.current_token == token::Type::As {
+        let (as_kw_start, returns) = if self.current_token == token::Type::As {
+            let ak = self.current_token_start;
             self.next_token_span();
             let ty = self.parse_type()?;
             header_end = self.prev_token_end;
-            Some(ty)
+            (Some(ak), Some(ty))
         } else {
-            None
+            (None, None)
         };
 
         let (body, end) = if self.current_token == token::Type::Semicolon {
@@ -804,6 +877,7 @@ impl<'a> Parser<'a> {
             args,
             args_trailing_comma,
             returns,
+            as_kw_start,
             body,
             visibility,
             is_static,
@@ -816,9 +890,14 @@ impl<'a> Parser<'a> {
         self.next_token_span(); // consume `enum`
 
         let name = if matches!(self.current_token, token::Type::Identifier(_)) {
+            let ns = self.current_token_start;
             let n = self.parse_identifier()?;
             self.next_token_span();
-            Some(n)
+            let ne = self.prev_token_end;
+            Some(Spanned {
+                span: Span { start: ns, end: ne },
+                node: n,
+            })
         } else {
             None
         };
@@ -839,18 +918,20 @@ impl<'a> Parser<'a> {
             let mut variant_end = self.current_token_end;
             self.next_token_span(); // advance past identifier
 
-            let value = if self.current_token == token::Type::Assign {
+            let (assign_kw_start, value) = if self.current_token == token::Type::Assign {
+                let ak = self.current_token_start;
                 self.next_token_span(); // consume `=`
                 let v = self.parse_expression()?;
                 variant_end = v.span().end;
-                Some(v)
+                (Some(ak), Some(v))
             } else {
-                None
+                (None, None)
             };
 
             let variant = EnumVariant {
                 name,
                 value,
+                assign_kw_start,
                 span: Span {
                     start: name_start,
                     end: variant_end,
@@ -889,7 +970,15 @@ impl<'a> Parser<'a> {
 
     fn parse_import_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `import`
-        let name = self.parse_dotted_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_dotted_identifier()?;
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
@@ -904,14 +993,34 @@ impl<'a> Parser<'a> {
 
     fn parse_using_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `using`
-        let name = self.parse_dotted_identifier()?;
-        let alias = if self.current_token == token::Type::As {
+        let name_start = self.current_token_start;
+        let name_node = self.parse_dotted_identifier()?;
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
+        let (as_kw_start, alias) = if self.current_token == token::Type::As {
+            let ak = self.current_token_start;
             self.next_token_span(); // consume `as`
-            let alias_name = self.parse_identifier()?;
+            let al = self.current_token_start;
+            let alias_node = self.parse_identifier()?;
             self.next_token_span(); // advance past alias name
-            Some(alias_name)
+            let alias_end = self.prev_token_end;
+            (
+                Some(ak),
+                Some(Spanned {
+                    span: Span {
+                        start: al,
+                        end: alias_end,
+                    },
+                    node: alias_node,
+                }),
+            )
         } else {
-            None
+            (None, None)
         };
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
@@ -919,6 +1028,7 @@ impl<'a> Parser<'a> {
         Ok(Ast::Using(UsingDecl {
             name,
             alias,
+            as_kw_start,
             span: Span {
                 start,
                 end: semi_end,
@@ -928,8 +1038,17 @@ impl<'a> Parser<'a> {
 
     fn parse_typedef_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `typedef`
-        let name = self.parse_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_identifier()?;
         self.next_token_span(); // advance past identifier
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
+        let as_kw_start = self.current_token_start;
         self.assert_next_token(&[token::Type::As])?;
         let type_ = self.parse_type()?;
         let semi_end = self.current_token_end;
@@ -937,6 +1056,7 @@ impl<'a> Parser<'a> {
 
         Ok(Ast::Typedef(TypedefDecl {
             name,
+            as_kw_start,
             type_,
             span: Span {
                 start,
@@ -947,8 +1067,16 @@ impl<'a> Parser<'a> {
 
     fn parse_module_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `module`
-        let name = self.parse_identifier()?;
+        let name_start = self.current_token_start;
+        let name_node = self.parse_identifier()?;
         self.next_token_span(); // advance past name
+        let name = Spanned {
+            span: Span {
+                start: name_start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
 
         let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
@@ -975,8 +1103,10 @@ impl<'a> Parser<'a> {
     ) -> Result<Ast, ParserError> {
         self.next_token_span();
         let mut var_decl = self.parse_var_contents(visibility, is_static)?;
+        let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
+        var_decl.semi_pos = semi_pos;
         var_decl.span = Span {
             start,
             end: semi_end,
@@ -999,25 +1129,34 @@ impl<'a> Parser<'a> {
             }
 
             let arg_start = self.current_token_start;
-            let name = self.parse_identifier()?;
+            let name_node = self.parse_identifier()?;
             let mut arg_end = self.current_token_end;
             self.next_token_span();
+            let name = Spanned {
+                span: Span {
+                    start: arg_start,
+                    end: self.prev_token_end,
+                },
+                node: name_node,
+            };
 
-            let type_ = if self.current_token == token::Type::As {
+            let (as_kw_start, type_) = if self.current_token == token::Type::As {
+                let ak = self.current_token_start;
                 self.next_token_span();
                 let t = self.parse_type()?;
                 // `parse_type` advances to the token after the type, so the
                 // type ends at the previous token boundary. Track via
                 // `current_token_start` saturating back.
                 arg_end = self.current_token_start;
-                Some(t)
+                (Some(ak), Some(t))
             } else {
-                None
+                (None, None)
             };
 
             let arg = Variable {
                 name,
                 type_,
+                as_kw_start,
                 visibility: None,
                 initializer: None,
                 is_static: false,
@@ -1072,7 +1211,8 @@ impl<'a> Parser<'a> {
             bindings,
             visibility,
             is_static,
-            // Callers fill in the real span after consuming the trailing semicolon.
+            // Callers fill in the real span and semi_pos after consuming the trailing semicolon.
+            semi_pos: 0,
             span: Span { start: 0, end: 0 },
         })
     }
@@ -1095,32 +1235,43 @@ impl<'a> Parser<'a> {
 
     fn parse_one_binding(&mut self) -> Result<Binding, ParserError> {
         let start = self.current_token_start;
-        let name = self.parse_identifier()?;
+        let name_node = self.parse_identifier()?;
         let mut end = self.current_token_end;
         self.next_token_span();
+        let name = Spanned {
+            span: Span {
+                start,
+                end: self.prev_token_end,
+            },
+            node: name_node,
+        };
 
-        let type_ = if self.current_token == token::Type::As {
+        let (as_kw_start, type_) = if self.current_token == token::Type::As {
+            let ak = self.current_token_start;
             self.next_token_span();
             let ty = self.parse_type()?;
             end = self.prev_token_end;
-            Some(ty)
+            (Some(ak), Some(ty))
         } else {
-            None
+            (None, None)
         };
 
-        let initializer = if self.current_token == token::Type::Assign {
+        let (assign_kw_start, initializer) = if self.current_token == token::Type::Assign {
+            let ak = self.current_token_start;
             self.next_token_span(); // consume `=`
             let expr = self.parse_expression()?;
             end = expr.span().end;
-            Some(Box::new(expr))
+            (Some(ak), Some(Box::new(expr)))
         } else {
-            None
+            (None, None)
         };
 
         Ok(Binding {
             name,
             type_,
+            as_kw_start,
             initializer,
+            assign_kw_start,
             span: Span { start, end },
         })
     }
@@ -1214,22 +1365,25 @@ impl<'a> Parser<'a> {
         let header_open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
 
-        let init = match self.current_token {
+        let (init, first_semi) = match self.current_token {
             token::Type::Semicolon => {
+                let fs = self.current_token_start;
                 self.next_token_span();
-                None
+                (None, fs)
             }
             token::Type::Var => {
                 let var_start = self.current_token_start;
                 self.next_token_span(); // consume `var`
                 let mut var_decl = self.parse_var_contents(None, false)?;
+                let fs = self.current_token_start;
                 let semi_end = self.current_token_end;
                 self.assert_next_token(&[token::Type::Semicolon])?;
+                var_decl.semi_pos = fs;
                 var_decl.span = Span {
                     start: var_start,
                     end: semi_end,
                 };
-                Some(ForInit::Var(var_decl))
+                (Some(ForInit::Var(var_decl)), fs)
             }
             _ => {
                 let mut exprs = vec![self.parse_expression()?];
@@ -1237,8 +1391,9 @@ impl<'a> Parser<'a> {
                     self.next_token_span(); // consume `,`
                     exprs.push(self.parse_expression()?);
                 }
+                let fs = self.current_token_start;
                 self.assert_next_token(&[token::Type::Semicolon])?;
-                Some(ForInit::Expr(exprs))
+                (Some(ForInit::Expr(exprs)), fs)
             }
         };
 
@@ -1247,6 +1402,7 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_expression()?)
         };
+        let second_semi = self.current_token_start;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
         let update = if self.current_token == token::Type::RParen {
@@ -1280,6 +1436,8 @@ impl<'a> Parser<'a> {
         Ok(Stmt::For(ForStmt {
             header,
             body,
+            first_semi,
+            second_semi,
             span: Span { start, end },
         }))
     }
@@ -1308,7 +1466,13 @@ impl<'a> Parser<'a> {
         self.assert_next_token(&[token::Type::LBrace])?;
         let then_branch = self.parse_block(then_brace_start)?;
 
-        let else_branch = if self.current_token == token::Type::Else {
+        let else_kw_start = if self.current_token == token::Type::Else {
+            Some(self.current_token_start)
+        } else {
+            None
+        };
+
+        let else_branch = if else_kw_start.is_some() {
             self.next_token_span(); // consume `else`
             if self.current_token == token::Type::If {
                 Some(ElseBranch::If(Box::new(self.parse_if_inner()?)))
@@ -1330,6 +1494,7 @@ impl<'a> Parser<'a> {
             condition,
             then_branch,
             else_branch,
+            else_kw_start,
             span: Span { start, end },
         })
     }
@@ -1342,11 +1507,13 @@ impl<'a> Parser<'a> {
         } else {
             Some(self.parse_expression()?)
         };
+        let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
         Ok(Stmt::Return(ReturnStmt {
             value,
+            semi_pos,
             span: Span {
                 start,
                 end: semi_end,
@@ -1358,11 +1525,13 @@ impl<'a> Parser<'a> {
         let start = self.current_token_start;
         self.next_token_span(); // consume `throw`
         let value = self.parse_expression()?;
+        let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
         Ok(Stmt::Throw(ThrowStmt {
             value,
+            semi_pos,
             span: Span {
                 start,
                 end: semi_end,
@@ -1530,8 +1699,10 @@ impl<'a> Parser<'a> {
         let start = self.current_token_start;
         self.next_token_span();
         let mut var_decl = self.parse_var_contents(None, false)?;
+        let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
+        var_decl.semi_pos = semi_pos;
         var_decl.span = Span {
             start,
             end: semi_end,

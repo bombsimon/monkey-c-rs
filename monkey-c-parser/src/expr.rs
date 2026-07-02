@@ -91,6 +91,7 @@ impl Parser<'_> {
         operator_token: token::Type,
     ) -> Result<Expr, ParserError> {
         let start = left.span().start;
+        let op_pos = self.current_token_start;
         self.next_token_span();
         let operator = match operator_token {
             token::Type::Or => BinaryOperator::Or,
@@ -104,6 +105,7 @@ impl Parser<'_> {
         Ok(Expr::Binary(BinaryExpr {
             left: Box::new(left),
             operator,
+            op_pos,
             right: Box::new(right),
             span: Span { start, end },
         }))
@@ -153,6 +155,7 @@ impl Parser<'_> {
         operator_token: token::Type,
     ) -> Result<Expr, ParserError> {
         let start = left.span().start;
+        let op_pos = self.current_token_start;
         self.next_token_span();
         let operator = match operator_token {
             token::Type::EqualEqual => BinaryOperator::Eq,
@@ -166,6 +169,7 @@ impl Parser<'_> {
         Ok(Expr::Binary(BinaryExpr {
             left: Box::new(left),
             operator,
+            op_pos,
             right: Box::new(right),
             span: Span { start, end },
         }))
@@ -197,6 +201,7 @@ impl Parser<'_> {
         ) {
             let operator_token = self.current_token.clone();
             let start = expr.span().start;
+            let op_pos = self.current_token_start;
             self.next_token_span();
 
             let operator = match operator_token {
@@ -215,6 +220,7 @@ impl Parser<'_> {
             expr = Expr::Binary(BinaryExpr {
                 left: Box::new(expr),
                 operator,
+                op_pos,
                 right: Box::new(right),
                 span: Span { start, end },
             });
@@ -247,6 +253,7 @@ impl Parser<'_> {
         while self.current_token_is(operators) {
             let operator_token = self.current_token.clone();
             let start = expr.span().start;
+            let op_pos = self.current_token_start;
             self.next_token_span();
 
             let operator = match operator_token {
@@ -269,6 +276,7 @@ impl Parser<'_> {
             expr = Expr::Binary(BinaryExpr {
                 left: Box::new(expr),
                 operator,
+                op_pos,
                 right: Box::new(right),
                 span: Span { start, end },
             });
@@ -643,6 +651,7 @@ impl Parser<'_> {
                 // Type follows. Could be `new Foo.Bar(...)`, `new Array<T>[size]`,
                 // or `new self.classDef_(...)` — instantiating via a
                 // `Lang.Class` reference stored on `self`/`me`.
+                let class_start = self.current_token_start;
                 let class = if matches!(self.current_token, token::Type::Self_ | token::Type::Me) {
                     let name = self.current_token.to_string();
                     self.next_token_span();
@@ -665,6 +674,10 @@ impl Parser<'_> {
                         },
                         alternatives: Vec::new(),
                         optional: false,
+                        span: Span {
+                            start: class_start,
+                            end: self.prev_token_end,
+                        },
                     };
 
                     return self.parse_new_array(start, Some(element_type));

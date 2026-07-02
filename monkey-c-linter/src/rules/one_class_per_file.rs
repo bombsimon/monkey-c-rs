@@ -32,7 +32,7 @@ pub fn check_document(nodes: &[Ast], _ctx: &LintContext) -> Vec<Diagnostic> {
             rule: RULE,
             message: format!(
                 "more than one class declared in this file; move `{}` to its own file",
-                c.name
+                c.name.node
             ),
             span: Span {
                 start: c.span.start,

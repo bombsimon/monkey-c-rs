@@ -2,8 +2,9 @@
 
 ## Architecture
 
-- monkey-c-parser contains parser/lexer code to donvert Monkey C code to AST
+- monkey-c-parser contains parser/lexer code to convert Monkey C code to AST
 - monkey-c-formatter contains document IR and code to write AST back to code
+- monkey-c-linter contains a linter for Monkey C code, based on the parser
 
 ## Styling
 
@@ -28,11 +29,15 @@ let .. else {}` pattern where sensible
 ## Testing
 
 - Prefer small units of tests over larger integration tests
+- For every bug and regression we find, add a snapshot test to ensure we
+  document edge cases over time
 
 ## Documentation
 
 - Only document WHY some things are made, not WHAT they do. Code should tell
   that
+- Avoid commenting on struct fields or enum variants, instead ensure they have
+  names and types explaining them
 - Describe types and methods at high level to avoid risk of comments getting out
   of date or out of sync with what the code does
 - Avoid code separation comments, just group logical units. If it grows to big,

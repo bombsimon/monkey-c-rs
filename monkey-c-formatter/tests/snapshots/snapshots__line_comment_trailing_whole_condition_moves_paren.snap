@@ -4,8 +4,9 @@ expression: "format(r#\"\nfunction f() {\n    if (a || // c1\n        (b > 0 || 
 ---
 function f() {
     if (a || // c1
-        (b > 0 || c < -1)) // c2
+        (b > 0 || c < -1) // c2
     // c3
+    )
     {
         foo();
     }

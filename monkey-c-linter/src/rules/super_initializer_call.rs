@@ -25,11 +25,11 @@ pub fn check_ast(ast: &Ast, _ctx: &LintContext) -> Option<Diagnostic> {
         return None;
     };
 
-    let extends = class.extends.as_deref()?;
+    let extends = class.extends.as_ref().map(|e| e.node.as_str())?;
     let parent_last = extends.rsplit('.').next().unwrap_or(extends);
 
     let init = class.body.iter().find_map(|n| match n {
-        Ast::Function(f) if f.name == "initialize" => Some(f),
+        Ast::Function(f) if f.name.node == "initialize" => Some(f),
         _ => None,
     })?;
 
@@ -45,7 +45,7 @@ pub fn check_ast(ast: &Ast, _ctx: &LintContext) -> Option<Diagnostic> {
         rule: RULE,
         message: format!(
             "`{}.initialize` should call `{}.initialize(...)` to chain to the superclass",
-            class.name, parent_last
+            class.name.node, parent_last
         ),
         span: init.span,
         fix: None,

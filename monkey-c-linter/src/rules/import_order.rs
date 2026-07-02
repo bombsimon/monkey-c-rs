@@ -106,22 +106,22 @@ enum Group {
 fn classify(ast: &Ast) -> (Group, &str) {
     match ast {
         Ast::Using(d) => {
-            let group = if is_toybox(&d.name) {
+            let group = if is_toybox(&d.name.node) {
                 Group::ToyboxUsing
             } else {
                 Group::OtherUsing
             };
 
-            (group, &d.name)
+            (group, &d.name.node)
         }
         Ast::Import(d) => {
-            let group = if is_toybox(&d.name) {
+            let group = if is_toybox(&d.name.node) {
                 Group::ToyboxImport
             } else {
                 Group::OtherImport
             };
 
-            (group, &d.name)
+            (group, &d.name.node)
         }
         _ => unreachable!("is_import_like already filtered"),
     }
