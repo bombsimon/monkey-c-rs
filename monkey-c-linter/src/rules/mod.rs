@@ -8,3 +8,16 @@ pub mod one_class_per_file;
 pub mod redundant_resource_ref;
 pub mod super_initializer_call;
 pub mod unneeded_parens;
+
+/// Every rule's stable identifier, in alphabetical order. The single source of
+/// truth for the `--enable`/`--disable` CLI flags and their help listing.
+pub const ALL: &[&str] = &[
+    compound_assignment::RULE,
+    ifs_same_cond::RULE,
+    import_order::RULE,
+    naming_convention::RULE,
+    one_class_per_file::RULE,
+    redundant_resource_ref::RULE,
+    super_initializer_call::RULE,
+    unneeded_parens::RULE,
+];

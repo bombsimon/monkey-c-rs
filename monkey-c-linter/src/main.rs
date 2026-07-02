@@ -12,7 +12,7 @@ use std::process::ExitCode;
 
 /// Lint Monkey C source code.
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version, about, long_about = None, after_help = available_lints_help())]
 struct Cli {
     /// Files or directories to lint. Directories are walked recursively
     /// for `.mc` files; hidden directories (those starting with `.`) are
@@ -25,9 +25,35 @@ struct Cli {
     #[arg(long)]
     fix: bool,
 
-    /// Comma-separated list of rule names to disable.
+    /// Comma-separated list of rule names to run. When set, only these rules
+    /// are enabled; all others are silenced. Combined with `--disable`, a rule
+    /// must be enabled *and* not disabled to run. See the list below.
+    #[arg(long, value_delimiter = ',')]
+    enable: Vec<String>,
+
+    /// Comma-separated list of rule names to silence. See the list below.
     #[arg(long, value_delimiter = ',')]
     disable: Vec<String>,
+}
+
+/// The `Available lints:` block appended to `--help`, built from the single
+/// source of truth in [`monkey_c_linter::rules::ALL`].
+fn available_lints_help() -> String {
+    let mut help = String::from("Available lints:\n");
+    for rule in monkey_c_linter::rules::ALL {
+        help.push_str("  ");
+        help.push_str(rule);
+        help.push('\n');
+    }
+
+    help
+}
+
+/// Whether a rule runs given the `--enable`/`--disable` selections. An empty
+/// `enable` means "all rules"; a non-empty `enable` is a whitelist. `disable`
+/// always subtracts, so a rule in both is silenced.
+fn rule_is_selected(rule: &str, enable: &[&str], disable: &[&str]) -> bool {
+    (enable.is_empty() || enable.contains(&rule)) && !disable.contains(&rule)
 }
 
 fn main() -> ExitCode {
@@ -122,6 +148,7 @@ fn run_stdin(cli: &Cli) -> io::Result<bool> {
 }
 
 fn run_lint(source: &str, cli: &Cli, label: &str) -> io::Result<Vec<Diagnostic>> {
+    let enabled: Vec<&str> = cli.enable.iter().map(String::as_str).collect();
     let disabled: Vec<&str> = cli.disable.iter().map(String::as_str).collect();
 
     let parser = monkey_c_parser::parser::Parser::new(source);
@@ -132,7 +159,7 @@ fn run_lint(source: &str, cli: &Cli, label: &str) -> io::Result<Vec<Diagnostic>>
 
     let diagnostics = lint(&output, source)
         .into_iter()
-        .filter(|d| !disabled.contains(&d.rule))
+        .filter(|d| rule_is_selected(d.rule, &enabled, &disabled))
         .collect();
 
     Ok(diagnostics)
@@ -221,4 +248,49 @@ fn render_diagnostic(file: &str, source: &str, d: &Diagnostic) {
         .finish()
         .eprint((file, Source::from(source)))
         .expect("ariadne write to stderr");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rule_is_selected;
+
+    #[test]
+    fn no_flags_runs_every_rule() {
+        assert!(rule_is_selected("import-order", &[], &[]));
+    }
+
+    #[test]
+    fn enable_is_a_whitelist() {
+        assert!(rule_is_selected("import-order", &["import-order"], &[]));
+        assert!(!rule_is_selected(
+            "naming-convention",
+            &["import-order"],
+            &[]
+        ));
+    }
+
+    #[test]
+    fn disable_subtracts() {
+        assert!(!rule_is_selected("import-order", &[], &["import-order"]));
+        assert!(rule_is_selected(
+            "naming-convention",
+            &[],
+            &["import-order"]
+        ));
+    }
+
+    #[test]
+    fn disable_wins_over_enable() {
+        // A rule listed in both is silenced.
+        assert!(!rule_is_selected(
+            "import-order",
+            &["import-order", "naming-convention"],
+            &["import-order"],
+        ));
+        assert!(rule_is_selected(
+            "naming-convention",
+            &["import-order", "naming-convention"],
+            &["import-order"],
+        ));
+    }
 }
