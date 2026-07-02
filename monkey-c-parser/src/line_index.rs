@@ -1,14 +1,14 @@
 /// Maps byte offsets to line/column positions within a source file.
 ///
-/// Build once per file with `LineIndex::new(source)`, then call `line_col` as
-/// needed. Spans in the AST remain raw byte offsets; this type is only needed
-/// when you want a human-readable location (error messages, blank-line logic).
+/// Build once per file with `LineIndex::new(source)`, then call `line_col` as needed. Spans in the
+/// AST remain raw byte offsets; this type is only needed when you want a human-readable location
+/// (error messages, blank-line logic).
 pub struct LineIndex {
     /// Byte offset of the first character of each line (line_starts[0] == 0).
     line_starts: Vec<u32>,
-    /// `is_blank[i]` is `true` when line `i`'s body is empty or whitespace-only
-    /// in the source. Used by [`Self::blank_lines_between`] so a line that
-    /// contains a comment is *not* counted as blank.
+    /// `is_blank[i]` is `true` when line `i`'s body is empty or whitespace-only in the source. Used
+    /// by [`Self::blank_lines_between`] so a line that contains a comment is *not* counted as
+    /// blank.
     is_blank: Vec<bool>,
 }
 
@@ -64,10 +64,9 @@ impl LineIndex {
 
     /// Return how many blank lines separate two offsets.
     ///
-    /// A "blank line" is a line whose body is empty or whitespace-only in the
-    /// source. Lines that contain comments are *not* counted as blank, so
-    /// `a;\n// comment\nb;` counts as zero blank lines even though the line
-    /// number of `b` is two more than that of `a`.
+    /// A "blank line" is a line whose body is empty or whitespace-only in the source. Lines that
+    /// contain comments are *not* counted as blank, so `a;\n// comment\nb;` counts as zero blank
+    /// lines even though the line number of `b` is two more than that of `a`.
     pub fn blank_lines_between(&self, prev_end: u32, next_start: u32) -> u32 {
         let end_line = self.line(prev_end);
         let start_line = self.line(next_start);

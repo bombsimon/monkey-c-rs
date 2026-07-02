@@ -99,12 +99,12 @@ fn check_class_var(v: &VarDecl, diags: &mut Vec<Diagnostic>) {
 fn check_function(f: &FunctionDecl, diags: &mut Vec<Diagnostic>) {
     check_camel(
         &f.name.node,
-        header_span(f.span, f.args.open),
+        header_span(f.span, f.parameters.open),
         "function",
         diags,
     );
 
-    for arg in &f.args.inner {
+    for arg in &f.parameters.inner {
         check_camel(&arg.name.node, arg.span, "function parameter", diags);
     }
 }

@@ -152,7 +152,9 @@ impl Parser<'_> {
             open: header_open,
             inner: ForHeader {
                 init,
+                first_semi,
                 condition,
+                second_semi,
                 update,
             },
             close: header_close,
@@ -166,8 +168,6 @@ impl Parser<'_> {
         Ok(Stmt::For(ForStmt {
             header,
             body,
-            first_semi,
-            second_semi,
             span: Span { start, end },
         }))
     }
@@ -357,7 +357,6 @@ impl Parser<'_> {
 
     fn parse_try_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
-        let header_end = self.current_token_end;
         self.next_token_span(); // consume `try`
 
         let body_brace_start = self.current_token_start;
@@ -394,7 +393,6 @@ impl Parser<'_> {
             body,
             catches,
             finally,
-            header_end,
             span: Span { start, end },
         }))
     }
@@ -469,7 +467,6 @@ impl Parser<'_> {
 
     fn parse_do_while_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
-        let header_end = self.current_token_end;
         self.next_token_span(); // consume `do`
 
         let brace_start = self.current_token_start;
@@ -486,7 +483,6 @@ impl Parser<'_> {
         Ok(Stmt::DoWhile(DoWhileStmt {
             body,
             condition,
-            header_end,
             span: Span {
                 start,
                 end: semi_end,

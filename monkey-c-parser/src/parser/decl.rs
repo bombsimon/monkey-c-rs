@@ -1,6 +1,6 @@
 use crate::ast::{
     AnnotationEntry, Ast, Binding, ClassDecl, ConstDecl, EnumDecl, EnumVariant, FunctionDecl,
-    ImportDecl, ModuleDecl, Parens, Span, Spanned, TypedefDecl, UsingDecl, VarDecl, Variable,
+    ImportDecl, ModuleDecl, Parameter, Parens, Span, Spanned, TypedefDecl, UsingDecl, VarDecl,
     Visibility,
 };
 use crate::parser::{Parser, ParserError};
@@ -64,10 +64,9 @@ impl Parser<'_> {
         }
     }
 
-    /// Parse a `(:Name)`, `(:Name1, :Name2, …)`, or empty `()`/`( /* … */ )`
-    /// annotation at a declaration position. Each entry is a `:Name` pair —
-    /// the parser consumes the colon and identifier separately. In
-    /// expression scope the same bytes parse as a parenthesised symbol
+    /// Parse a `(:Name)`, `(:Name1, :Name2, …)`, or empty `()`/`( /* … */ )` annotation at a
+    /// declaration position. Each entry is a `:Name` pair — the parser consumes the colon and
+    /// identifier separately. In expression scope the same bytes parse as a parenthesised symbol
     /// expression.
     fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
@@ -222,12 +221,10 @@ impl Parser<'_> {
         };
         let (args, args_trailing_comma) = self.parse_function_args()?;
 
-        let mut header_end = args.close;
         let (as_kw_start, returns) = if self.current_token == token::Type::As {
             let ak = self.current_token_start;
             self.next_token_span();
             let ty = self.parse_type()?;
-            header_end = self.prev_token_end;
             (Some(ak), Some(ty))
         } else {
             (None, None)
@@ -247,14 +244,13 @@ impl Parser<'_> {
 
         Ok(Ast::Function(FunctionDecl {
             name,
-            args,
-            args_trailing_comma,
+            parameters: args,
+            parameters_trailing_comma: args_trailing_comma,
             returns,
             as_kw_start,
             body,
             visibility,
             is_static,
-            header_end,
             span: Span { start, end },
         }))
     }
@@ -492,10 +488,10 @@ impl Parser<'_> {
     /// with their parens' source positions.
     pub(crate) fn parse_function_args(
         &mut self,
-    ) -> Result<(Parens<Vec<Variable>>, bool), ParserError> {
+    ) -> Result<(Parens<Vec<Parameter>>, bool), ParserError> {
         let open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
-        let mut args: Vec<Variable> = Vec::new();
+        let mut args: Vec<Parameter> = Vec::new();
         let mut trailing_comma = false;
 
         loop {
@@ -528,7 +524,7 @@ impl Parser<'_> {
                 (None, None)
             };
 
-            let arg = Variable {
+            let arg = Parameter {
                 name,
                 type_,
                 as_kw_start,

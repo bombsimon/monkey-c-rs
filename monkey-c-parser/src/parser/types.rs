@@ -6,8 +6,8 @@ use crate::parser::{Parser, ParserError};
 use crate::token;
 
 impl Parser<'_> {
-    /// Parse a full type including union alternatives (`or` / `|`) and
-    /// nullable `?`. Use this for variable/parameter/return type annotations.
+    /// Parse a full type including union alternatives (`or` / `|`) and nullable `?`. Use this for
+    /// variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type(true)?;
         while matches!(
@@ -25,8 +25,7 @@ impl Parser<'_> {
         Ok(ty)
     }
 
-    /// Like [`parse_type`](Self::parse_type) but for the target type of an
-    /// `as` cast expression.
+    /// Like [`parse_type`](Self::parse_type) but for the target type of an `as` cast expression.
     ///
     /// Two differences from [`parse_type`](Self::parse_type):
     /// - `?` uses lookahead to distinguish a nullable marker (`as T?;`) from a
@@ -61,12 +60,12 @@ impl Parser<'_> {
         )
     }
 
-    /// Parse a single type with optional generic params, optional `?`, and
-    /// no `or` alternatives (which `parse_type` handles).
+    /// Parse a single type with optional generic params, optional `?`, and no `or` alternatives
+    /// (which `parse_type` handles).
     ///
-    /// Generic params are separated by `,` only. `or` inside `<…>` belongs
-    /// to a single param's union (`Array<Number or Null>` → one param whose
-    /// `alternatives` is `[Null]`), not to the param list itself.
+    /// Generic params are separated by `,` only. `or` inside `<…>` belongs to a single param's
+    /// union (`Array<Number or Null>` → one param whose `alternatives` is `[Null]`), not to the
+    /// param list itself.
     pub(crate) fn parse_simple_type(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
         let start = self.current_token_start;
         let kind = if self.current_token == token::Type::LBrace {
@@ -100,10 +99,9 @@ impl Parser<'_> {
             let ident = self.parse_dotted_identifier()?;
 
             if self.current_token == token::Type::LParen {
-                // `Method(arg as T) as Return` — a callable / method-reference
-                // type. The `as Return` part binds to the method type, not to
-                // any outer position (the outer `parse_type` handles unions
-                // afterwards).
+                // `Method(arg as T) as Return` — a callable / method-reference type. The `as
+                // Return` part binds to the method type, not to any outer position (the outer
+                // `parse_type` handles unions afterwards).
                 let (args, _trailing) = self.parse_function_args()?;
                 let returns = if self.current_token == token::Type::As {
                     self.next_token_span();
@@ -144,12 +142,11 @@ impl Parser<'_> {
             }
         };
 
-        // In cast context (`allow_optional = false`) a trailing `?` is ambiguous:
-        // `as T ? a : b` uses `?` as a ternary operator while `as T?;` makes the
-        // type nullable. Peek one token ahead: a ternary `?` must be followed by an
-        // expression, so if the next token is not an expression start the `?` is a
-        // nullable marker. A following `:` is treated as a nullable marker too —
-        // `cond ? expr as T? : fallback` is far more common than a cast directly
+        // In cast context (`allow_optional = false`) a trailing `?` is ambiguous: `as T ? a : b`
+        // uses `?` as a ternary operator while `as T?;` makes the type nullable. Peek one token
+        // ahead: a ternary `?` must be followed by an expression, so if the next token is not an
+        // expression start the `?` is a nullable marker. A following `:` is treated as a nullable
+        // marker too — `cond ? expr as T? : fallback` is far more common than a cast directly
         // followed by a ternary whose branches are symbol literals (`as T ? :a : :b`).
         let peek = self.lexer.peek_token().1;
         let optional = self.current_token == token::Type::Question
@@ -170,10 +167,9 @@ impl Parser<'_> {
         })
     }
 
-    /// Parse the body of an `interface { … }` type — a `{`-delimited list of
-    /// function signatures and/or `var name as Type;` declarations, each
-    /// terminated by `;`. Consumes the surrounding braces and returns the
-    /// members together with the byte span of the body (`{` … `}`).
+    /// Parse the body of an `interface { … }` type — a `{`-delimited list of function signatures
+    /// and/or `var name as Type;` declarations, each terminated by `;`. Consumes the surrounding
+    /// braces and returns the members together with the byte span of the body (`{` … `}`).
     fn parse_interface_members(&mut self) -> Result<(Vec<InterfaceMember>, Span), ParserError> {
         self.assert_next_token(&[token::Type::Interface])?;
         let brace_start = self.current_token_start;
@@ -266,9 +262,8 @@ impl Parser<'_> {
         })
     }
 
-    /// Parse the body of a tuple type `[T1, T2, …]`. Consumes the surrounding
-    /// brackets. Each element is a full type, so `or`-unions inside are
-    /// allowed (`[Number, Number or Null]`).
+    /// Parse the body of a tuple type `[T1, T2, …]`. Consumes the surrounding brackets. Each
+    /// element is a full type, so `or`-unions inside are allowed (`[Number, Number or Null]`).
     fn parse_tuple_type_elements(&mut self) -> Result<Vec<Type>, ParserError> {
         self.assert_next_token(&[token::Type::LBracket])?;
         let mut elements = Vec::new();
@@ -290,9 +285,8 @@ impl Parser<'_> {
         Ok(elements)
     }
 
-    /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`.
-    /// Consumes the surrounding braces. Returns the entries and whether the
-    /// source ended with a trailing comma.
+    /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`. Consumes the
+    /// surrounding braces. Returns the entries and whether the source ended with a trailing comma.
     fn parse_inline_dict_type(&mut self) -> Result<(Vec<DictTypeEntry>, bool), ParserError> {
         self.assert_next_token(&[token::Type::LBrace])?;
         let mut entries = Vec::new();

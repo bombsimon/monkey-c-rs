@@ -27,8 +27,7 @@ impl std::fmt::Display for ParserError {
 
 impl std::error::Error for ParserError {}
 
-/// Output of [`Parser::parse`]. Carries both the AST and the source-order
-/// comment table.
+/// Output of [`Parser::parse`]. Carries both the AST and the source-order comment table.
 #[derive(Debug)]
 pub struct ParseOutput {
     pub ast: Ast,
@@ -37,8 +36,7 @@ pub struct ParseOutput {
 
 /// Recursive-descent parser for Monkey C source text.
 ///
-/// Construct with [`Parser::new`], then call [`Parser::parse`] to produce an
-/// [`Ast::Document`].
+/// Construct with [`Parser::new`], then call [`Parser::parse`] to produce an [`Ast::Document`].
 pub struct Parser<'a> {
     pub(crate) lexer: crate::lexer::Lexer<'a>,
     pub(crate) line_index: LineIndex,
@@ -48,18 +46,16 @@ pub struct Parser<'a> {
     pub(crate) current_token_start: usize,
     /// Byte offset of the end (exclusive) of `current_token`.
     pub(crate) current_token_end: usize,
-    /// Byte offset of the end (exclusive) of the token consumed *before*
-    /// `current_token`. Useful for callers that want "position right after the
-    /// last consumed real token" — e.g. the end of a parsed type's last
-    /// token, used to bound the `BeforeBracket` comment slot on a function
-    /// with a return type.
+    /// Byte offset of the end (exclusive) of the token consumed *before* `current_token`. Useful
+    /// for callers that want "position right after the last consumed real token", e.g. the end of a
+    /// parsed type's last token, used to bound the `BeforeBracket` comment slot on a function with
+    /// a return type.
     pub(crate) prev_token_end: usize,
-    /// Every comment encountered during parsing, in source order. Populated
-    /// at the lexer-parser boundary by `next_token_span` — comments never
-    /// reach `current_token`.
+    /// Every comment encountered during parsing, in source order. Populated at the lexer-parser
+    /// boundary by `next_token_span`, comments never reach `current_token`.
     pub(crate) comment_table: CommentTable,
-    /// Byte length of the source — used to build the synthetic `Ast::Document`
-    /// span so top-level standalone comments can attach as dangling-inside.
+    /// Byte length of the source — used to build the synthetic `Ast::Document` span so top-level
+    /// standalone comments can attach as dangling-inside.
     pub(crate) source_len: usize,
 }
 
@@ -78,14 +74,14 @@ impl<'a> Parser<'a> {
             source_len: source.len(),
         };
 
-        // Prime the first token; comment tokens are auto-drained into the
-        // table by `next_token_span`.
+        // Prime the first token; comment tokens are auto-drained into the table by
+        // `next_token_span`.
         parser.next_token_span();
         parser
     }
 
-    /// Parse a complete source file into an [`Ast::Document`] and the
-    /// [`CommentTable`] of source comments.
+    /// Parse a complete source file into an [`Ast::Document`] and the [`CommentTable`] of source
+    /// comments.
     pub fn parse(mut self) -> Result<ParseOutput, ParserError> {
         let mut nodes = Vec::new();
 
@@ -96,6 +92,7 @@ impl<'a> Parser<'a> {
             if decl == Ast::Eof {
                 break;
             }
+
             nodes.push(decl);
         }
 
@@ -173,10 +170,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Advance past `current_token`, drain any intervening comments into the
-    /// side-table, and update `current_token` to the next non-comment token.
-    /// The grammar code therefore never observes comments — they're invisible
-    /// at the parser/lexer boundary.
+    /// Advance past `current_token`, drain any intervening comments into the side-table, and update
+    /// `current_token` to the next non-comment token. The grammar code therefore never observes
+    /// comments — they're invisible at the parser/lexer boundary.
     pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
         loop {
             let (start, token_type, end) = self.lexer.next_token();
@@ -206,10 +202,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Consume the `>` that closes a generic argument list, splitting a
-    /// greedy `>>` (`RightShift`) token in half so nested generics like
-    /// `Array<List<T>>` close correctly. The remaining `>` becomes the new
-    /// `current_token` for the outer level to consume.
+    /// Consume the `>` that closes a generic argument list, splitting a greedy `>>` (`RightShift`)
+    /// token in half so nested generics like `Array<List<T>>` close correctly. The remaining `>`
+    /// becomes the new `current_token` for the outer level to consume.
     pub(crate) fn consume_generic_close(&mut self) -> Result<(), ParserError> {
         match self.current_token {
             token::Type::Greater => {
@@ -252,8 +247,8 @@ impl<'a> Parser<'a> {
         self.parse_dotted_identifier_continuation(name)
     }
 
-    /// Continue a dotted identifier after its first segment has already been
-    /// consumed, e.g. `self` in `self.classDef_`.
+    /// Continue a dotted identifier after its first segment has already been consumed, e.g. `self`
+    /// in `self.classDef_`.
     pub(crate) fn parse_dotted_identifier_continuation(
         &mut self,
         mut name: String,
@@ -278,9 +273,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Read the current token as a symbol name, accepting both `Identifier`
-    /// and keyword tokens. Keywords are valid symbol names (e.g. `:hidden`,
-    /// `:private`) — the Display text is their canonical string.
+    /// Read the current token as a symbol name, accepting both `Identifier` and keyword tokens.
+    /// Keywords are valid symbol names (e.g. `:hidden`, `:private`) — the Display text is their
+    /// canonical string.
     pub(crate) fn parse_symbol_name(&mut self) -> Result<String, ParserError> {
         let name = match &self.current_token {
             token::Type::Identifier(name) => name.clone(),

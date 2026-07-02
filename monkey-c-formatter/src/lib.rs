@@ -728,7 +728,7 @@ impl Formatter {
         parts.push(self.at(&decl.name));
 
         let items = decl
-            .args
+            .parameters
             .iter()
             .map(|arg| {
                 let mut arg_parts = Vec::new();
@@ -764,7 +764,7 @@ impl Formatter {
             ")",
             items,
             &[],
-            decl.args_trailing_comma,
+            decl.parameters_trailing_comma,
             Doc::Empty,
             false,
         ));
@@ -1775,10 +1775,10 @@ impl Formatter {
                     .unwrap_or(Doc::Empty);
 
                 let mut parts = vec![Doc::text("for ("), init_doc];
-                self.push_before_semi(&mut parts, s.first_semi);
+                self.push_before_semi(&mut parts, s.header.inner.first_semi);
                 parts.push(Doc::text(" "));
                 parts.push(cond_doc);
-                self.push_before_semi(&mut parts, s.second_semi);
+                self.push_before_semi(&mut parts, s.header.inner.second_semi);
                 parts.push(Doc::text(" "));
                 parts.push(update_doc);
 
@@ -1915,7 +1915,7 @@ impl Formatter {
                 ]),
             },
             Expr::Ternary(e) => Doc::Group(vec![
-                self.expr_with_leading(&e.cond),
+                self.expr_with_leading(&e.condition),
                 Doc::Indent(vec![
                     Doc::Line,
                     Doc::text("? "),

@@ -497,7 +497,7 @@ fn test_ternary_no_whitespace() {
         let Expr::Ternary(e) = parse_expr(src) else {
             panic!("`{src}`: expected Ternary");
         };
-        assert!(matches!(*e.cond, Expr::Ident(_)));
+        assert!(matches!(*e.condition, Expr::Ident(_)));
         assert!(matches!(*e.then_expr, Expr::Ident(_)));
         assert!(matches!(*e.else_expr, Expr::Ident(_)));
     }

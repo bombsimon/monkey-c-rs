@@ -1,4 +1,7 @@
 /// A binary (two-operand) operator.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#operator-precedence>
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#instanceof-and-has>
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOperator {
     Add,        // +
@@ -26,10 +29,9 @@ pub enum BinaryOperator {
 }
 
 impl BinaryOperator {
-    /// Relative binding strength — higher binds tighter. Mirrors the
-    /// precedence ladder encoded by the parser's call structure in
-    /// `parser/expr.rs` (`parse_logical_or` down to `parse_factor`); every
-    /// level is left-associative.
+    /// Relative binding strength (higher binds tighter).
+    ///
+    /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#operator-precedence>
     pub fn precedence(&self) -> u8 {
         match self {
             BinaryOperator::Or | BinaryOperator::OrKeyword => 1,
@@ -52,6 +54,8 @@ impl BinaryOperator {
 }
 
 /// A unary (single-operand) operator.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#arithmetic-operators>
 #[derive(Debug, PartialEq)]
 pub enum UnaryOperator {
     Pos,         // +
@@ -66,6 +70,8 @@ pub enum UnaryOperator {
 }
 
 /// A compound assignment operator.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#assignment-operators>
 #[derive(Debug, PartialEq)]
 pub enum AssignOperator {
     Assign,           // =

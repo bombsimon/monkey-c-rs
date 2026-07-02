@@ -105,7 +105,7 @@ fn is_pure(expr: &Expr) -> bool {
                     | UnaryOperator::PostDec,
             ) && is_pure(&u.operand)
         }
-        Expr::Ternary(t) => is_pure(&t.cond) && is_pure(&t.then_expr) && is_pure(&t.else_expr),
+        Expr::Ternary(t) => is_pure(&t.condition) && is_pure(&t.then_expr) && is_pure(&t.else_expr),
         Expr::TypeCast(t) => is_pure(&t.expr),
         Expr::Call(_)
         | Expr::New(_)
@@ -151,7 +151,7 @@ fn same_pure_expr(a: &Expr, b: &Expr) -> bool {
             x.operator == y.operator && same_pure_expr(&x.operand, &y.operand)
         }
         (Expr::Ternary(x), Expr::Ternary(y)) => {
-            same_pure_expr(&x.cond, &y.cond)
+            same_pure_expr(&x.condition, &y.condition)
                 && same_pure_expr(&x.then_expr, &y.then_expr)
                 && same_pure_expr(&x.else_expr, &y.else_expr)
         }

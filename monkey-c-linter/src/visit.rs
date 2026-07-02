@@ -140,7 +140,7 @@ fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         Ast::Function(decl) => {
-            for arg in &decl.args.inner {
+            for arg in &decl.parameters.inner {
                 if let Some(t) = &arg.type_ {
                     walk_type(t, ctx, diags);
                 }
@@ -396,7 +396,7 @@ fn walk_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext, diags: &mut Vec<
         }
         Expr::Unary(u) => walk_expr(&u.operand, ExprPosition::UnaryOperand, ctx, diags),
         Expr::Ternary(t) => {
-            walk_expr(&t.cond, ExprPosition::Condition, ctx, diags);
+            walk_expr(&t.condition, ExprPosition::Condition, ctx, diags);
             walk_expr(&t.then_expr, ExprPosition::Other, ctx, diags);
             walk_expr(&t.else_expr, ExprPosition::Other, ctx, diags);
         }

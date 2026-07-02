@@ -61,9 +61,8 @@ impl Parser<'_> {
         }
     }
 
-    /// Parse a ternary `cond ? then : else`. Right-associative: the `else`
-    /// branch is itself a ternary so `a ? b : c ? d : e` becomes
-    /// `a ? b : (c ? d : e)`.
+    /// Parse a ternary `cond ? then : else`. Right-associative: the `else` branch is itself a
+    /// ternary so `a ? b : c ? d : e` becomes `a ? b : (c ? d : e)`.
     fn parse_ternary(&mut self) -> Result<Expr, ParserError> {
         let cond = self.parse_logical_or()?;
         if self.current_token != token::Type::Question {
@@ -78,7 +77,7 @@ impl Parser<'_> {
         let end = else_expr.span().end;
 
         Ok(Expr::Ternary(TernaryExpr {
-            cond: Box::new(cond),
+            condition: Box::new(cond),
             then_expr: Box::new(then_expr),
             else_expr: Box::new(else_expr),
             span: Span { start, end },
@@ -238,10 +237,9 @@ impl Parser<'_> {
         )
     }
 
-    /// Build a left-associative chain at one precedence level: keeps folding
-    /// `<left> <op> <right>` while the current token is in `operators`. The
-    /// right-hand side is parsed by `parse_operand` — typically the parser
-    /// for the next-tighter precedence level. Passing the same-level parser
+    /// Build a left-associative chain at one precedence level: keeps folding `<left> <op> <right>`
+    /// while the current token is in `operators`. The right-hand side is parsed by `parse_operand`
+    /// — typically the parser for the next-tighter precedence level. Passing the same-level parser
     /// would yield right-associative parsing.
     fn handle_binary_operator(
         &mut self,
@@ -648,9 +646,9 @@ impl Parser<'_> {
                     return self.parse_new_array(start, None);
                 }
 
-                // Type follows. Could be `new Foo.Bar(...)`, `new Array<T>[size]`,
-                // or `new self.classDef_(...)` — instantiating via a
-                // `Lang.Class` reference stored on `self`/`me`.
+                // Type follows. Could be `new Foo.Bar(...)`, `new Array<T>[size]`, or `new
+                // self.classDef_(...)` — instantiating via a `Lang.Class` reference stored on
+                // `self`/`me`.
                 let class_start = self.current_token_start;
                 let class = if matches!(self.current_token, token::Type::Self_ | token::Type::Me) {
                     let name = self.current_token.to_string();
@@ -722,10 +720,9 @@ impl Parser<'_> {
         }
     }
 
-    /// Parse a comma-separated list of call arguments, including trailing
-    /// comments after each value. Returns `(args, tail_comments)` where
-    /// `tail_comments` is non-empty only when `args` is empty. Does not
-    /// consume the closing delimiter.
+    /// Parse a comma-separated list of call arguments, including trailing comments after each
+    /// value. Returns `(args, tail_comments)` where `tail_comments` is non-empty only when `args`
+    /// is empty. Does not consume the closing delimiter.
     pub(crate) fn parse_call_args(
         &mut self,
         close: token::Type,
@@ -760,10 +757,9 @@ impl Parser<'_> {
         Ok((args, trailing_comma))
     }
 
-    /// Parse the body of an array literal. The opening `[` has already been
-    /// consumed; the closing `]` is left for the caller. Comments are entirely
-    /// ignored — they live in the comment table and attach to entries (or to
-    /// the array span as dangling-inside) via `attach_comments`.
+    /// Parse the body of an array literal. The opening `[` has already been consumed; the closing
+    /// `]` is left for the caller. Comments are entirely ignored — they live in the comment table
+    /// and attach to entries (or to the array span as dangling-inside) via `attach_comments`.
     fn parse_array_entries(&mut self) -> Result<(Vec<ArrayEntry>, bool), ParserError> {
         let mut entries: Vec<ArrayEntry> = Vec::new();
         let mut trailing_comma = false;
@@ -796,9 +792,9 @@ impl Parser<'_> {
         Ok((entries, trailing_comma))
     }
 
-    /// Parse the body of a dict literal. The opening `{` has already been
-    /// consumed; the closing `}` is left for the caller. Comments are ignored
-    /// for the same reason as in [`parse_array_entries`](Self::parse_array_entries).
+    /// Parse the body of a dict literal. The opening `{` has already been consumed; the closing `}`
+    /// is left for the caller. Comments are ignored for the same reason as in
+    /// [`parse_array_entries`](Self::parse_array_entries).
     fn parse_dict_entries(&mut self) -> Result<(Vec<DictEntry>, bool), ParserError> {
         let mut entries: Vec<DictEntry> = Vec::new();
         let mut trailing_comma = false;
@@ -808,9 +804,9 @@ impl Parser<'_> {
                 break;
             }
 
-            // Key-value entry. Keys may be a symbol/string literal, a
-            // variable-like reference (`x`, `Module.CONST`), or an arbitrary
-            // expression (e.g. `Activity.SPORT_GENERIC * 1000 + ...`).
+            // Key-value entry. Keys may be a symbol/string literal, a variable-like reference (`x`,
+            // `Module.CONST`), or an arbitrary expression (e.g. `Activity.SPORT_GENERIC * 1000 +
+            // ...`).
             let key = self.parse_expression()?;
             self.assert_next_token(&[token::Type::FatArrow])?;
             let value = self.parse_expression()?;
@@ -837,8 +833,8 @@ impl Parser<'_> {
         Ok((entries, trailing_comma))
     }
 
-    /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new`
-    /// (and optional type) has already been consumed by the caller.
+    /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new` (and optional type) has
+    /// already been consumed by the caller.
     fn parse_new_array(
         &mut self,
         start: usize,
@@ -866,10 +862,9 @@ impl Parser<'_> {
         }))
     }
 
-    /// Parse a generic parameter list `<T, U, ...>` and return the params.
-    /// The leading `<` is the current token on entry. Each param may be a
-    /// union (`A or B`), in which case the union lives in that param's
-    /// `alternatives` field — `or` is not a param separator.
+    /// Parse a generic parameter list `<T, U, ...>` and return the params. The leading `<` is the
+    /// current token on entry. Each param may be a union (`A or B`), in which case the union lives
+    /// in that param's `alternatives` field — `or` is not a param separator.
     fn parse_generic_params(&mut self) -> Result<Vec<Type>, ParserError> {
         self.next_token_span(); // consume `<`
         let mut params = Vec::new();

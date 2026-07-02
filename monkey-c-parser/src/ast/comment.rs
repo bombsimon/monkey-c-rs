@@ -3,6 +3,8 @@ use crate::ast::Span;
 /// A source comment, either a `// …` line comment or a `/* … */` block
 /// comment. `is_block` is the distinction; the stored `text` is the raw
 /// content between the comment delimiters.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#comments>
 #[derive(Debug, PartialEq, Clone)]
 pub struct CommentStmt {
     pub text: String,

@@ -20,12 +20,16 @@ pub enum Stmt {
     Expr(Expr),
 }
 
+/// A block is code between an opening `{` and a closing `}`.
 #[derive(Debug, PartialEq)]
 pub struct BlockStmt {
     pub stmts: Vec<Stmt>,
     pub span: Span,
 }
 
+/// If statement with potential `else if` and `else` chains.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#if-statements>
 #[derive(Debug, PartialEq)]
 pub struct IfStmt {
     pub condition: Parens<Expr>,
@@ -35,8 +39,8 @@ pub struct IfStmt {
     pub span: Span,
 }
 
-/// The branch following an `else` keyword — either a plain block or another
-/// `if` statement (i.e. `else if`).
+/// The branch following an `else` keyword, either a plain block or another `if` statement (i.e.
+/// `else if`).
 #[derive(Debug, PartialEq)]
 pub enum ElseBranch {
     Block(BlockStmt),
@@ -52,6 +56,9 @@ impl ElseBranch {
     }
 }
 
+/// While statement, e.g. `while (cond) { ... }`.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#loops>
 #[derive(Debug, PartialEq)]
 pub struct WhileStmt {
     pub condition: Parens<Expr>,
@@ -59,40 +66,51 @@ pub struct WhileStmt {
     pub span: Span,
 }
 
+/// A `do { ... } while (cond)` statement.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#loops>
 #[derive(Debug, PartialEq)]
 pub struct DoWhileStmt {
     pub body: BlockStmt,
     pub condition: Expr,
-    /// Used by the comment-attachment pass to recognise comments in the `do /* C */ {` slot.
-    pub header_end: Position,
     pub span: Span,
 }
 
-/// The init clause of a `for` loop — either a `var` declaration or one or
-/// more comma-separated expressions (`for (i = 0, j = 1; ...; ...)`).
+/// The init clause of a `for` loop, either a `var` declaration or one or more comma-separated
+/// expressions (`for (i = 0, j = 1; ...; ...)`).
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#loops>
 #[derive(Debug, PartialEq)]
 pub enum ForInit {
     Var(VarDecl),
     Expr(Vec<Expr>),
 }
 
-/// The `(init; cond; update)` triple of a `for` loop.
+/// The `(init; cond; update)` triple of a `for` loop. `first_semi` and `second_semi` are the byte
+/// offsets of the two `;` delimiters, ordered here as they appear in source: `init ; cond ;
+/// update`.
 #[derive(Debug, PartialEq)]
 pub struct ForHeader {
     pub init: Option<ForInit>,
+    pub first_semi: Position,
     pub condition: Option<Expr>,
+    pub second_semi: Position,
     pub update: Option<Vec<Expr>>,
 }
 
+/// A for loop statement containing the header and block body.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#loops>
 #[derive(Debug, PartialEq)]
 pub struct ForStmt {
     pub header: Parens<ForHeader>,
     pub body: BlockStmt,
-    pub first_semi: Position,
-    pub second_semi: Position,
     pub span: Span,
 }
 
+/// A return statement.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#returning-values-from-functions>
 #[derive(Debug, PartialEq)]
 pub struct ReturnStmt {
     pub value: Option<Expr>,
@@ -100,8 +118,10 @@ pub struct ReturnStmt {
     pub span: Span,
 }
 
-/// A `switch (discriminant) { … }` statement. `cases` preserves source order,
-/// including any `default` arm.
+/// A `switch (discriminant) { … }` statement. `cases` preserves source order, including any
+/// `default` arm.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#switch-case-statements>
 #[derive(Debug, PartialEq)]
 pub struct SwitchStmt {
     pub discriminant: Parens<Expr>,
@@ -117,10 +137,7 @@ pub struct SwitchCase {
     /// Statements until the next `case`/`default` or the closing `}`.
     /// Empty when the case immediately falls through to the next.
     pub stmts: Vec<Stmt>,
-    /// Span from `case`/`default` through the `:`. Used by the comment
-    /// attachment pass as the anchor for trailing comments that sit on the
-    /// same source line as `case X:` so they don't accidentally attach to
-    /// the inner `X` and render before the colon.
+    /// Span from `case`/`default` through the `:`.
     pub label_span: Span,
     pub span: Span,
 }
@@ -128,22 +145,22 @@ pub struct SwitchCase {
 /// What a `case` (or `default`) arm matches against.
 #[derive(Debug, PartialEq)]
 pub enum CaseLabel {
-    /// `case <expr>:` — equality match against the discriminant.
+    /// `case <expr>:` equality match against the discriminant.
     Value(Expr),
-    /// `case instanceof <Type>:` — type match.
+    /// `case instanceof <Type>:` type match.
     InstanceOf(Type),
-    /// `default:` — fall-through fallback.
+    /// `default:` fall-through fallback.
     Default,
 }
 
 /// A `try` statement: `try { … } catch (…) { … }` with optional `finally`.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#exception-handling>
 #[derive(Debug, PartialEq)]
 pub struct TryStmt {
     pub body: BlockStmt,
     pub catches: Vec<CatchClause>,
     pub finally: Option<BlockStmt>,
-    /// Used by the comment-attachment pass to recognise comments in the `try /* C */ {` slot.
-    pub header_end: Position,
     pub span: Span,
 }
 
@@ -158,6 +175,8 @@ pub struct CatchClause {
 }
 
 /// A `throw <expr>;` statement.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#exception-handling>
 #[derive(Debug, PartialEq)]
 pub struct ThrowStmt {
     pub value: Expr,

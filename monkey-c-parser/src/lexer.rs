@@ -62,16 +62,15 @@ impl<'a> Lexer<'a> {
 
     fn skip_whitespace(&mut self) {
         loop {
-            // `monkeyc` tolerates stray C0 control characters between tokens
-            // (e.g. a leftover `DC3` byte before a `{`). `0x00` is excluded
-            // since it's this lexer's EOF sentinel. It also ignores stray
-            // backticks, which some editors insert next to identifiers.
+            // `monkeyc` tolerates stray C0 control characters between tokens (e.g. a leftover `DC3`
+            // byte before a `{`). `0x00` is excluded since it's this lexer's EOF sentinel. It also
+            // ignores stray backticks, which some editors insert next to identifiers.
             if self.ch.is_ascii_whitespace() || (self.ch != 0 && self.ch < 0x20) || self.ch == b'`'
             {
                 self.read_char();
             } else if self.ch == b'\\' && self.peek_char() == b'\n' {
-                // Line continuation: `\` immediately followed by a newline
-                // lets an expression span multiple lines.
+                // Line continuation: `\` immediately followed by a newline lets an expression span
+                // multiple lines.
                 self.read_n_chars(2);
             } else {
                 break;
@@ -130,9 +129,8 @@ impl<'a> Lexer<'a> {
             if self.ch.is_ascii_digit() {
                 self.read_char();
             } else if self.ch == b'.' && !has_dot && self.peek_char().is_ascii_digit() {
-                // A `.` only belongs to the number if followed by a digit;
-                // otherwise it's a member access on an integer literal, e.g.
-                // `0.toFloat()`.
+                // A `.` only belongs to the number if followed by a digit; otherwise it's a member
+                // access on an integer literal, e.g. `0.toFloat()`.
                 has_dot = true;
                 self.read_char();
             } else {
@@ -142,8 +140,8 @@ impl<'a> Lexer<'a> {
 
         let digits_end = self.position;
 
-        // Scientific notation exponent: e.g. `e3`, `E-2`, `e+10`.
-        // Only consume it when at least one digit follows the optional sign.
+        // Scientific notation exponent: e.g. `e3`, `E-2`, `e+10`. Only consume it when at least one
+        // digit follows the optional sign.
         let exponent = if matches!(self.ch, b'e' | b'E') {
             let next = self.peek_char();
             let has_exp_digits = next.is_ascii_digit()
@@ -214,16 +212,14 @@ impl<'a> Lexer<'a> {
         self.read_quoted(b'\'')
     }
 
-    /// Read a quoted literal's content up to (but not consuming) the closing
-    /// `quote`, then consume the quote. The returned slice is the raw source
-    /// text with escape sequences left intact — decoding is intentionally not
-    /// done here, so the formatter can re-emit the literal exactly as written
-    /// (`\x41`, `A`, `\b` etc. survive verbatim instead of being lost).
+    /// Read a quoted literal's content up to (but not consuming) the closing `quote`, then consume
+    /// the quote. The returned slice is the raw source text with escape sequences left intact —
+    /// decoding is intentionally not done here, so the formatter can re-emit the literal exactly as
+    /// written (`\x41`, `A`, `\b` etc. survive verbatim instead of being lost).
     ///
-    /// A backslash escapes the next byte so an escaped quote (`\"`) does not
-    /// terminate the literal. Slicing is byte-based but always lands on a
-    /// `char` boundary: the loop only stops on ASCII bytes, and UTF-8
-    /// continuation bytes (>= 0x80) never match them.
+    /// A backslash escapes the next byte so an escaped quote (`\"`) does not terminate the literal.
+    /// Slicing is byte-based but always lands on a `char` boundary: the loop only stops on ASCII
+    /// bytes, and UTF-8 continuation bytes (>= 0x80) never match them.
     fn read_quoted(&mut self, quote: u8) -> String {
         let start = self.position;
 
@@ -283,8 +279,8 @@ impl<'a> Lexer<'a> {
         .next_token()
     }
 
-    /// Like [`peek_token`](Self::peek_token), but skips over any comments
-    /// between the current token and the next significant one.
+    /// Like [`peek_token`](Self::peek_token), but skips over any comments between the current token
+    /// and the next significant one.
     pub fn peek_token_skip_comments(&self) -> (usize, token::Type, usize) {
         let mut lexer = Self {
             input: self.input,

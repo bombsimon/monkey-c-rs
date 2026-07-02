@@ -213,10 +213,13 @@ fn test_const_multiple_bindings() {
 #[test]
 fn test_function_signature() {
     let f = first_function("function foo(a as Number, b as String) {}");
-    assert_eq!(f.args.len(), 2);
-    assert_eq!(f.args[0].name.node, "a");
-    assert_eq!(f.args[0].type_.as_ref().unwrap().ident().unwrap(), "Number");
-    assert_eq!(f.args[1].name.node, "b");
+    assert_eq!(f.parameters.len(), 2);
+    assert_eq!(f.parameters[0].name.node, "a");
+    assert_eq!(
+        f.parameters[0].type_.as_ref().unwrap().ident().unwrap(),
+        "Number"
+    );
+    assert_eq!(f.parameters[1].name.node, "b");
 
     let f = first_function("function foo() as Void {}");
     assert_eq!(f.returns.unwrap().ident().unwrap(), "Void");
@@ -842,7 +845,7 @@ fn test_cast_then_ternary() {
 
         // The condition must be a type cast (possibly wrapped in parens for the
         // recommended `(expr as T?) ? …` style).
-        let cond = t.cond.as_ref();
+        let cond = t.condition.as_ref();
         let is_cast = matches!(cond, Expr::TypeCast(_))
             || matches!(cond, Expr::Paren(inner) if matches!(inner.inner.as_ref(), Expr::TypeCast(_)));
 

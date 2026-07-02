@@ -4,6 +4,8 @@
 /// is unnecessary for re-emitting it); flags capture which surface form the
 /// user wrote so the formatter can re-emit the same shape (`0f`, `0.5`,
 /// `0.5f`, `.978`, `.5f`, `6371e3`).
+///
+/// <https://developer.garmin.com/connect-iq/api-docs/Toybox/Lang/Float.html>
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatLit {
     /// The digits as written in source, before any exponent or `f`/`F`
@@ -24,6 +26,8 @@ pub struct FloatLit {
 
 /// A 64-bit floating point literal. Unlike [`FloatLit`], the `d` suffix is
 /// always required in source, so there is no `has_suffix` flag.
+///
+/// <https://developer.garmin.com/connect-iq/api-docs/Toybox/Lang/Double.html>
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoubleLit {
     /// The digits as written in source, before any exponent or `d`/`D`
@@ -62,6 +66,8 @@ impl std::fmt::Display for DoubleLit {
 }
 
 /// A compile-time constant value.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#data-types>
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
     /// 32-bit signed integer (no suffix in source). Stores the raw digits

@@ -16,8 +16,8 @@
   - `return` statements should preceed with a newline
   - Final statement/returning values should be separated by a newline
   - A newline should be added after all block (`{}`)
-- Keep happy path to the left and use early returns when possible. Prefer `if
-let .. else {}` pattern where sensible
+- Keep happy path to the left and use early returns when possible.
+  Prefer `if let .. else {}` pattern where sensible
 
 ## Code
 
@@ -42,3 +42,4 @@ let .. else {}` pattern where sensible
   of date or out of sync with what the code does
 - Avoid code separation comments, just group logical units. If it grows to big,
   split over separate files or modules.
+- Comments wrap at 100 columns
