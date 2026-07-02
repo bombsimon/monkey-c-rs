@@ -6,7 +6,7 @@
 //! column unless the conversion counts UTF-16 units. [`PositionMapper`] does that conversion in
 //! both directions off a single precomputed line table.
 
-use lsp_types::{Position, Range};
+use gen_lsp_types::{Position, Range};
 use monkey_c_parser::ast::Span;
 
 /// Maps byte offsets to/from LSP `(line, utf-16 character)` positions for one source document.

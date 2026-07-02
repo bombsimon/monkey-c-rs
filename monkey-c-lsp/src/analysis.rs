@@ -1,6 +1,6 @@
 //! Bridges the parser/linter/formatter to LSP results for a single document.
 
-use lsp_types::{Diagnostic, DiagnosticSeverity, NumberOrString};
+use gen_lsp_types::{Code, Diagnostic, DiagnosticSeverity};
 use monkey_c_formatter::Formatter;
 use monkey_c_linter::lint;
 use monkey_c_parser::ast::Span;
@@ -21,9 +21,9 @@ pub fn diagnostics(text: &str) -> Vec<Diagnostic> {
                 start: error.span.start,
                 end: error.span.end,
             }),
-            severity: Some(DiagnosticSeverity::ERROR),
+            severity: Some(DiagnosticSeverity::Error),
             source: Some(SOURCE.to_string()),
-            message: error.message,
+            message: error.message.into(),
             ..Default::default()
         }],
         Ok(output) => lint(&output, text)
@@ -52,10 +52,10 @@ pub fn lint_diagnostic(
 ) -> Diagnostic {
     Diagnostic {
         range: mapper.range(finding.span),
-        severity: Some(DiagnosticSeverity::WARNING),
-        code: Some(NumberOrString::String(finding.rule.to_string())),
+        severity: Some(DiagnosticSeverity::Warning),
+        code: Some(Code::String(finding.rule.to_string())),
         source: Some(SOURCE.to_string()),
-        message: finding.message.clone(),
+        message: finding.message.clone().into(),
         ..Default::default()
     }
 }

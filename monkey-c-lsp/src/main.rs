@@ -1,12 +1,14 @@
-//! A Language Server for Monkey C, exposing the workspace's parser, linter, and formatter over LSP.
+//! A Language Server for Monkey C, exposing the workspace's parser, linter, and
+//! formatter over LSP.
 //!
-//! The server keeps the full text of every open document in memory (full-sync) and re-analyses on
-//! open/change, publishing diagnostics. It answers `textDocument/formatting` by re-rendering the
-//! document through the formatter.
+//! The server keeps the full text of every open document in memory (full-sync)
+//! and re-analyses on open/change, publishing diagnostics. It answers
+//! `textDocument/formatting` by re-rendering through the formatter and
+//! `textDocument/codeAction` with the linter's fixes.
 
-// `lsp_types::Uri` carries an internal lazy-parse cache (interior mutability) that doesn't affect
-// its `Hash`/`Eq`, so it is a safe `HashMap` key despite `clippy::mutable_key_type` flagging every
-// map that uses it.
+// `gen_lsp_types::Uri` carries an internal lazy-parse cache (interior
+// mutability) that doesn't affect its `Hash`/`Eq`, so it is a safe `HashMap`
+// key despite `clippy::mutable_key_type` flagging every map that uses it.
 #![allow(clippy::mutable_key_type)]
 
 mod analysis;
@@ -15,18 +17,17 @@ mod position;
 use std::collections::HashMap;
 use std::error::Error;
 
-use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId, Response};
-use lsp_types::notification::{
-    DidChangeTextDocument, DidCloseTextDocument, DidOpenTextDocument, Notification as _,
-    PublishDiagnostics,
+use gen_lsp_types::{
+    CodeAction, CodeActionKind, CodeActionOptions, CodeActionParams, CodeActionProvider,
+    CodeActionRequest, CodeActionResponse, Diagnostic, DidChangeTextDocumentNotification,
+    DidCloseTextDocumentNotification, DidCloseTextDocumentParams, DidOpenTextDocumentNotification,
+    DocumentFormattingParams, DocumentFormattingProvider, DocumentFormattingRequest,
+    LspNotificationMethod, LspRequestMethod, Notification as _, Position,
+    PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Request as _,
+    ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentSync, TextDocumentSyncKind,
+    TextEdit, Uri, WorkspaceEdit,
 };
-use lsp_types::request::{CodeActionRequest, Formatting};
-use lsp_types::{
-    CodeAction, CodeActionKind, CodeActionOptions, CodeActionOrCommand, CodeActionParams,
-    CodeActionProviderCapability, DidCloseTextDocumentParams, DocumentFormattingParams, OneOf,
-    Position, PublishDiagnosticsParams, Range, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextEdit, Uri, WorkspaceEdit,
-};
+use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 
 use crate::position::PositionMapper;
 
@@ -37,13 +38,10 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     let (connection, io_threads) = Connection::stdio();
 
     let capabilities = serde_json::to_value(ServerCapabilities {
-        text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-        document_formatting_provider: Some(OneOf::Left(true)),
-        code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
-            code_action_kinds: Some(vec![
-                CodeActionKind::QUICKFIX,
-                CodeActionKind::SOURCE_FIX_ALL,
-            ]),
+        text_document_sync: Some(TextDocumentSync::Kind(TextDocumentSyncKind::Full)),
+        document_formatting_provider: Some(DocumentFormattingProvider::Bool(true)),
+        code_action_provider: Some(CodeActionProvider::CodeActionOptions(CodeActionOptions {
+            code_action_kinds: Some(vec![CodeActionKind::QuickFix, CodeActionKind::SourceFixAll]),
             ..Default::default()
         })),
         ..Default::default()
@@ -52,8 +50,8 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     let _init_params = connection.initialize(capabilities)?;
     run(&connection)?;
 
-    // `connection` must be dropped before joining: its `sender` keeps the writer thread's channel
-    // open, so `join` would otherwise block forever.
+    // `connection` must be dropped before joining: its `sender` keeps the writer
+    // thread's channel open, so `join` would otherwise block forever.
     drop(connection);
     io_threads.join()?;
 
@@ -87,27 +85,22 @@ fn handle_request(
     documents: &Documents,
     request: Request,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let request = match cast_request::<Formatting>(request) {
-        Ok((id, params)) => {
-            let edits = format(documents, &params);
-            respond(connection, id, serde_json::to_value(edits)?)?;
-            return Ok(());
-        }
-        Err(request) => request,
-    };
+    let id = request.id.clone();
+    let method = LspRequestMethod::from(request.method.as_str());
 
-    let request = match cast_request::<CodeActionRequest>(request) {
-        Ok((id, params)) => {
-            let actions = code_actions(documents, &params);
-            respond(connection, id, serde_json::to_value(actions)?)?;
-            return Ok(());
-        }
-        Err(request) => request,
-    };
-
-    // Unknown request: reply with an empty success so the client isn't left waiting. Specific
-    // method handling is added per request type above.
-    respond(connection, request.id, serde_json::Value::Null)?;
+    if method == DocumentFormattingRequest::METHOD {
+        let params: DocumentFormattingParams = serde_json::from_value(request.params)?;
+        let edits = format(documents, &params);
+        respond(connection, id, serde_json::to_value(edits)?)?;
+    } else if method == CodeActionRequest::METHOD {
+        let params: CodeActionParams = serde_json::from_value(request.params)?;
+        let actions = code_actions(documents, &params);
+        respond(connection, id, serde_json::to_value(actions)?)?;
+    } else {
+        // Unknown request: reply with an empty success so the client isn't left
+        // waiting. Specific method handling is added above.
+        respond(connection, id, serde_json::Value::Null)?;
+    }
 
     Ok(())
 }
@@ -117,37 +110,40 @@ fn handle_notification(
     documents: &mut Documents,
     notification: Notification,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let notification = match cast_notification::<DidOpenTextDocument>(notification) {
-        Ok(params) => {
-            let uri = params.text_document.uri;
-            documents.insert(uri.clone(), params.text_document.text);
+    let method = LspNotificationMethod::from(notification.method.as_str());
+
+    if method == DidOpenTextDocumentNotification::METHOD {
+        let params: gen_lsp_types::DidOpenTextDocumentParams =
+            serde_json::from_value(notification.params)?;
+        let uri = params.text_document.uri;
+        documents.insert(uri.clone(), params.text_document.text);
+        publish(connection, documents, &uri)?;
+    } else if method == DidChangeTextDocumentNotification::METHOD {
+        let params: gen_lsp_types::DidChangeTextDocumentParams =
+            serde_json::from_value(notification.params)?;
+        // Full sync: the last change carries the whole new text.
+        if let Some(change) = params.content_changes.into_iter().next_back() {
+            let uri = params.text_document.text_document_identifier.uri;
+            documents.insert(uri.clone(), content_change_text(change));
             publish(connection, documents, &uri)?;
-            return Ok(());
         }
-        Err(notification) => notification,
-    };
-
-    let notification = match cast_notification::<DidChangeTextDocument>(notification) {
-        Ok(params) => {
-            // Full sync: the last change carries the whole new text.
-            if let Some(change) = params.content_changes.into_iter().next_back() {
-                let uri = params.text_document.uri;
-                documents.insert(uri.clone(), change.text);
-                publish(connection, documents, &uri)?;
-            }
-            return Ok(());
-        }
-        Err(notification) => notification,
-    };
-
-    if let Ok(params) = cast_notification::<DidCloseTextDocument>(notification) {
-        let DidCloseTextDocumentParams { text_document } = params;
-        documents.remove(&text_document.uri);
+    } else if method == DidCloseTextDocumentNotification::METHOD {
+        let params: DidCloseTextDocumentParams = serde_json::from_value(notification.params)?;
+        documents.remove(&params.text_document.uri);
         // Clear diagnostics for the now-closed document.
-        send_diagnostics(connection, text_document.uri, Vec::new())?;
+        send_diagnostics(connection, params.text_document.uri, Vec::new())?;
     }
 
     Ok(())
+}
+
+/// The new full text carried by a content change. With full sync the client
+/// always sends the whole document, but both shapes are handled.
+fn content_change_text(change: TextDocumentContentChangeEvent) -> String {
+    match change {
+        TextDocumentContentChangeEvent::TextDocumentContentChangeWholeDocument(whole) => whole.text,
+        TextDocumentContentChangeEvent::TextDocumentContentChangePartial(partial) => partial.text,
+    }
 }
 
 /// Analyse the document at `uri` and publish its diagnostics.
@@ -167,24 +163,24 @@ fn publish(
 fn send_diagnostics(
     connection: &Connection,
     uri: Uri,
-    diagnostics: Vec<lsp_types::Diagnostic>,
+    diagnostics: Vec<Diagnostic>,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let params = PublishDiagnosticsParams {
         uri,
         diagnostics,
         version: None,
     };
-    connection.sender.send(Message::Notification(Notification {
-        method: PublishDiagnostics::METHOD.to_string(),
-        params: serde_json::to_value(params)?,
-    }))?;
+    let notification = Notification::new(PublishDiagnosticsNotification::METHOD.into(), params);
+    connection
+        .sender
+        .send(Message::Notification(notification))?;
 
     Ok(())
 }
 
-/// The formatting edits for a document: a single edit replacing the whole document with its
-/// formatted text. Returns no edits when the document is unknown, doesn't parse, or is already
-/// formatted.
+/// The formatting edits for a document: a single edit replacing the whole
+/// document with its formatted text. Returns no edits when the document is
+/// unknown, doesn't parse, or is already formatted.
 fn format(documents: &Documents, params: &DocumentFormattingParams) -> Vec<TextEdit> {
     let uri = &params.text_document.uri;
     let Some(text) = documents.get(uri) else {
@@ -209,13 +205,14 @@ fn format(documents: &Documents, params: &DocumentFormattingParams) -> Vec<TextE
     }]
 }
 
-/// Code actions for a document. Offers, subject to the client's `context.only` filter:
+/// Code actions for a document. Offers, subject to the client's `context.only`
+/// filter:
 ///
-/// - one `quickfix` per fixable lint finding overlapping the requested range, each carrying just
-///   that finding's fix and the diagnostic it resolves; and
-/// - a single `source.fixAll` action bundling every fixable finding, which an editor can run on
-///   save to apply all lint fixes at once.
-fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeActionOrCommand> {
+/// - one `quickfix` per fixable lint finding overlapping the requested range,
+///   each carrying just that finding's fix and the diagnostic it resolves; and
+/// - a single `source.fixAll` action bundling every fixable finding, which an
+///   editor can run on save to apply all lint fixes at once.
+fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeActionResponse> {
     let uri = &params.text_document.uri;
     let Some(text) = documents.get(uri) else {
         return Vec::new();
@@ -226,7 +223,7 @@ fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeAct
     let findings = analysis::lints(text);
     let mut actions = Vec::new();
 
-    if kind_permitted(only, &CodeActionKind::QUICKFIX) {
+    if kind_permitted(only, &CodeActionKind::QuickFix) {
         for finding in &findings {
             let Some(fix) = &finding.fix else {
                 continue;
@@ -244,9 +241,9 @@ fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeAct
                 })
                 .collect();
 
-            actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+            actions.push(CodeActionResponse::CodeAction(CodeAction {
                 title: format!("Fix: {}", finding.message),
-                kind: Some(CodeActionKind::QUICKFIX),
+                kind: Some(CodeActionKind::QuickFix),
                 diagnostics: Some(vec![analysis::lint_diagnostic(&mapper, finding)]),
                 edit: Some(workspace_edit(uri, edits)),
                 ..Default::default()
@@ -254,7 +251,7 @@ fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeAct
         }
     }
 
-    if kind_permitted(only, &CodeActionKind::SOURCE_FIX_ALL)
+    if kind_permitted(only, &CodeActionKind::SourceFixAll)
         && let Some(action) = fix_all_action(uri, text, &mapper, &findings)
     {
         actions.push(action);
@@ -263,16 +260,17 @@ fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeAct
     actions
 }
 
-/// A `source.fixAll` action applying every fixable finding at once, or `None` when nothing is
-/// fixable. Delegates to the linter's `apply_fixes` (which drops overlapping fixes so the result is
-/// well-formed) and emits it as a single whole-document edit — nested fixes that were skipped
-/// resolve on the next run, matching the CLI's `--fix`.
+/// A `source.fixAll` action applying every fixable finding at once, or `None`
+/// when nothing is fixable. Delegates to the linter's `apply_fixes` (which
+/// drops overlapping fixes so the result is well-formed) and emits it as a
+/// single whole-document edit — nested fixes that were skipped resolve on the
+/// next run, matching the CLI's `--fix`.
 fn fix_all_action(
     uri: &Uri,
     text: &str,
     mapper: &PositionMapper,
     findings: &[monkey_c_linter::Diagnostic],
-) -> Option<CodeActionOrCommand> {
+) -> Option<CodeActionResponse> {
     let fixes: Vec<_> = findings.iter().filter_map(|f| f.fix.clone()).collect();
     if fixes.is_empty() {
         return None;
@@ -291,9 +289,9 @@ fn fix_all_action(
         new_text: fixed,
     };
 
-    Some(CodeActionOrCommand::CodeAction(CodeAction {
+    Some(CodeActionResponse::CodeAction(CodeAction {
         title: "Fix all auto-fixable lint problems".to_string(),
-        kind: Some(CodeActionKind::SOURCE_FIX_ALL),
+        kind: Some(CodeActionKind::SourceFixAll),
         edit: Some(workspace_edit(uri, vec![whole_document])),
         ..Default::default()
     }))
@@ -306,26 +304,11 @@ fn workspace_edit(uri: &Uri, edits: Vec<TextEdit>) -> WorkspaceEdit {
     }
 }
 
-/// Whether the client's `context.only` filter admits actions of `kind`. Absent `only` means "any
-/// kind". A requested kind admits `kind` when it is equal to it or a parent of it (`source` admits
-/// `source.fixAll`); the empty string is the LSP wildcard.
-fn kind_permitted(only: &Option<Vec<CodeActionKind>>, kind: &CodeActionKind) -> bool {
-    let Some(only) = only else {
-        return true;
-    };
-
-    only.iter().any(|requested| {
-        let requested = requested.as_str();
-        requested.is_empty()
-            || kind.as_str() == requested
-            || kind.as_str().starts_with(&format!("{requested}."))
-    })
-}
-
-/// Whether a finding at `finding` is in scope for the request. Editors send the cursor as a
-/// zero-width range that only overlaps small findings when the caret sits exactly on them, so also
-/// accept a finding that overlaps any diagnostic the client passed in `context.diagnostics` (which
-/// nvim populates with the whole line's diagnostics).
+/// Whether a finding at `finding` is in scope for the request. Editors send the
+/// cursor as a zero-width range that only overlaps small findings when the
+/// caret sits exactly on them, so also accept a finding that overlaps any
+/// diagnostic the client passed in `context.diagnostics` (which nvim populates
+/// with the whole line's diagnostics).
 fn finding_requested(finding: Range, params: &CodeActionParams) -> bool {
     ranges_overlap(finding, params.range)
         || params
@@ -335,8 +318,33 @@ fn finding_requested(finding: Range, params: &CodeActionParams) -> bool {
             .any(|diagnostic| ranges_overlap(finding, diagnostic.range))
 }
 
-/// Whether two LSP ranges overlap or touch — a zero-width cursor range inside a diagnostic counts
-/// as overlapping.
+/// Whether the client's `context.only` filter admits actions of `kind`. Absent
+/// `only` means "any kind". A requested kind admits `kind` when it equals it or
+/// is a parent of it (`source` admits `source.fixAll`); the empty kind is the
+/// LSP wildcard. Comparison is on the wire strings so sub-kinds work without
+/// enumerating the enum.
+fn kind_permitted(only: &Option<Vec<CodeActionKind>>, kind: &CodeActionKind) -> bool {
+    let Some(only) = only else {
+        return true;
+    };
+
+    let kind = kind_wire(kind);
+    only.iter().any(|requested| {
+        let requested = kind_wire(requested);
+        requested.is_empty() || kind == requested || kind.starts_with(&format!("{requested}."))
+    })
+}
+
+/// The on-the-wire string for a code action kind (e.g. `source.fixAll`).
+fn kind_wire(kind: &CodeActionKind) -> String {
+    serde_json::to_value(kind)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+/// Whether two LSP ranges overlap or touch — a zero-width cursor range inside a
+/// diagnostic counts as overlapping.
 fn ranges_overlap(a: Range, b: Range) -> bool {
     !(before(a.end, b.start) || before(b.end, a.start))
 }
@@ -358,30 +366,4 @@ fn respond(
     connection.sender.send(Message::Response(response))?;
 
     Ok(())
-}
-
-fn cast_request<R>(request: Request) -> Result<(RequestId, R::Params), Request>
-where
-    R: lsp_types::request::Request,
-{
-    match request.extract::<R::Params>(R::METHOD) {
-        Ok(value) => Ok(value),
-        Err(ExtractError::MethodMismatch(request)) => Err(request),
-        Err(ExtractError::JsonError { method, error }) => {
-            panic!("malformed {method} request: {error}");
-        }
-    }
-}
-
-fn cast_notification<N>(notification: Notification) -> Result<N::Params, Notification>
-where
-    N: lsp_types::notification::Notification,
-{
-    match notification.extract::<N::Params>(N::METHOD) {
-        Ok(params) => Ok(params),
-        Err(ExtractError::MethodMismatch(notification)) => Err(notification),
-        Err(ExtractError::JsonError { method, error }) => {
-            panic!("malformed {method} notification: {error}");
-        }
-    }
 }
