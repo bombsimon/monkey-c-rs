@@ -12,21 +12,23 @@ Once `--fix` has been applied the user is expected to run the
 
 ## Categories
 
-| Rule                                               | Auto-fix | Notes                               |
-| -------------------------------------------------- | -------- | ----------------------------------- |
-| [`compound-assignment`][compound-assignment]       | ✅       | Rewrites `x = x + n` as `x += n`    |
-| [`import-order`][import-order]                     | ⚠️       | Suppressed when comments interleave |
-| [`naming-convention`][naming-convention]           | ❌       | [Coding Conventions]                |
-| [`one-class-per-file`][one-class-per-file]         | ❌       | [Coding Conventions]                |
-| [`redundant-resource-ref`][redundant-resource-ref] | ✅       | Drops legacy `@` on `Rez.*` refs    |
-| [`super-initializer-call`][super-initializer-call] | ❌       | Flags missing `Base.initialize(…)`  |
-| [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses       |
+| Rule                                               | Auto-fix | Notes                                                           |
+| -------------------------------------------------- | -------- | --------------------------------------------------------------- |
+| [`compound-assignment`][compound-assignment]       | ✅       | Rewrites `x = x + n` as `x += n`                                |
+| [`ifs-same-cond`][ifs-same-cond]                   | ❌       | Checks for consecutive ifs with the same condition              |
+| [`import-order`][import-order]                     | ⚠️       | Suppressed when comments interleave                             |
+| [`naming-convention`][naming-convention]           | ❌       | Naming convention according to [Coding Conventions]             |
+| [`one-class-per-file`][one-class-per-file]         | ❌       | Only allow one class per file according to [Coding Conventions] |
+| [`redundant-resource-ref`][redundant-resource-ref] | ✅       | Drops legacy `@` on `Rez.*` refs                                |
+| [`super-initializer-call`][super-initializer-call] | ❌       | Flags missing `Base.initialize(…)` [Coding Conventions]         |
+| [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses                                   |
 
 [Coding Conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
 [compound-assignment]: ./compound-assignment
 [diagnostic]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [fix]: https://github.com/bombsimon/monkey-c-rs/blob/main/monkey-c-linter/src/lib.rs
 [formatter]: ../../formatter
+[ifs-same-cond]: ./ifs-same-cond
 [import-order]: ./import-order
 [naming-convention]: ./naming-convention
 [one-class-per-file]: ./one-class-per-file

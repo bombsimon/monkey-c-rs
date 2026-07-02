@@ -1,6 +1,7 @@
 # `one-class-per-file`
 
-Flags files that declare more than one class.
+Flags files that declare more than one class following Garmin's [Monkey C coding
+conventions][conventions].
 
 ## Rationale
 
@@ -39,3 +40,5 @@ class Bar {
 The rule reports `Bar` as the offending second class. There is no
 auto-fix — moving `Bar` to its own file requires choosing a file name and
 deciding what context (imports, module wrapping) to copy across.
+
+[conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/

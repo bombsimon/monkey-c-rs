@@ -9,9 +9,9 @@ conventions][conventions].
 | -------------------------------------- | -------------------------------------------- | ------------------------- |
 | Modules & Classes                      | `PascalCase`                                 | `MyClass`                 |
 | Functions & parameters                 | `camelCase`                                  | `myFunction(myArg)`       |
-| Public class members                   | `camelCase`                                  | `var value;`              |
+| Public class members                   | `camelCase`                                  | `var myValue;`            |
 | Private/protected/hidden class members | `_camelCase`                                 | `private var _value;`     |
-| Module-scope variables                 | `camelCase`                                  | `var counter = 0;`        |
+| Module-scope variables                 | `camelCase`                                  | `var myCounter = 0;`      |
 | Enum variants                          | `SCREAMING_SNAKE_CASE` sharing a `<PREFIX>_` | `COLOR_RED`, `COLOR_BLUE` |
 
 ## Rationale
