@@ -16,7 +16,8 @@
 pub mod rules;
 pub mod visit;
 
-use monkey_c_parser::ast::{ParseOutput, Span};
+use monkey_c_parser::ast::Span;
+use monkey_c_parser::parser::ParseOutput;
 
 use crate::visit::LintContext;
 
