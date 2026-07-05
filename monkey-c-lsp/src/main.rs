@@ -12,6 +12,9 @@
 #![allow(clippy::mutable_key_type)]
 
 mod analysis;
+// Not yet wired into a request handler; hover/goto will consume it next.
+#[allow(dead_code)]
+mod mir;
 mod position;
 
 use std::collections::HashMap;
