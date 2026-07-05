@@ -70,16 +70,28 @@ committed. My focus is still to build the best tools possible and know and
 understand 100% of the codebase. Although not every line of code is written by
 hand, I want to avoid slop.
 
+## Other projects
+
+In addition to this project I'm also working on other projects to improve the
+developer experience for Garmin Connect IQ development.
+
+- [garmin-monkeyc.nvim] - A Neovim port of the VS Code Connect IQ plugin
+- [tree-sitter-monkey-c] - Tree-sitter implementation for Monkey C
+- [awesome-garmin] - An awesome list of Garmin applications and tools for Garmin
+
 ## License
 
 This repository is licensed under the [MIT License][license]
 
 [Monkey C]: https://developer.garmin.com/connect-iq/monkey-c/
+[awesome-garmin]: https://github.com/bombsimon/awesome-garmin
 [formatter]: monkey-c-formatter
+[garmin-monkeyc.nvim]: https://github.com/bombsimon/garmin-monkeyc.nvim
 [license]: LICENSE
 [linter]: monkey-c-linter
-[lsp]: https://microsoft.github.io/language-server-protocol/
 [lsp-crate]: monkey-c-lsp
+[lsp]: https://microsoft.github.io/language-server-protocol/
 [parser]: monkey-c-parser
 [ruff]: https://github.com/astral-sh/ruff
 [rustfmt]: https://github.com/rust-lang/rustfmt
+[tree-sitter-monkey-c]: https://github.com/bombsimon/tree-sitter-monkey-c
