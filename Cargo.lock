@@ -397,6 +397,7 @@ dependencies = [
  "monkey-c-formatter",
  "monkey-c-linter",
  "monkey-c-parser",
+ "serde",
  "serde_json",
 ]
 

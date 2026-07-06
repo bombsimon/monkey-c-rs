@@ -6,6 +6,7 @@ use monkey_c_linter::lint;
 use monkey_c_parser::ast::Span;
 use monkey_c_parser::parser::Parser;
 
+use crate::config::Settings;
 use crate::position::PositionMapper;
 
 const SOURCE: &str = "monkey-c";
@@ -60,10 +61,16 @@ pub fn lint_diagnostic(
     }
 }
 
-/// Format `text`, or `None` when it doesn't parse (a broken document can't be re-rendered from its
-/// AST).
-pub fn format(text: &str) -> Option<String> {
+/// Format `text` with `settings`, or `None` when it doesn't parse (a broken
+/// document can't be re-rendered from its AST).
+pub fn format(text: &str, settings: &Settings) -> Option<String> {
     let output = Parser::new(text).parse().ok()?;
 
-    Some(Formatter::new(text).format(&output))
+    let formatted = Formatter::new(text)
+        .with_line_width(settings.line_width)
+        .with_alignment(settings.alignment)
+        .with_decl_wrap(settings.wrap_declarations)
+        .format(&output);
+
+    Some(formatted)
 }
