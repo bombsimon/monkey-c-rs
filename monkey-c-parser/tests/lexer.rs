@@ -573,11 +573,8 @@ fn test_visibility_keywords() {
     );
 }
 
-// An unrecognised character used to be reported without being consumed, so `next_token` returned
-// the same `Illegal` forever. Both tests reach `Eof` only because the lexer moves past it, which is
-// what keeps `tokens`/`spans` — and any other loop over the token stream — terminating.
 #[test]
-fn test_illegal_character_is_consumed() {
+fn test_parser_continues_on_illegal_token() {
     assert_eq!(
         tokens("var x; # var y;"),
         vec![
