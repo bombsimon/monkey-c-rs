@@ -146,7 +146,7 @@ fn collect(ast: &Ast, scope: &mut Vec<String>, out: &mut Vec<FunctionBody>) {
             // Abstract and interface declarations have no body to execute.
             if let Some(body) = &function.body {
                 out.push(FunctionBody {
-                    brace: body_brace(body),
+                    brace: body.span.start,
                     name: qualified(scope, &function.name.node),
                 });
             }
