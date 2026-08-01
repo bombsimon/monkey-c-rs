@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "monkey-c-coverage",
   "monkey-c-diagnostics",
   "monkey-c-formatter",
   "monkey-c-jungle",

@@ -1,0 +1,11 @@
+[package]
+name = "monkey-c-coverage"
+description = "Source-level test-coverage instrumentation for Monkey C"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+clap.workspace = true
+monkey-c-parser.workspace = true
