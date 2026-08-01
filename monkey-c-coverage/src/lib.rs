@@ -192,8 +192,12 @@ mod tests {
 
     #[test]
     fn skips_bodyless_declarations() {
-        let source =
-            "class C {\n    function abstractLike() as Void;\n    function real() {\n    }\n}\n";
+        let source = r#"
+            class C {
+                function abstractLike() as Void;
+                function real() {}
+            }
+        "#;
         let result = instrument(source, "z.mc", 0).unwrap();
         assert_eq!(result.sites.len(), 1);
         assert_eq!(result.sites[0].name, "C.real");
