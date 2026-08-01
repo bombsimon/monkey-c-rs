@@ -6,8 +6,7 @@
 //! generated `Cov.mc` runtime prints each id the first time it executes, and
 //! a report joins those `COVHIT` lines from the simulator log back to the
 //! instrumented functions. Splicing into the original text (rather than
-//! re-rendering the AST) keeps untouched code byte-identical, the same
-//! strategy the linter uses for `--fix`.
+//! re-rendering the AST) keeps untouched code byte-identical.
 
 use monkey_c_parser::ast::{Ast, BlockStmt, Span};
 use monkey_c_parser::line_index::LineIndex;
