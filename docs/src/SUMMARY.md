@@ -5,6 +5,7 @@
 - [Parser](./parser/README.md)
 - [Formatter](./formatter/README.md)
 - [LSP](./lsp/README.md)
+- [Coverage](./coverage/README.md)
 - [Linter](./linter/README.md)
   - [Rules](./linter/rules/README.md)
     - [Collapsible else if](./linter/rules/collapsible-else-if/README.md)

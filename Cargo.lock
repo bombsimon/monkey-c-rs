@@ -363,6 +363,7 @@ name = "monkey-c-coverage"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "monkey-c-diagnostics",
  "monkey-c-parser",
 ]
 
