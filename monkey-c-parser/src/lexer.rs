@@ -477,7 +477,11 @@ impl<'a> Lexer<'a> {
                     };
                     (token_type, 0)
                 } else {
-                    (token::Type::Illegal, 0)
+                    // Consume the character rather than just naming it: every other arm advances,
+                    // and an `Illegal` that did not would make `next_token` return the same token
+                    // forever. Its full UTF-8 width is taken so the cursor lands on a character
+                    // boundary — `read_char` steps one byte at a time.
+                    (token::Type::Illegal, first.len_utf8())
                 }
             }
         };
