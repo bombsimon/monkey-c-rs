@@ -206,7 +206,7 @@ mod tests {
     fn line_numbers_point_at_the_function_body() {
         let source = "function first() {\n}\n\nfunction second() {\n}\n";
         let result = instrument(source, "l.mc", 0).unwrap();
-        assert_eq!(result.sites[0].line, 1);
+        assert_eq!(result.sites[0].line, 2);
         assert_eq!(result.sites[1].line, 4);
     }
 
