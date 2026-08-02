@@ -7,6 +7,7 @@
 - [LSP](./lsp/README.md)
 - [Linter](./linter/README.md)
   - [Rules](./linter/rules/README.md)
+    - [Bool comparison](./linter/rules/bool-comparison/README.md)
     - [Collapsible else if](./linter/rules/collapsible-else-if/README.md)
     - [Collapsible if](./linter/rules/collapsible-if/README.md)
     - [Compound assignment](./linter/rules/compound-assignment/README.md)

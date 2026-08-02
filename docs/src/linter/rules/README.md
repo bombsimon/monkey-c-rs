@@ -14,6 +14,7 @@ Once `--fix` has been applied the user is expected to run the
 
 | Rule                                               | Auto-fix | Notes                                                           |
 | -------------------------------------------------- | -------- | --------------------------------------------------------------- |
+| [`bool-comparison`][bool-comparison]               | ✅       | Rewrites `x == true` as `x`, `x == false` as `!x`               |
 | [`collapsible-else-if`][collapsible-else-if]       | ✅       | Rewrites `else { if … }` as `else if …`                         |
 | [`collapsible-if`][collapsible-if]                 | ✅       | Merges a nested `if` with `&&`; skipped when comments intervene |
 | [`compound-assignment`][compound-assignment]       | ✅       | Rewrites `x = x + n` as `x += n`                                |
@@ -26,6 +27,7 @@ Once `--fix` has been applied the user is expected to run the
 | [`unneeded-parens`][unneeded-parens]               | ✅       | Removes redundant parentheses                                   |
 
 [Coding Conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
+[bool-comparison]: ./bool-comparison
 [collapsible-else-if]: ./collapsible-else-if
 [collapsible-if]: ./collapsible-if
 [compound-assignment]: ./compound-assignment
