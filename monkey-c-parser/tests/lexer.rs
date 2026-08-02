@@ -572,3 +572,29 @@ fn test_visibility_keywords() {
         ]
     );
 }
+
+#[test]
+fn test_parser_continues_on_illegal_token() {
+    assert_eq!(
+        tokens("var x; # var y;"),
+        vec![
+            Type::Var,
+            Type::Identifier("x".into()),
+            Type::Semicolon,
+            Type::Illegal,
+            Type::Var,
+            Type::Identifier("y".into()),
+            Type::Semicolon,
+        ]
+    );
+}
+
+#[test]
+fn test_illegal_multibyte_character_is_consumed_whole() {
+    // "€" is three bytes; stepping a single byte would leave the cursor mid-character and panic the
+    // next slice of the input.
+    assert_eq!(
+        spans("€ var"),
+        vec![(0, Type::Illegal, 3), (4, Type::Var, 7)]
+    );
+}

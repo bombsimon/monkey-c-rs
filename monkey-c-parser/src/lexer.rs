@@ -477,7 +477,8 @@ impl<'a> Lexer<'a> {
                     };
                     (token_type, 0)
                 } else {
-                    (token::Type::Illegal, 0)
+                    // Consume the character so `next_token` will advance.
+                    (token::Type::Illegal, first.len_utf8())
                 }
             }
         };
