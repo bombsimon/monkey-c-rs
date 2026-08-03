@@ -78,6 +78,9 @@ pub fn instrument(source: &str, file: &str, first_id: usize) -> Result<Instrumen
 /// simulator than a `Dictionary`; printing only on the first hit keeps the
 /// captured log small.
 pub fn runtime_module(sites: usize) -> String {
+    // Guard the degenerate zero-site case: `new [0]` is a legal but useless
+    // allocation, and a one-slot array keeps the generated module uniform.
+    let sites = sites.max(1);
     // The module variable is public and unprefixed so the generated source
     // passes `monkey-c-linter`'s naming rules. Each line is emitted as exactly
     // `COVHIT <id>` — `parse_hits` matches nothing else.
