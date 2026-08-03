@@ -12,6 +12,7 @@
 #![allow(clippy::mutable_key_type)]
 
 mod analysis;
+mod config;
 mod position;
 
 use std::collections::HashMap;
@@ -47,8 +48,9 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
         ..Default::default()
     })?;
 
-    let _init_params = connection.initialize(capabilities)?;
-    run(&connection)?;
+    let init_params = connection.initialize(capabilities)?;
+    let settings = config::Settings::from_initialize_params(&init_params);
+    run(&connection, &settings)?;
 
     // `connection` must be dropped before joining: its `sender` keeps the writer
     // thread's channel open, so `join` would otherwise block forever.
@@ -58,7 +60,10 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     Ok(())
 }
 
-fn run(connection: &Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
+fn run(
+    connection: &Connection,
+    settings: &config::Settings,
+) -> Result<(), Box<dyn Error + Sync + Send>> {
     let mut documents = Documents::new();
 
     for message in &connection.receiver {
@@ -68,7 +73,7 @@ fn run(connection: &Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
                     return Ok(());
                 }
 
-                handle_request(connection, &documents, request)?;
+                handle_request(connection, &documents, settings, request)?;
             }
             Message::Notification(notification) => {
                 handle_notification(connection, &mut documents, notification)?;
@@ -83,6 +88,7 @@ fn run(connection: &Connection) -> Result<(), Box<dyn Error + Sync + Send>> {
 fn handle_request(
     connection: &Connection,
     documents: &Documents,
+    settings: &config::Settings,
     request: Request,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let id = request.id.clone();
@@ -90,7 +96,7 @@ fn handle_request(
 
     if method == DocumentFormattingRequest::METHOD {
         let params: DocumentFormattingParams = serde_json::from_value(request.params)?;
-        let edits = format(documents, &params);
+        let edits = format(documents, settings, &params);
         respond(connection, id, serde_json::to_value(edits)?)?;
     } else if method == CodeActionRequest::METHOD {
         let params: CodeActionParams = serde_json::from_value(request.params)?;
@@ -181,13 +187,17 @@ fn send_diagnostics(
 /// The formatting edits for a document: a single edit replacing the whole
 /// document with its formatted text. Returns no edits when the document is
 /// unknown, doesn't parse, or is already formatted.
-fn format(documents: &Documents, params: &DocumentFormattingParams) -> Vec<TextEdit> {
+fn format(
+    documents: &Documents,
+    settings: &config::Settings,
+    params: &DocumentFormattingParams,
+) -> Vec<TextEdit> {
     let uri = &params.text_document.uri;
     let Some(text) = documents.get(uri) else {
         return Vec::new();
     };
 
-    let Some(formatted) = analysis::format(text) else {
+    let Some(formatted) = analysis::format(text, settings) else {
         return Vec::new();
     };
 

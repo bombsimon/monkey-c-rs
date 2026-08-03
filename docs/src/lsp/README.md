@@ -33,6 +33,22 @@ The server talks over stdio with standard LSP framing. Sync is full document:
 the editor sends the complete text on every change. That keeps the server simple
 and is fast enough for source files of the usual size.
 
+## Configuration
+
+Settings are passed once through the client's `initializationOptions`. Keys are
+camelCase; unknown keys are ignored and any key left unset keeps its default.
+Defaults match the `monkey-c-formatter` CLI, so formatting through the LSP
+matches the standalone tool.
+
+| Key                | Type    | Default | Meaning                                              |
+| ------------------ | ------- | ------- | ---------------------------------------------------- |
+| `lineWidth`        | integer | `111`   | Target width before a group is broken onto lines.    |
+| `alignment`        | boolean | `true`  | Column-align separators across related entries.      |
+| `wrapDeclarations` | boolean | `false` | Break each binding of a multi-binding `var`/`const`. |
+
+These are read at startup, so change them and restart the server (`:LspRestart`
+in Neovim) to take effect.
+
 ## Editor setup
 
 The server is a plain stdio LSP binary, so any client can launch it. Build it
@@ -62,6 +78,12 @@ vim.api.nvim_create_autocmd("FileType", {
       name = "monkey-c-lsp",
       cmd = { "/path/to/monkey-c-rs/target/release/monkey-c-lsp" },
       root_dir = vim.fs.root(args.buf, { "manifest.xml", ".git" }) or vim.fn.getcwd(),
+      -- Optional; these are the defaults.
+      init_options = {
+        lineWidth = 111,
+        alignment = true,
+        wrapDeclarations = false,
+      },
     })
   end,
 })
