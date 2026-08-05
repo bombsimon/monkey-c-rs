@@ -2,7 +2,7 @@
 
 The Monkey C formatter aims to be a zero-config one-size-fits-all solution to
 ensure consistent formatting of your Monkey C code. More opinionated suggestions
-for the code is implemented in the [`monkey-c-linter`][linter].
+for the code is implemented in the [linter][linter].
 
 > [!NOTE]
 > I'd love any input and testing on the formatter. Both help finding bugs and
@@ -17,7 +17,7 @@ too much.
 
 ## The magic trailing comma
 
-`monkey-c-formatter` uses the same magic trailing comma as [ruff] to determine
+The formatter uses the same magic trailing comma as [ruff] to determine
 if multiple items should be wrapped over multiple lines even when they would
 fit on a single line. The rule applies to arrays, dictionaries, function
 declaration parameters, and function / method call arguments.

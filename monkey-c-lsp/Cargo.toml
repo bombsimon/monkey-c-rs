@@ -1,15 +1,21 @@
 [package]
 name = "monkey-c-lsp"
+description = "Language Server for the Monkey C language"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-lsp-server = "0.8"
 gen-lsp-types = "0.9"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+lsp-server = "0.8"
+monkey-c-config.workspace = true
 monkey-c-formatter.workspace = true
 monkey-c-linter.workspace = true
 monkey-c-parser.workspace = true
+percent-encoding = "2"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

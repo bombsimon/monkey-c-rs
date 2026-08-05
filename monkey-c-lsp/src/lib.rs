@@ -5,15 +5,16 @@
 //! and re-analyses on open/change, publishing diagnostics. It answers
 //! `textDocument/formatting` by re-rendering through the formatter and
 //! `textDocument/codeAction` with the linter's fixes.
-
-// `gen_lsp_types::Uri` carries an internal lazy-parse cache (interior
-// mutability) that doesn't affect its `Hash`/`Eq`, so it is a safe `HashMap`
-// key despite `clippy::mutable_key_type` flagging every map that uses it.
-#![allow(clippy::mutable_key_type)]
+//!
+//! Entry point: [`serve`], which owns stdin and stdout for the lifetime of the
+//! session.
 
 mod analysis;
 mod config;
 mod position;
+mod uri;
+
+use monkey_c_config::{ConfigSource, FormatSettings};
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -23,10 +24,10 @@ use gen_lsp_types::{
     CodeActionRequest, CodeActionResponse, Diagnostic, DidChangeTextDocumentNotification,
     DidCloseTextDocumentNotification, DidCloseTextDocumentParams, DidOpenTextDocumentNotification,
     DocumentFormattingParams, DocumentFormattingProvider, DocumentFormattingRequest,
-    LspNotificationMethod, LspRequestMethod, Notification as _, Position,
+    LspNotificationMethod, LspRequestMethod, MessageType, Notification as _, Position,
     PublishDiagnosticsNotification, PublishDiagnosticsParams, Range, Request as _,
-    ServerCapabilities, TextDocumentContentChangeEvent, TextDocumentSync, TextDocumentSyncKind,
-    TextEdit, Uri, WorkspaceEdit,
+    ServerCapabilities, ShowMessageNotification, ShowMessageParams, TextDocumentContentChangeEvent,
+    TextDocumentSync, TextDocumentSyncKind, TextEdit, Uri, WorkspaceEdit,
 };
 use lsp_server::{Connection, Message, Notification, Request, RequestId, Response};
 
@@ -35,7 +36,10 @@ use crate::position::PositionMapper;
 /// Open documents keyed by URI, holding their current full text.
 type Documents = HashMap<Uri, String>;
 
-fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
+/// Serve a single LSP session on stdio until the client shuts down.
+///
+/// `source` decides where file-level settings come from; see [`ConfigSource`].
+pub fn serve(source: ConfigSource) -> Result<(), Box<dyn Error + Sync + Send>> {
     let (connection, io_threads) = Connection::stdio();
 
     let capabilities = serde_json::to_value(ServerCapabilities {
@@ -49,8 +53,15 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     })?;
 
     let init_params = connection.initialize(capabilities)?;
-    let settings = config::Settings::from_initialize_params(&init_params);
-    run(&connection, &settings)?;
+    let (settings, warnings) = config::resolve(&source, &init_params);
+
+    // A bad `rafiki.toml` must not take the session down, so it is surfaced in
+    // the editor and the defaults are used.
+    for warning in &warnings {
+        show_message(&connection, MessageType::Warning, warning)?;
+    }
+
+    main_loop(&connection, &settings)?;
 
     // `connection` must be dropped before joining: its `sender` keeps the writer
     // thread's channel open, so `join` would otherwise block forever.
@@ -60,7 +71,7 @@ fn main() -> Result<(), Box<dyn Error + Sync + Send>> {
     Ok(())
 }
 
-fn run(
+fn main_loop(
     connection: &Connection,
     settings: &config::Settings,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
@@ -76,7 +87,7 @@ fn run(
                 handle_request(connection, &documents, settings, request)?;
             }
             Message::Notification(notification) => {
-                handle_notification(connection, &mut documents, notification)?;
+                handle_notification(connection, &mut documents, &settings.lint, notification)?;
             }
             Message::Response(_) => {}
         }
@@ -96,11 +107,11 @@ fn handle_request(
 
     if method == DocumentFormattingRequest::METHOD {
         let params: DocumentFormattingParams = serde_json::from_value(request.params)?;
-        let edits = format(documents, settings, &params);
+        let edits = format(documents, &settings.format, &params);
         respond(connection, id, serde_json::to_value(edits)?)?;
     } else if method == CodeActionRequest::METHOD {
         let params: CodeActionParams = serde_json::from_value(request.params)?;
-        let actions = code_actions(documents, &params);
+        let actions = code_actions(documents, &settings.lint, &params);
         respond(connection, id, serde_json::to_value(actions)?)?;
     } else {
         // Unknown request: reply with an empty success so the client isn't left
@@ -114,6 +125,7 @@ fn handle_request(
 fn handle_notification(
     connection: &Connection,
     documents: &mut Documents,
+    lint_settings: &monkey_c_config::LintSettings,
     notification: Notification,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let method = LspNotificationMethod::from(notification.method.as_str());
@@ -123,7 +135,7 @@ fn handle_notification(
             serde_json::from_value(notification.params)?;
         let uri = params.text_document.uri;
         documents.insert(uri.clone(), params.text_document.text);
-        publish(connection, documents, &uri)?;
+        publish(connection, documents, lint_settings, &uri)?;
     } else if method == DidChangeTextDocumentNotification::METHOD {
         let params: gen_lsp_types::DidChangeTextDocumentParams =
             serde_json::from_value(notification.params)?;
@@ -131,7 +143,7 @@ fn handle_notification(
         if let Some(change) = params.content_changes.into_iter().next_back() {
             let uri = params.text_document.text_document_identifier.uri;
             documents.insert(uri.clone(), content_change_text(change));
-            publish(connection, documents, &uri)?;
+            publish(connection, documents, lint_settings, &uri)?;
         }
     } else if method == DidCloseTextDocumentNotification::METHOD {
         let params: DidCloseTextDocumentParams = serde_json::from_value(notification.params)?;
@@ -156,14 +168,33 @@ fn content_change_text(change: TextDocumentContentChangeEvent) -> String {
 fn publish(
     connection: &Connection,
     documents: &Documents,
+    settings: &monkey_c_config::LintSettings,
     uri: &Uri,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let Some(text) = documents.get(uri) else {
         return Ok(());
     };
 
-    let diagnostics = analysis::diagnostics(text);
+    let diagnostics = analysis::diagnostics(text, settings);
     send_diagnostics(connection, uri.clone(), diagnostics)
+}
+
+/// Ask the client to show `message` to the user.
+fn show_message(
+    connection: &Connection,
+    kind: MessageType,
+    message: &str,
+) -> Result<(), Box<dyn Error + Sync + Send>> {
+    let params = ShowMessageParams {
+        kind,
+        message: message.to_string(),
+    };
+    let notification = Notification::new(ShowMessageNotification::METHOD.into(), params);
+    connection
+        .sender
+        .send(Message::Notification(notification))?;
+
+    Ok(())
 }
 
 fn send_diagnostics(
@@ -189,7 +220,7 @@ fn send_diagnostics(
 /// unknown, doesn't parse, or is already formatted.
 fn format(
     documents: &Documents,
-    settings: &config::Settings,
+    settings: &FormatSettings,
     params: &DocumentFormattingParams,
 ) -> Vec<TextEdit> {
     let uri = &params.text_document.uri;
@@ -222,7 +253,11 @@ fn format(
 ///   each carrying just that finding's fix and the diagnostic it resolves; and
 /// - a single `source.fixAll` action bundling every fixable finding, which an
 ///   editor can run on save to apply all lint fixes at once.
-fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeActionResponse> {
+fn code_actions(
+    documents: &Documents,
+    settings: &monkey_c_config::LintSettings,
+    params: &CodeActionParams,
+) -> Vec<CodeActionResponse> {
     let uri = &params.text_document.uri;
     let Some(text) = documents.get(uri) else {
         return Vec::new();
@@ -230,7 +265,7 @@ fn code_actions(documents: &Documents, params: &CodeActionParams) -> Vec<CodeAct
 
     let mapper = PositionMapper::new(text);
     let only = &params.context.only;
-    let findings = analysis::lints(text);
+    let findings = analysis::lints(text, settings);
     let mut actions = Vec::new();
 
     if kind_permitted(only, &CodeActionKind::QuickFix) {

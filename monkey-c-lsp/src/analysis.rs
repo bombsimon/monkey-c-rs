@@ -6,14 +6,14 @@ use monkey_c_linter::lint;
 use monkey_c_parser::ast::Span;
 use monkey_c_parser::parser::Parser;
 
-use crate::config::Settings;
 use crate::position::PositionMapper;
+use monkey_c_config::{FormatSettings, LintSettings};
 
 const SOURCE: &str = "monkey-c";
 
 /// Parse and lint `text`, returning LSP diagnostics. A parse error yields a single error
 /// diagnostic; otherwise every lint finding becomes a warning tagged with its rule name.
-pub fn diagnostics(text: &str) -> Vec<Diagnostic> {
+pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
     let mapper = PositionMapper::new(text);
 
     match Parser::new(text).parse() {
@@ -28,8 +28,9 @@ pub fn diagnostics(text: &str) -> Vec<Diagnostic> {
             ..Default::default()
         }],
         Ok(output) => lint(&output, text)
-            .iter()
-            .map(|finding| lint_diagnostic(&mapper, finding))
+            .into_iter()
+            .filter(|finding| settings.selects(finding.rule))
+            .map(|finding| lint_diagnostic(&mapper, &finding))
             .collect(),
     }
 }
@@ -38,10 +39,15 @@ pub fn diagnostics(text: &str) -> Vec<Diagnostic> {
 /// retain the byte [`Span`] and [`Fix`] needed to build code actions.
 ///
 /// [`Fix`]: monkey_c_linter::Fix
-pub fn lints(text: &str) -> Vec<monkey_c_linter::Diagnostic> {
+pub fn lints(text: &str, settings: &LintSettings) -> Vec<monkey_c_linter::Diagnostic> {
     Parser::new(text)
         .parse()
-        .map(|output| lint(&output, text))
+        .map(|output| {
+            lint(&output, text)
+                .into_iter()
+                .filter(|finding| settings.selects(finding.rule))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -63,7 +69,7 @@ pub fn lint_diagnostic(
 
 /// Format `text` with `settings`, or `None` when it doesn't parse (a broken
 /// document can't be re-rendered from its AST).
-pub fn format(text: &str, settings: &Settings) -> Option<String> {
+pub fn format(text: &str, settings: &FormatSettings) -> Option<String> {
     let output = Parser::new(text).parse().ok()?;
 
     let formatted = Formatter::new(text)
@@ -73,4 +79,21 @@ pub fn format(text: &str, settings: &Settings) -> Option<String> {
         .format(&output);
 
     Some(formatted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_lints_are_not_published_or_offered_as_actions() {
+        let text = "class Foo_bar {\n}\n";
+        let settings = LintSettings {
+            disable: vec!["naming-convention".to_string()],
+            ..LintSettings::default()
+        };
+
+        assert!(diagnostics(text, &settings).is_empty());
+        assert!(lints(text, &settings).is_empty());
+    }
 }

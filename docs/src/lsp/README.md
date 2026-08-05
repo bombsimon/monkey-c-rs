@@ -1,8 +1,8 @@
 # LSP
 
-`monkey-c-lsp` is a [Language Server][lsp] for Monkey C. It wraps the parser,
+`rafiki server` is a [Language Server][lsp] for Monkey C. It wraps the parser,
 linter, and formatter in one server so any LSP-capable editor gets live feedback
-without calling the individual binaries.
+without shelling out to the command line.
 
 ## Capabilities
 
@@ -35,28 +35,40 @@ and is fast enough for source files of the usual size.
 
 ## Configuration
 
-Settings are passed once through the client's `initializationOptions`. Keys are
-camelCase; unknown keys are ignored and any key left unset keeps its default.
-Defaults match the `monkey-c-formatter` CLI, so formatting through the LSP
-matches the standalone tool.
+The server reads the project's [`rafiki.toml`](../configuration/README.md),
+discovered by walking up from the workspace root the editor reports. That is the
+same file `rafiki fmt` reads, so formatting from an editor and formatting from a
+terminal produce identical output.
 
-| Key                | Type    | Default | Meaning                                              |
-| ------------------ | ------- | ------- | ---------------------------------------------------- |
-| `lineWidth`        | integer | `111`   | Target width before a group is broken onto lines.    |
-| `alignment`        | boolean | `true`  | Column-align separators across related entries.      |
-| `wrapDeclarations` | boolean | `false` | Break each binding of a multi-binding `var`/`const`. |
+A client can also pass settings directly through `initializationOptions`, which
+override the file. Keys are camelCase there, to match LSP convention rather than
+the file's kebab-case; unknown keys are ignored and any key left unset falls
+through to the file and then to the default.
 
-These are read at startup, so change them and restart the server (`:LspRestart`
-in Neovim) to take effect.
+| Key                | `rafiki.toml`                | Type    | Default |
+| ------------------ | ---------------------------- | ------- | ------- |
+| `lineWidth`        | `[format] line-width`        | integer | `111`   |
+| `alignment`        | `[format] alignment`         | boolean | `true`  |
+| `wrapDeclarations` | `[format] wrap-declarations` | boolean | `false` |
+
+Both sources are read at startup, so change either and restart the server
+(`:LspRestart` in Neovim) to take effect. A `rafiki.toml` that fails to parse is
+reported through `window/showMessage` and the defaults are used, so a broken file
+never costs you diagnostics.
 
 ## Editor setup
 
-The server is a plain stdio LSP binary, so any client can launch it. Build it
-with `--release`, since the binary your editor spawns runs on every keystroke:
+The server is a plain stdio LSP program, so any client can launch it: point the
+client at `rafiki server`. Nothing but LSP traffic is ever written to stdout, so
+configuration problems and other messages cannot corrupt the stream.
+
+Install rafiki as described in [CLI](../cli/README.md), or build it from a
+checkout with `--release` — the program your editor spawns runs on every
+keystroke:
 
 ```sh
-cargo build --release -p monkey-c-lsp
-# creates target/release/monkey-c-lsp
+cargo build --release
+# creates target/release/rafiki
 ```
 
 ### Neovim
@@ -75,10 +87,11 @@ vim.api.nvim_create_autocmd("FileType", {
   pattern = "monkeyc",
   callback = function(args)
     vim.lsp.start({
-      name = "monkey-c-lsp",
-      cmd = { "/path/to/monkey-c-rs/target/release/monkey-c-lsp" },
-      root_dir = vim.fs.root(args.buf, { "manifest.xml", ".git" }) or vim.fn.getcwd(),
-      -- Optional; these are the defaults.
+      name = "rafiki",
+      cmd = { "rafiki", "server" },
+      root_dir = vim.fs.root(args.buf, { "rafiki.toml", "manifest.xml", ".git" }) or vim.fn.getcwd(),
+      -- Optional. Prefer a `rafiki.toml` in the project, so the command line
+      -- and the editor agree; anything set here overrides it.
       init_options = {
         lineWidth = 111,
         alignment = true,
@@ -106,7 +119,7 @@ vim.api.nvim_create_autocmd("BufWritePre", {
 
 If you already have a global format-on-save, check two things. It must not be
 filtered to another client (a `filter = function(c) return c.name == "..." end`
-that leaves out `monkey-c-lsp`). And formatter-manager plugins such as
+that leaves out `rafiki`). And formatter-manager plugins such as
 conform.nvim or none-ls need to fall back to the LSP for the `monkeyc` filetype,
 or they skip this server.
 

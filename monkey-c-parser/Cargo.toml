@@ -1,5 +1,6 @@
 [package]
 name = "monkey-c-parser"
+description = "Lexer, parser and AST for the Monkey C language"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -2,9 +2,18 @@
 
 ## Architecture
 
+- rafiki is the only binary in the workspace: the `rafiki` CLI, with `fmt`,
+  `lint` and `server` subcommands. It also owns all `ariadne` diagnostic
+  rendering and the file discovery shared by `fmt` and `lint`. Library crates
+  must never gain a `main.rs` or depend on `clap`
 - monkey-c-parser contains parser/lexer code to convert Monkey C code to AST
 - monkey-c-formatter contains document IR and code to write AST back to code
 - monkey-c-linter contains a linter for Monkey C code, based on the parser
+- monkey-c-config contains the `rafiki.toml` format, read by both the CLI and
+  the LSP so a project resolves settings identically from either. Settings
+  layer as defaults -> file -> explicit request, via `*Settings::with_overrides`
+- monkey-c-lsp contains the language server, exposed as a library (`serve`) and
+  driven by `rafiki server`. It owns stdout, so nothing else may write there
 
 ## Styling
 

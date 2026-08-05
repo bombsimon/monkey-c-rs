@@ -7,8 +7,8 @@ range with new text.
 
 Fixes are byte-level text replacements, not AST rewrites. That means a fix only
 touches the affected source range and leaves the surrounding formatting alone.
-Once `--fix` has been applied the user is expected to run the
-[`monkey-c-formatter`][formatter] if they want whitespace normalised.
+Once `--fix` has been applied the user is expected to run
+[`rafiki fmt`][formatter] if they want whitespace normalised.
 
 ## Categories
 

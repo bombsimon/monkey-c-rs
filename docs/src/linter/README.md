@@ -6,10 +6,10 @@ When possible the linter supports automatically fixing the issues by using the
 
 > [!NOTE]
 > The fixer doesn't format the code to normalize after changes so the user is
-> expected to run the [`monkey-c-formatter`][formatter] after applying fixes.
+> expected to run the [formatter][formatter] after applying fixes.
 
 ```sh
-› monkey-c-linter monkey-c-linter/example/Example.mc
+› rafiki lint monkey-c-linter/example/Example.mc
 [import-order] Warning: imports should be sorted and grouped
    ╭─[ monkey-c-linter/example/Example.mc:1:1 ]
    │
