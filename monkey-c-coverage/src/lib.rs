@@ -11,6 +11,9 @@
 //! Coverage is function-level only: it reports which functions never run, not
 //! which lines or branches, so a fully executed 200-line function counts the
 //! same as a one-line one.
+//!
+//! Declarations annotated with `(:test)` are not instrumented: they only exist
+//! in test builds, so counting them would let test code cover itself.
 
 use monkey_c_parser::ast::Ast;
 use monkey_c_parser::line_index::LineIndex;
@@ -145,22 +148,16 @@ struct FunctionBody {
 fn collect(ast: &Ast, scope: &mut Vec<String>, out: &mut Vec<FunctionBody>) {
     match ast {
         Ast::Document(items, _) => {
-            for item in items {
-                collect(item, scope, out);
-            }
+            collect_items(items, scope, out);
         }
         Ast::Module(module) => {
             scope.push(module.name.node.clone());
-            for item in &module.body {
-                collect(item, scope, out);
-            }
+            collect_items(&module.body, scope, out);
             scope.pop();
         }
         Ast::Class(class) => {
             scope.push(class.name.node.clone());
-            for item in &class.body {
-                collect(item, scope, out);
-            }
+            collect_items(&class.body, scope, out);
             scope.pop();
         }
         Ast::Function(function) => {
@@ -173,6 +170,30 @@ fn collect(ast: &Ast, scope: &mut Vec<String>, out: &mut Vec<FunctionBody>) {
             }
         }
         _ => {}
+    }
+}
+
+/// Walk sibling declarations, honouring the annotation groups that precede
+/// them: `(:test)` code exists only in test builds and would otherwise count
+/// itself, so the declaration it decorates — and everything nested inside —
+/// is left uninstrumented.
+fn collect_items(items: &[Ast], scope: &mut Vec<String>, out: &mut Vec<FunctionBody>) {
+    let mut test_annotated = false;
+
+    for item in items {
+        // Consecutive groups such as `(:debug) (:test)` all decorate the next
+        // declaration, so keep accumulating until one shows up.
+        if let Ast::Annotation(entries, _) = item {
+            test_annotated |= entries.iter().any(|entry| entry.name == "test");
+
+            continue;
+        }
+
+        if !test_annotated {
+            collect(item, scope, out);
+        }
+
+        test_annotated = false;
     }
 }
 
@@ -241,6 +262,49 @@ function second() {
         let result = instrument(source, "l.mc", 0).unwrap();
         assert_eq!(result.sites[0].line, 1);
         assert_eq!(result.sites[1].line, 4);
+    }
+
+    #[test]
+    fn skips_test_annotated_functions() {
+        let source = r#"(:test)
+function coversItself(logger) {
+    return true;
+}
+
+function real() {
+}
+"#;
+        let result = instrument(source, "t.mc", 0).unwrap();
+        assert_eq!(result.sites.len(), 1);
+        assert_eq!(result.sites[0].name, "real");
+        assert!(
+            !result
+                .source
+                .contains("function coversItself(logger) { Cov.hit")
+        );
+    }
+
+    #[test]
+    fn skips_everything_inside_test_annotated_containers() {
+        let source = r#"(:test)
+module Helpers {
+    function helper() {
+    }
+}
+
+(:debug) (:test)
+class Stacked {
+    function alsoSkipped() {
+    }
+}
+
+(:background)
+function kept() {
+}
+"#;
+        let result = instrument(source, "t.mc", 0).unwrap();
+        assert_eq!(result.sites.len(), 1);
+        assert_eq!(result.sites[0].name, "kept");
     }
 
     #[test]

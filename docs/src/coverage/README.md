@@ -11,21 +11,20 @@ rewriting the source before compilation:
    output directory. Untouched code stays byte-identical — the same byte-range
    patching `monkey-c-linter --fix` uses. Input paths are mirrored under the
    output directory, so two files that share a name in different directories
-   don't collide.
+   don't collide. Declarations annotated with `(:test)` are left
+   uninstrumented so test code never counts toward its own coverage.
 2. Compile the instrumented directory with `monkeyc --unit-test` and run the
-   tests with `monkeydo … -t`, capturing the console output. The runtime
-   prints one line, exactly `COVHIT <id>`, the first time each function runs.
-3. `report` joins the captured log against the manifest and prints per-file
-   coverage with the names of every function that never ran.
+   tests with `monkeydo … -t`, capturing the console output as `run.log`
+   inside the output directory. The runtime prints one line, exactly
+   `COVHIT <id>`, the first time each function runs.
+3. `report` joins `run.log` against the manifest in the output directory and
+   prints per-file coverage with the names of every function that never ran.
 
 ```sh
-monkey-c-coverage instrument --out build/coverage/source source/*.mc
+monkey-c-coverage instrument --out build/coverage/source source
 monkeyc -f build/coverage/coverage.jungle -d <device> -o cov.prg -y key --unit-test
-monkeydo cov.prg <device> -t | tee run.log
-monkey-c-coverage report \
-    --manifest build/coverage/source/coverage-manifest.tsv \
-    --log run.log \
-    --exclude-suffix Test.mc
+monkeydo cov.prg <device> -t | tee build/coverage/source/run.log
+monkey-c-coverage report build/coverage/source
 ```
 
 The jungle for the instrumented build points `base.sourcePath` at the
