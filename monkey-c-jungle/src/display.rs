@@ -38,24 +38,30 @@ impl std::fmt::Display for Assignment {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} =", self.target)?;
 
-        for (i, value) in self.values.iter().enumerate() {
-            let last = i + 1 == self.values.len();
-
-            if i == 0 {
-                write!(f, " ")?;
-            }
-
-            write!(f, "{value}")?;
-
-            if !last {
-                write!(f, ";")?;
-            }
-
-            write_comments(f, value, last)?;
+        if !self.values.is_empty() {
+            write!(f, " ")?;
         }
 
-        Ok(())
+        write_value_list(f, &self.values)
     }
+}
+
+/// Write `;`-separated values, breaking the line after any that carries a comment. Shared by an
+/// instruction and by a `[…]` group, which lays its contents out the same way.
+fn write_value_list(f: &mut std::fmt::Formatter<'_>, values: &[Value]) -> std::fmt::Result {
+    for (i, value) in values.iter().enumerate() {
+        let last = i + 1 == values.len();
+
+        write!(f, "{value}")?;
+
+        if !last {
+            write!(f, ";")?;
+        }
+
+        write_comments(f, value, last)?;
+    }
+
+    Ok(())
 }
 
 impl std::fmt::Display for QualifiedName {
@@ -75,9 +81,16 @@ impl std::fmt::Display for Value {
                 Ok(())
             }
             ValueKind::Group(values) => {
-                let rendered: Vec<String> = values.iter().map(Value::to_string).collect();
+                write!(f, "[")?;
+                write_value_list(f, values)?;
 
-                write!(f, "[{}]", rendered.join(";"))
+                // A comment on the last value ate the line break, so the `]` has to start a new
+                // line — `monkeyc` rejects it sharing one.
+                if ends_with_comment_value(values) {
+                    writeln!(f)?;
+                }
+
+                write!(f, "]")
             }
         }
     }
@@ -142,11 +155,12 @@ fn ends_with_comment(entry: &Entry) -> bool {
     match entry {
         Entry::Comment(_) => false,
         Entry::BlankLine => false,
-        Entry::Assignment(assignment) => assignment
-            .values
-            .last()
-            .is_some_and(|value| !value.comments.is_empty()),
+        Entry::Assignment(assignment) => ends_with_comment_value(&assignment.values),
     }
+}
+
+fn ends_with_comment_value(values: &[Value]) -> bool {
+    values.last().is_some_and(|v| !v.comments.is_empty())
 }
 
 /// Whether the next entry would land on the line directly below.

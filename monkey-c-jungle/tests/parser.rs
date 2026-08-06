@@ -269,3 +269,24 @@ fn errors_point_at_the_offending_line() {
 
     assert_eq!((err.line, err.col), (3, 1));
 }
+
+/// A comment inside a `[…]` group belongs to the value it was written against, exactly as at the
+/// top level. Printing used to drop it silently.
+#[test]
+fn comments_inside_a_group_stay_with_their_value() {
+    let jungle = parse("a = [b; # note\n  c]\n");
+
+    let ValueKind::Group(inner) = &jungle.get("a").expect("target not found").values[0].kind else {
+        panic!("expected a group value");
+    };
+
+    assert_eq!(
+        inner[0]
+            .comments
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>(),
+        vec![" note"],
+    );
+    assert!(inner[1].comments.is_empty());
+}

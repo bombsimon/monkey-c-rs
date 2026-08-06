@@ -105,17 +105,13 @@ impl JungleFile {
     /// A file may assign the same target more than once, and the later one wins, so this returns
     /// the last match.
     pub fn get(&self, target: &str) -> Option<&Assignment> {
-        let name = QualifiedName::new(target);
-
-        self.assignments().rev().find(|a| a.target.matches(&name))
+        self.assignments().rev().find(|a| a.target.matches(target))
     }
 
     pub fn get_mut(&mut self, target: &str) -> Option<&mut Assignment> {
-        let name = QualifiedName::new(target);
-
         self.assignments_mut()
             .rev()
-            .find(|a| a.target.matches(&name))
+            .find(|a| a.target.matches(target))
     }
 
     /// Point `target` at `values`, replacing the last instruction that assigns it or appending one
@@ -145,11 +141,10 @@ impl JungleFile {
 
     /// Drop every instruction assigning `target` and report how many were removed.
     pub fn remove(&mut self, target: &str) -> usize {
-        let name = QualifiedName::new(target);
         let before = self.entries.len();
 
         self.entries.retain(|entry| match entry {
-            Entry::Assignment(assignment) => !assignment.target.matches(&name),
+            Entry::Assignment(assignment) => !assignment.target.matches(target),
             _ => true,
         });
 
@@ -197,6 +192,10 @@ impl Comment {
 
 impl QualifiedName {
     /// Build a name from a dotted string, e.g. `fenix5.lang.eng`.
+    ///
+    /// Segments are taken as given. A name with an empty one (`base..sourcePath`) prints back as
+    /// written and neither this parser nor `monkeyc` will read it again, so it is on the caller to
+    /// pass a name a jungle file could contain.
     pub fn new(name: &str) -> Self {
         Self {
             segments: name.split('.').map(str::to_string).collect(),
@@ -204,10 +203,12 @@ impl QualifiedName {
         }
     }
 
-    /// Whether two names refer to the same thing, ignoring spans so a constructed name matches a
-    /// parsed one.
-    pub fn matches(&self, other: &Self) -> bool {
-        self.segments == other.segments
+    /// Whether this name is the dotted `target`, e.g. `fenix5.lang.eng`.
+    pub fn matches(&self, target: &str) -> bool {
+        self.segments
+            .iter()
+            .map(String::as_str)
+            .eq(target.split('.'))
     }
 
     /// The qualifier the name applies to, e.g. `fenix5` in `fenix5.lang.eng`.

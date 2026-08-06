@@ -58,6 +58,10 @@ const UNCHANGED: &[(&str, &str)] = &[
         "several comments on one value",
         "a = b; # one\n  # two\n  c\n",
     ),
+    // A group lays its contents out the same way. Dropping these silently was a bug.
+    ("comment inside a group", "a = [b; # note\n  c]\n"),
+    // A comment on the group's last value ate the break, so `]` has to start a new line.
+    ("comment on a group's last value", "a = [b;c # note\n]\n"),
     // Only a comment absorbs the break after a `;`, so a value without one stays on its line.
     // Breaking after every value once any was annotated emitted output `monkeyc` rejected.
     ("unannotated value, last annotated", "a = b;c # note\n"),
