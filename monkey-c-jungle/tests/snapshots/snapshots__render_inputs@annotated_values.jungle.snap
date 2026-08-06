@@ -1,0 +1,16 @@
+---
+source: monkey-c-jungle/tests/snapshots.rs
+input_file: monkey-c-jungle/tests/inputs/annotated_values.jungle
+---
+project.manifest = manifest.xml # the only manifest
+
+# A comment reaches to the end of its line, so a list that annotates its
+# entries has to put one value per line.
+base.sourcePath = source; # shared by everything
+  $(round.sourcePath); # round devices
+  wearable-source # everything else
+
+base.barrelPath = barrels/MathLibrary.barrel; # packaged
+  [MyIconBarrel/roundIcons.jungle;MyIconBarrel/rectangleIcons.jungle] # local project
+
+base.resourcePath = resources

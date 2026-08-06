@@ -1,0 +1,9 @@
+# A comment takes its line break with it, so this is one instruction.
+project.manifest = # Foo
+    manifest.xml
+
+# A note written beside an instruction needs a blank line after it, or the
+# next line runs into this one.
+base.sourcePath = source # only the shared code
+
+base.resourcePath = resources

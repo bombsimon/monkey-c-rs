@@ -378,6 +378,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "monkey-c-jungle"
+version = "0.2.0"
+dependencies = [
+ "insta",
+ "monkey-c-parser",
+]
+
+[[package]]
 name = "monkey-c-linter"
 version = "0.2.0"
 dependencies = [

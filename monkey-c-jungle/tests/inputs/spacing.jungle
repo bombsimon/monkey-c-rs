@@ -1,0 +1,9 @@
+project.manifest=manifest.xml
+
+base.sourcePath  =   source ;   source-extra # both trees
+
+base.barrelPath = a.barrel;\
+                  b.barrel; # the local project
+                  c.barrel
+
+base.resourcePath =  resources

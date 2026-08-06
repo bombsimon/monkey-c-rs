@@ -1,0 +1,12 @@
+[package]
+name = "monkey-c-jungle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+monkey-c-parser.workspace = true
+
+[dev-dependencies]
+insta = { version = "1", features = ["glob"] }

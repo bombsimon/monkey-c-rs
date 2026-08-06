@@ -1,0 +1,23 @@
+# FOR REFERENCE ONLY
+# Default Jungle file
+
+devicesPath = "/Users/me/Library/Application Support/Garmin/ConnectIQ/Devices"
+
+# Set the base properties, base represents the root of the Monkey C Project
+base.sourcePath = .\**.mc
+base.resourcePath = resources
+base.personality = resources
+
+# Set the base language-specific string resources
+base.lang.swe = resources-swe
+base.lang.eng = resources-eng
+
+# Set the round-360x360 family qualifier
+round-360x360 = $(round)
+round-360x360.resourcePath = $(round-360x360.resourcePath);resources-round-360x360
+round-360x360.personality = $(round-360x360.personality);resources-round-360x360
+
+# Set the round-360x360 language-specific string resources
+round-360x360.lang.swe = $(round-360x360.lang.swe);resources-round-360x360-swe
+
+approachs7042mm.personality = ../../resources;../../resources-round-390x390;"../../../../Library/Application Support/Garmin/ConnectIQ/Devices/approachs7042mm"
