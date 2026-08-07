@@ -1,0 +1,12 @@
+---
+source: monkey-c-jungle/tests/snapshots.rs
+input_file: monkey-c-jungle/tests/inputs/spacing.jungle
+---
+project.manifest = manifest.xml
+
+base.sourcePath = source;source-extra # both trees
+
+base.barrelPath = a.barrel;b.barrel; # the local project
+  c.barrel
+
+base.resourcePath = resources

@@ -1,0 +1,15 @@
+---
+source: monkey-c-jungle/tests/snapshots.rs
+input_file: monkey-c-jungle/tests/inputs/localization.jungle
+---
+# Set the fenix 5 English language resource location
+fenix5.lang.eng = $(fenix5.lang.eng);fenix-resources-eng
+
+# Set the fenix 5 Spanish language resource location
+fenix5.lang.spa = $(fenix5.lang.spa);fenix-resources-spa
+
+# Set the fenix 3 English language resource location
+fenix3.lang.eng = $(fenix3.lang.eng);fenix-resources-eng
+
+# Set the fenix 3 Spanish language resource location
+fenix3.lang.spa = $(fenix3.lang.spa);fenix-resources-spa

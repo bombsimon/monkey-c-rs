@@ -1,0 +1,20 @@
+---
+source: monkey-c-jungle/tests/snapshots.rs
+input_file: monkey-c-jungle/tests/inputs/barrels.jungle
+---
+# Do not hand edit this file. To make changes run the
+# "Configure Monkey Barrels" command.
+TouchKeypad = [../garmin-touch-keypad/monkey.jungle]
+base.barrelPath = $(base.barrelPath);$(TouchKeypad)
+
+# Include all the Barrels from the 'barrels' directory at the root of the project
+base.barrelPath = barrels
+
+# Include multiple, specific Barrels from the 'barrels' directory
+base.barrelPath = barrels/IconLibrary.barrel;barrels/GraphLibrary.barrel
+
+# Include a specific Barrel from the 'barrels' directory and multiple Jungles from a Barrel project
+base.barrelPath = barrels/MathLibrary.barrel;[MyIconBarrel/roundIcons.jungle;MyIconBarrel/rectangleIcons.jungle]
+
+# Import the 'bar' annotated method from the GraphLibrary Barrel
+base.GraphLibrary.annotations = bar

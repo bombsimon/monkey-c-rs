@@ -30,6 +30,16 @@ formatters and linters.
 
 ---
 
+### `monkey-c-jungle`
+
+A parser and printer for [jungle files][jungle-reference], the Connect IQ build
+language. See [`monkey-c-jungle`][jungle]
+
+Parses a `.jungle` file into an AST that keeps its comments and blank lines, can
+be edited, and writes itself back out.
+
+---
+
 ### `monkey-c-formatter`
 
 A formatter to format [Monkey C] code. See [`monkey-c-formatter`][formatter]
@@ -87,6 +97,8 @@ This repository is licensed under the [MIT License][license]
 [awesome-garmin]: https://github.com/bombsimon/awesome-garmin
 [formatter]: monkey-c-formatter
 [garmin-monkeyc.nvim]: https://github.com/bombsimon/garmin-monkeyc.nvim
+[jungle-reference]: https://developer.garmin.com/connect-iq/reference-guides/jungle-reference/
+[jungle]: monkey-c-jungle
 [license]: LICENSE
 [linter]: monkey-c-linter
 [lsp-crate]: monkey-c-lsp

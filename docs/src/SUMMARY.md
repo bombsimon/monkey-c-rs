@@ -17,3 +17,4 @@
     - [Redundant resource ref](./linter/rules/redundant-resource-ref/README.md)
     - [Super initializer call](./linter/rules/super-initializer-call/README.md)
     - [Unneeded parens](./linter/rules/unneeded-parens/README.md)
+- [Jungle](./jungle/README.md)

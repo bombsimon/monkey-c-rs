@@ -1,0 +1,16 @@
+project.manifest = manifest.xml
+
+# Reset the base source path to include only source files in the source folder. The
+# default source path includes source files in the project folder and all subfolders.
+base.sourcePath = source
+
+# Set the source path for wearable devices by device family
+round.sourcePath = $(round.sourcePath);wearable-source
+semiround.sourcePath = $(semiround.sourcePath);wearable-source
+
+# Set the source path for edge devices by device
+edge530.sourcePath = $(edge530.sourcePath);edge-source
+edge830.sourcePath = $(edge830.sourcePath);edge-source
+
+# Set the fenix 5 resource directory
+fenix5.resourcePath = $(fenix5.resourcePath);fenix-resources
