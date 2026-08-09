@@ -2,9 +2,10 @@ use clap::{Parser, Subcommand};
 use monkey_c_coverage::{
     FunctionSite, instrument, manifest_line, parse_hits, parse_manifest_line, runtime_module,
 };
-use monkey_c_diagnostics::{already_reported, read_source, render_parse_error};
+use monkey_c_diagnostics::{already_reported, read_source, read_stdin_source, render_parse_error};
 
 use std::collections::{BTreeMap, HashSet};
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
@@ -25,29 +26,33 @@ enum Command {
     Instrument {
         /// Directory that receives the instrumented copies. Cleared on each
         /// run so stale instrumented files never leak into a build.
-        #[arg(long, default_value = "bin/coverage")]
-        out: PathBuf,
+        /// Defaults to `{repo_root}/bin/coverage`.
+        #[arg(long)]
+        out: Option<PathBuf>,
         /// Additional annotation names (beyond `test` and `release`) whose
         /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
         /// or repeated `--exclude-annotation foo --exclude-annotation bar`.
         #[arg(long, value_delimiter = ',')]
         exclude_annotation: Vec<String>,
-        /// Monkey C source files or directories to instrument.
+        /// Monkey C source files or directories to instrument. Defaults to
+        /// the whole project (the nearest ancestor holding `manifest.xml`),
+        /// so the tool can be run from any subdirectory of it.
         files: Vec<PathBuf>,
     },
     /// Join a captured simulator log against the manifest and print
     /// per-file coverage.
     Report {
-        /// Directory produced by `instrument`. The report reads the
-        /// coverage-manifest.tsv written there together with run.log, the
-        /// captured simulator output (e.g. from monkeydo -t).
-        #[arg(default_value = "bin/coverage")]
-        dir: PathBuf,
+        /// Directory produced by `instrument`, holding coverage-manifest.tsv.
+        /// Defaults to `{repo_root}/bin/coverage`.
+        dir: Option<PathBuf>,
+        /// Captured simulator output containing COVHIT lines (e.g. from
+        /// monkeydo -t). Pass `-` to read from stdin.
+        #[arg(long)]
+        log: PathBuf,
     },
 }
 
 const MANIFEST_FILE: &str = "coverage-manifest.tsv";
-const LOG_FILE: &str = "run.log";
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -71,20 +76,37 @@ fn run(command: &Command) -> io::Result<()> {
             out,
             exclude_annotation,
             files,
-        } => run_instrument(out, exclude_annotation, files),
-        Command::Report { dir } => run_report(dir),
+        } => run_instrument(out.as_deref(), exclude_annotation, files),
+        Command::Report { dir, log } => run_report(dir.as_deref(), log),
     }
 }
 
-fn run_instrument(out: &Path, exclude_annotation: &[String], files: &[PathBuf]) -> io::Result<()> {
+fn run_instrument(
+    out: Option<&Path>,
+    exclude_annotation: &[String],
+    files: &[PathBuf],
+) -> io::Result<()> {
     let exclude_annotation: Vec<&str> = exclude_annotation.iter().map(String::as_str).collect();
+
+    let root = project_root()?;
+    let out = out.map_or_else(|| root.join("bin/coverage"), Path::to_path_buf);
+
     // A previous run's files would otherwise be recycled into the next
     // build (and report) even after their sources were renamed or removed.
     if out.exists() {
-        fs::remove_dir_all(out)?;
+        fs::remove_dir_all(&out)?;
     }
 
-    let files = collect_mc_files(out, files)?;
+    let default_files = [root.clone()];
+    let files = if files.is_empty() {
+        &default_files[..]
+    } else {
+        files
+    };
+    // The compiler and Monkey C Optimizer both write build artifacts under
+    // `{root}/bin` (our own `--out` default lives there too), so a
+    // whole-project walk must never descend into it.
+    let files = collect_mc_files(&out, &root.join("bin"), files)?;
     if files.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -96,7 +118,7 @@ fn run_instrument(out: &Path, exclude_annotation: &[String], files: &[PathBuf]) 
     let mut next_id = 0;
     for file in &files {
         let source = read_source(file)?;
-        let dest = mirrored_path(file);
+        let dest = mirrored_path(file, &root);
         let name = dest.to_string_lossy().into_owned();
         let result = instrument(&source, &name, next_id, &exclude_annotation).map_err(|e| {
             render_parse_error(&name, &source, &e);
@@ -119,12 +141,41 @@ fn run_instrument(out: &Path, exclude_annotation: &[String], files: &[PathBuf]) 
     Ok(())
 }
 
-/// Resolve `paths` into a deterministic, sorted list of `.mc` files.
+/// The Connect IQ project root: the nearest ancestor holding `manifest.xml`.
+/// Everything anchors here rather than the working directory, so the mirrored
+/// tree, `--out` and the manifest paths come out the same wherever the tool is
+/// invoked from.
+fn project_root() -> io::Result<PathBuf> {
+    let mut dir = env::current_dir()?;
+
+    loop {
+        // Canonicalized so it strips against the canonicalized paths
+        // `collect_mc_files` produces even where `current_dir` doesn't
+        // already resolve symlinks itself.
+        if dir.join("manifest.xml").is_file() {
+            return fs::canonicalize(dir);
+        }
+
+        if !dir.pop() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no manifest.xml in this directory or any parent — run from inside a Connect IQ project",
+            ));
+        }
+    }
+}
+
+/// Resolve `paths` into a deterministic, deduplicated list of `.mc` files.
 /// Files are accepted as-is regardless of extension (so explicit per-file
 /// invocations always work); directories are walked recursively, skipping
-/// hidden ones. Copied from `monkey-c-formatter` until it grows a shared
-/// home.
-fn collect_mc_files(out: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
+/// hidden ones and `exclude_dir` (the compiler and Monkey C Optimizer write
+/// build artifacts there, and our own `out` default lives under it). Every
+/// path is canonicalized before being collected, so overlapping inputs (an
+/// explicit file plus a directory containing it, or `source/A.mc` alongside
+/// `./source/A.mc`) dedupe to one entry instead of instrumenting the same
+/// file twice under different ids. Copied from `monkey-c-formatter` until it
+/// grows a shared home.
+fn collect_mc_files(out: &Path, exclude_dir: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for p in paths {
         // Always ignore any files in our output directory, they're generated files.
@@ -136,9 +187,9 @@ fn collect_mc_files(out: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
             .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", p.display())))?;
 
         if meta.is_file() {
-            files.push(p.clone());
+            files.push(fs::canonicalize(p)?);
         } else if meta.is_dir() {
-            walk_dir(p, &mut files)?;
+            walk_dir(&fs::canonicalize(p)?, exclude_dir, &mut files)?;
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -148,11 +199,16 @@ fn collect_mc_files(out: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
     }
 
     files.sort();
+    files.dedup();
 
     Ok(files)
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+fn walk_dir(dir: &Path, exclude_dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
+    if dir == exclude_dir {
+        return Ok(());
+    }
+
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -165,16 +221,20 @@ fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
         }
 
         if file_type.is_dir() {
-            walk_dir(&path, out)?;
+            walk_dir(&path, exclude_dir, out)?;
         } else if file_type.is_file() && path.extension().is_some_and(|e| e == "mc") {
-            out.push(path);
+            out.push(fs::canonicalize(&path)?);
         }
     }
 
     Ok(())
 }
 
-fn run_report(dir: &Path) -> io::Result<()> {
+fn run_report(dir: Option<&Path>, log: &Path) -> io::Result<()> {
+    let dir = match dir {
+        Some(dir) => dir.to_path_buf(),
+        None => project_root()?.join("bin/coverage"),
+    };
     let sites: Vec<FunctionSite> = read_source(&dir.join(MANIFEST_FILE))?
         .lines()
         .filter(|line| !line.is_empty())
@@ -187,7 +247,13 @@ fn run_report(dir: &Path) -> io::Result<()> {
             })
         })
         .collect::<io::Result<_>>()?;
-    let hits: HashSet<usize> = parse_hits(&read_source(&dir.join(LOG_FILE))?);
+
+    let log = if log == Path::new("-") {
+        read_stdin_source()?
+    } else {
+        read_source(log)?
+    };
+    let hits: HashSet<usize> = parse_hits(&log);
 
     let mut by_file: BTreeMap<&str, Vec<&FunctionSite>> = BTreeMap::new();
     for site in &sites {
@@ -247,17 +313,25 @@ fn write(path: &Path, contents: &str) -> io::Result<()> {
         .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", path.display())))
 }
 
-/// Map an input path to the relative path its instrumented copy takes under the
-/// output directory. Root, prefix, `.` and `..` components are dropped so
-/// distinct sources like `a/foo.mc` and `b/foo.mc` keep separate destinations
-/// instead of colliding on `foo.mc`, and nothing escapes the output directory.
-fn mirrored_path(path: &Path) -> PathBuf {
-    let mut relative = PathBuf::new();
-    for component in path.components() {
+/// Map an input path (already canonicalized by [`collect_mc_files`]) to the
+/// relative path its instrumented copy takes under the output directory,
+/// anchored at `root`. Anchoring first (rather than just dropping `.`/`..`
+/// components from whatever path the caller passed) is what actually
+/// prevents collisions: `shared/A.mc` and `../shared/A.mc` are the same file
+/// relative to the working directory but different ones relative to `root`,
+/// so they land at distinct destinations instead of one overwriting the
+/// other. Anything outside `root` — a path traversal a user shouldn't be
+/// passing — falls back to mirroring the absolute path so nothing escapes
+/// the output directory.
+fn mirrored_path(path: &Path, root: &Path) -> PathBuf {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+
+    let mut safe = PathBuf::new();
+    for component in relative.components() {
         if let Component::Normal(part) = component {
-            relative.push(part);
+            safe.push(part);
         }
     }
 
-    relative
+    safe
 }
