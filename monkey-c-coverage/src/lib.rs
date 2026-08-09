@@ -51,12 +51,14 @@ pub fn instrument(
 ) -> Result<Instrumented, ParserError> {
     let output = Parser::new(source).parse()?;
     let mut bodies = Vec::new();
+
     collect(
         &output.ast,
         exclude_annotations,
         &mut Vec::new(),
         &mut bodies,
     );
+
     // `collect` walks the AST depth-first, so braces already come out in source
     // order. The splice below runs back-to-front and relies on that; the sort is
     // a cheap guard should the walk order ever change.
@@ -101,6 +103,7 @@ pub fn runtime_module(sites: usize) -> String {
     // Guard the degenerate zero-site case: `new [0]` is a legal but useless
     // allocation, and a one-slot array keeps the generated module uniform.
     let sites = sites.max(1);
+
     // The module variable is public and unprefixed so the generated source
     // passes `monkey-c-linter`'s naming rules. Each line is emitted as exactly
     // `COVHIT <id>` — `parse_hits` matches nothing else.
@@ -169,6 +172,7 @@ pub fn parse_manifest_line(line: &str) -> Option<FunctionSite> {
     let line_no = parts.next()?.parse().ok()?;
     let file = parts.next()?.to_string();
     let name = parts.next()?.to_string();
+
     Some(FunctionSite {
         id,
         file,
@@ -261,6 +265,7 @@ fn qualified(scope: &[String], name: &str) -> String {
     if scope.is_empty() {
         return name.to_string();
     }
+
     format!("{}.{}", scope.join("."), name)
 }
 
