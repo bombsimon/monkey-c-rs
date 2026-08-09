@@ -40,10 +40,12 @@ monkeydo cov.prg <device> -t | tee build/coverage/source/run.log
 monkey-c-coverage report build/coverage/source --log build/coverage/source/run.log
 ```
 
+> _**NOTE**: The simulator needs to be running when executing `monkeydo`_
+
 The jungle for the instrumented build points `base.sourcePath` at the
 output directory (paths are resolved relative to the jungle file):
 
-```
+```jungle
 project.manifest = ../../manifest.xml
 base.sourcePath = source
 base.resourcePath = ../../resources
