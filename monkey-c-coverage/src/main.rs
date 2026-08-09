@@ -27,6 +27,11 @@ enum Command {
         /// run so stale instrumented files never leak into a build.
         #[arg(long, default_value = "bin/coverage")]
         out: PathBuf,
+        /// Additional annotation names (beyond `test` and `release`) whose
+        /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
+        /// or repeated `--exclude-annotation foo --exclude-annotation bar`.
+        #[arg(long, value_delimiter = ',')]
+        exclude_annotation: Vec<String>,
         /// Monkey C source files or directories to instrument.
         files: Vec<PathBuf>,
     },
@@ -62,24 +67,29 @@ fn main() -> ExitCode {
 
 fn run(command: &Command) -> io::Result<()> {
     match command {
-        Command::Instrument { out, files } => run_instrument(out, files),
+        Command::Instrument {
+            out,
+            exclude_annotation,
+            files,
+        } => run_instrument(out, exclude_annotation, files),
         Command::Report { dir } => run_report(dir),
     }
 }
 
-fn run_instrument(out: &Path, files: &[PathBuf]) -> io::Result<()> {
-    let files = collect_mc_files(files)?;
+fn run_instrument(out: &Path, exclude_annotation: &[String], files: &[PathBuf]) -> io::Result<()> {
+    let exclude_annotation: Vec<&str> = exclude_annotation.iter().map(String::as_str).collect();
+    // A previous run's files would otherwise be recycled into the next
+    // build (and report) even after their sources were renamed or removed.
+    if out.exists() {
+        fs::remove_dir_all(out)?;
+    }
+
+    let files = collect_mc_files(out, files)?;
     if files.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "no input files",
         ));
-    }
-
-    // A previous run's files would otherwise be recycled into the next
-    // build (and report) even after their sources were renamed or removed.
-    if out.exists() {
-        fs::remove_dir_all(out)?;
     }
 
     let mut manifest = String::new();
@@ -88,7 +98,7 @@ fn run_instrument(out: &Path, files: &[PathBuf]) -> io::Result<()> {
         let source = read_source(file)?;
         let dest = mirrored_path(file);
         let name = dest.to_string_lossy().into_owned();
-        let result = instrument(&source, &name, next_id).map_err(|e| {
+        let result = instrument(&source, &name, next_id, &exclude_annotation).map_err(|e| {
             render_parse_error(&name, &source, &e);
             already_reported()
         })?;
@@ -114,9 +124,14 @@ fn run_instrument(out: &Path, files: &[PathBuf]) -> io::Result<()> {
 /// invocations always work); directories are walked recursively, skipping
 /// hidden ones. Copied from `monkey-c-formatter` until it grows a shared
 /// home.
-fn collect_mc_files(paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
+fn collect_mc_files(out: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     for p in paths {
+        // Always ignore any files in our output directory, they're generated files.
+        if p == out {
+            continue;
+        }
+
         let meta = fs::metadata(p)
             .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", p.display())))?;
 
