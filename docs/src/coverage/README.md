@@ -18,12 +18,12 @@ rewriting the source before compilation:
    input is passed more than once. With no files or directories given,
    `instrument` covers the whole project, skipping `{root}/bin` where the
    compiler and Monkey C Optimizer write build artifacts. `--out` (and
-   `report`'s directory argument) both default to `{root}/bin/coverage`, so
-   the tool can be run from any subdirectory of the project without any
-   arguments. Declarations annotated with `(:test)` are left uninstrumented
-   so test code never counts toward its own coverage; `--exclude-annotation`
-   adds further annotations (e.g. ones set via a jungle's
-   `excludeAnnotations`) to skip the same way.
+   `report`'s `--dir`) both default to `{root}/bin/coverage`, so the tool can
+   be run from any subdirectory of the project without any arguments.
+   Declarations annotated with `(:test)` are left uninstrumented so test code
+   never counts toward its own coverage; `--exclude-annotation` adds further
+   annotations (e.g. ones set via a jungle's `excludeAnnotations`) to skip the
+   same way.
 2. `instrument` also writes `{out}/coverage.jungle`, a copy of the project's
    jungle file (`--jungle`, defaulting to `{root}/monkey.jungle`) with
    `project.manifest` repointed at the real `manifest.xml` — it isn't
@@ -39,14 +39,25 @@ rewriting the source before compilation:
    function runs.
 4. `report` joins that log against the manifest in the output directory and
    prints per-file coverage with the names of every function that never ran.
-   Pass its location with `--log <path>`, or `--log -` to read it from
-   stdin.
+   Its location is a positional argument; pass `-` to read it from stdin
+   instead, so `monkeydo`'s output can be piped straight in.
 
 ```sh
 monkey-c-coverage instrument
 monkeyc -f bin/coverage/coverage.jungle -d <device> -o bin/coverage/cov.prg -y key --unit-test
+```
+
+Then either pipe straight into `report`:
+
+```sh
+monkeydo bin/coverage/cov.prg <device> -t | monkey-c-coverage report -
+```
+
+Or capture the log to a file first, e.g. to keep the raw output around:
+
+```sh
 monkeydo bin/coverage/cov.prg <device> -t | tee bin/coverage/run.log
-monkey-c-coverage report --log bin/coverage/run.log
+monkey-c-coverage report bin/coverage/run.log
 ```
 
 > _**NOTE**: The simulator needs to be running when executing `monkeydo`_

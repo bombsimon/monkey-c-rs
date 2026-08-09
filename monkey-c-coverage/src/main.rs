@@ -50,10 +50,11 @@ enum Command {
     Report {
         /// Directory produced by `instrument`, holding coverage-manifest.tsv.
         /// Defaults to `{repo_root}/bin/coverage`.
+        #[arg(long)]
         dir: Option<PathBuf>,
         /// Captured simulator output containing COVHIT lines (e.g. from
-        /// monkeydo -t). Pass `-` to read from stdin.
-        #[arg(long)]
+        /// monkeydo -t). Pass `-` to read from stdin, e.g.
+        /// `monkeydo … -t | monkey-c-coverage report -`.
         log: PathBuf,
     },
 }
