@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 clap.workspace = true
+comfy-table.workspace = true
 monkey-c-diagnostics.workspace = true
 monkey-c-jungle.workspace = true
 monkey-c-parser.workspace = true

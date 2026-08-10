@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use comfy_table::Table;
 use monkey_c_coverage::{
     FunctionSite, coverage_jungle, instrument, manifest_line, parse_hits, parse_manifest_line,
     runtime_module,
@@ -572,7 +573,10 @@ fn run_report(dir: Option<&Path>, log: &Path) -> io::Result<()> {
         by_file.entry(&site.file).or_default().push(site);
     }
 
-    println!("{:<36} {:>9}  missed", "file", "covered");
+    let mut table = Table::new();
+    table
+        .load_style(comfy_table::presets::UTF8_FULL.with_rounded_corners())
+        .set_header(vec!["FILE", "COVERED", "MISSED"]);
 
     let mut total = 0;
     let mut covered = 0;
@@ -587,14 +591,16 @@ fn run_report(dir: Option<&Path>, log: &Path) -> io::Result<()> {
             .map(|s| s.name.as_str())
             .collect();
 
-        println!(
-            "{:<36} {:>4}/{:<4}  {}",
-            file,
-            hit,
-            file_sites.len(),
-            missed.join(" ")
-        );
+        // One function per line rather than space-joined, so a file with a
+        // dozen missed functions doesn't run the row off the screen.
+        table.add_row(vec![
+            (*file).to_string(),
+            format!("{hit}/{}", file_sites.len()),
+            missed.join("\n"),
+        ]);
     }
+
+    println!("{table}");
 
     if total == 0 {
         return Err(io::Error::new(

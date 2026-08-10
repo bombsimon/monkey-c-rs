@@ -19,6 +19,7 @@ repository = "https://github.com/bombsimon/monkey-c-rs"
 [workspace.dependencies]
 ariadne = "0.6"
 clap = { version = "4", features = ["derive"] }
+comfy-table = "8"
 monkey-c-diagnostics = { path = "monkey-c-diagnostics" }
 monkey-c-formatter = { path = "monkey-c-formatter" }
 monkey-c-jungle = { path = "monkey-c-jungle" }
