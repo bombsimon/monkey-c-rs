@@ -11,6 +11,56 @@ support to hook into.
 
 ## Usage
 
+`test` runs the whole pipeline — instrument, compile, run under the
+simulator, and report — in one step, using the paths `instrument` already
+decided instead of asking you to retype them:
+
+```sh
+monkey-c-coverage test -d <device> -y key
+```
+
+That needs `monkeyc` and `monkeydo` on `PATH`, and the simulator already
+running. `monkeyc`'s and `monkeydo`'s own output stays out of the way on a
+clean run — `test` prints the instrument summary, monkeydo's own one-line
+verdict (`PASSED (passed=1, failed=0, errors=0)`), and the coverage table,
+nothing more (`COVHIT` lines are always stripped from anything printed,
+whichever branch below it takes). The full raw output only shows up once
+something looks wrong, and what happens next depends on what "wrong" means:
+
+- A non-zero `monkeyc` exit, or a `monkeydo` run that produced no coverage
+  hits at all (even after a `--start-simulator` retry): `test` stops right
+  there and exits non-zero. No coverage table — the build never ran, so a
+  "0/N covered" table would misrepresent that as a real (if terrible)
+  result rather than a broken pipeline.
+- A `monkeydo` run whose verdict line reports a failed or errored test
+  (`FAILED (passed=0, failed=0, errors=1)`): `test` still exits non-zero,
+  but the coverage table is still printed afterwards, since the code did
+  run and that data is still meaningful.
+
+None of this reads `monkeydo`'s own exit status — it isn't a reliable
+pass/fail signal on its own (a run with a real failing test can still exit
+zero, and a fully passing one can still exit non-zero) — `test` reads the
+same verdict line and coverage hits the human-readable output already
+shows.
+
+Add `--start-simulator` to have it launch the simulator itself (via
+`connectiq`, installed alongside `monkeyc`/`monkeydo`) if the first
+`monkeydo` attempt comes back with no coverage hits, and retry once:
+
+```sh
+monkey-c-coverage test -d <device> -y key --start-simulator
+```
+
+`--start-simulator` is opt-in rather than default because `connectiq` brings
+an already-running simulator's window to the front, which is only wanted
+when `monkeydo` actually needed it. Pass `--dry-run` to print the
+`monkeyc`/`monkeydo` commands `test` would run without running them.
+
+### Running the steps by hand
+
+`test` is a convenience wrapper; each step also works standalone, e.g. for CI
+or to debug one stage at a time:
+
 ```sh
 monkey-c-coverage instrument
 monkeyc -f bin/coverage/coverage.jungle -d <device> -o bin/coverage/cov.prg -y key --unit-test
@@ -72,20 +122,33 @@ resources currently needs to fix those up by hand.
 ### `instrument`
 
 | Flag                   | Default                | Meaning                                                                                      |
-| ---------------------- | ----------------------- | ---------------------------------------------------------------------------------------------- |
-| `[FILES]...`           | whole project            | Files or directories to instrument.                                                            |
-| `--out`                | `{root}/bin/coverage`    | Output directory; cleared on every run.                                                        |
-| `--jungle`             | `{root}/monkey.jungle`   | Jungle file to copy into `coverage.jungle`.                                                    |
-| `--exclude-annotation` | none                     | Extra annotations to skip, comma-separated or repeated. `test`/`release` are always skipped.   |
+| ---------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
+| `[FILES]...`           | whole project          | Files or directories to instrument.                                                          |
+| `--out`                | `{root}/bin/coverage`  | Output directory; cleared on every run.                                                      |
+| `--jungle`             | `{root}/monkey.jungle` | Jungle file to copy into `coverage.jungle`.                                                  |
+| `--exclude-annotation` | none                   | Extra annotations to skip, comma-separated or repeated. `test`/`release` are always skipped. |
 
 ### `report`
 
-| Argument | Default                | Meaning                                          |
-| -------- | ----------------------- | --------------------------------------------------- |
-| `<LOG>`  | required                 | Captured simulator log; `-` reads it from stdin.   |
-| `--dir`  | `{root}/bin/coverage`    | Directory holding `coverage-manifest.tsv`.         |
+| Argument | Default               | Meaning                                          |
+| -------- | --------------------- | ------------------------------------------------ |
+| `<LOG>`  | required              | Captured simulator log; `-` reads it from stdin. |
+| `--dir`  | `{root}/bin/coverage` | Directory holding `coverage-manifest.tsv`.       |
 
 The simulator may reinitialize module state between unit tests, so probe ids
 can repeat in the log; `report` deduplicates while joining. Only lines that
 are exactly `COVHIT <id>` are counted — anything else the simulator
 interleaves is ignored.
+
+### `test`
+
+Takes every `instrument` flag above plus:
+
+| Flag                    | Default  | Meaning                                                                           |
+| ----------------------- | -------- | --------------------------------------------------------------------------------- |
+| `-d`, `--device`        | required | Device to build and run for, e.g. `fr965`. Passed to `monkeyc -d` and `monkeydo`. |
+| `-y`, `--key`           | required | Developer key. Passed to `monkeyc -y`.                                            |
+| `--start-simulator`     | off      | Launch `connectiq` and retry once if the first `monkeydo` attempt has no hits.    |
+| `--simulator-boot-time` | `5`      | Seconds to wait after launching the simulator before retrying.                    |
+| `--dry-run`             | off      | Print the `monkeyc`/`monkeydo` commands instead of running them.                  |
+| `-- <MONKEYC_ARGS>...`  | none     | Extra arguments forwarded to `monkeyc` verbatim, e.g. `-- -O 3 -w`.               |
