@@ -67,8 +67,9 @@ fn validate_rule_names(settings: &LintSettings) -> io::Result<()> {
 }
 
 /// Lint one target, returning whether it was clean. With `--fix`, fixes are
-/// applied in place and the target counts as clean — remaining findings surface
-/// on the next run, which is also how nested fixes resolve.
+/// applied in place first; the still-outstanding findings (unfixable ones, plus
+/// any a fix's own edits exposed) are then re-linted from the fixed source, so
+/// they're reported and reflected in the exit status just like an unfixed run.
 fn lint_target(
     target: Target<'_>,
     fix: bool,
@@ -81,19 +82,26 @@ fn lint_target(
         Target::File(path) => renderer.read_source(path)?,
     };
 
-    let findings = findings(&source, settings, &label, renderer)?;
+    let initial_findings = findings(&source, settings, &label, renderer)?;
 
     // Fixing is meaningless for stdin: there is no file to rewrite, so the
     // findings are reported instead.
-    if let (true, Target::File(path)) = (fix, target) {
-        let fixes: Vec<Fix> = findings.iter().filter_map(|f| f.fix.clone()).collect();
+    let (source, findings) = if let (true, Target::File(path)) = (fix, target) {
+        let fixes: Vec<Fix> = initial_findings
+            .iter()
+            .filter_map(|f| f.fix.clone())
+            .collect();
         let fixed = apply_fixes(&source, fixes);
         if fixed != source {
-            fs::write(path, fixed)?;
+            fs::write(path, &fixed)?;
         }
 
-        return Ok(true);
-    }
+        let remaining = self::findings(&fixed, settings, &label, renderer)?;
+
+        (fixed, remaining)
+    } else {
+        (source, initial_findings)
+    };
 
     for finding in &findings {
         render_finding(&label, &source, finding, renderer);
@@ -248,6 +256,26 @@ mod tests {
             .expect_err("broken source fails");
 
         assert!(diagnostics::is_already_reported(&error));
+    }
+
+    #[test]
+    fn fix_reports_unclean_when_an_unfixable_finding_remains() {
+        let renderer = Renderer::new(false);
+        // `one-class-per-file` has no automatic fix, so `--fix` leaves the file
+        // exactly as it found it and must still report the run as unclean.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join("Two.mc");
+        fs::write(&path, "class A {\n}\nclass B {\n}\n").expect("write fixture");
+
+        let clean = lint_target(
+            Target::File(&path),
+            true,
+            &LintSettings::default(),
+            &renderer,
+        )
+        .expect("lints");
+
+        assert!(!clean, "an unfixable finding must fail the run");
     }
 
     #[test]
