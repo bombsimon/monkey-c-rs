@@ -72,6 +72,18 @@ speaks over stdio and keeps whole documents in memory (full sync).
 
 ---
 
+### `monkey-c-coverage`
+
+Function-level test coverage for [Monkey C]. See [`monkey-c-coverage`][coverage]
+
+Connect IQ has no native coverage support, so the source is instrumented
+before compilation: a probe after each function's opening brace records which
+functions the test suite actually executes, including those reached
+indirectly. Coverage is function-level only — a fully executed 200-line
+function counts the same as a one-line one.
+
+---
+
 ## Notes on AI
 
 For transparency: this project is being built with assistance of AI. However,
@@ -95,6 +107,7 @@ This repository is licensed under the [MIT License][license]
 
 [Monkey C]: https://developer.garmin.com/connect-iq/monkey-c/
 [awesome-garmin]: https://github.com/bombsimon/awesome-garmin
+[coverage]: monkey-c-coverage
 [formatter]: monkey-c-formatter
 [garmin-monkeyc.nvim]: https://github.com/bombsimon/garmin-monkeyc.nvim
 [jungle-reference]: https://developer.garmin.com/connect-iq/reference-guides/jungle-reference/
