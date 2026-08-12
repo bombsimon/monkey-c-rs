@@ -28,9 +28,9 @@ cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki
 ```
 
 ```sh
-rafiki fmt                  # format the project
-rafiki lint --fix           # lint, applying what can be fixed
-rafiki server               # run the language server (for your editor)
+rafiki fmt                               # format the project
+rafiki lint --fix                        # lint, applying what can be fixed
+rafiki server                            # run the language server (for your editor)
 rafiki coverage test -d <device> -y key  # measure test coverage
 ```
 
