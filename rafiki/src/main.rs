@@ -52,6 +52,7 @@ fn run(cli: &Cli) -> io::Result<bool> {
     match &cli.command {
         Command::Fmt(args) => commands::fmt::run(&cli.global, args),
         Command::Lint(args) => commands::lint::run(&cli.global, args),
+        Command::Coverage(command) => commands::coverage::run(&cli.global, command),
         Command::Server => commands::lsp::run(&cli.global),
         Command::Completions(args) => commands::completions::run(args),
     }

@@ -33,6 +33,10 @@ pub enum Command {
     /// Lint Monkey C source code.
     Lint(LintArgs),
 
+    /// Instrument, run and report Monkey C test coverage.
+    #[command(subcommand)]
+    Coverage(CoverageCommand),
+
     /// Run the language server on stdio.
     Server,
 
@@ -221,6 +225,115 @@ impl FileArgs {
     }
 }
 
+#[derive(Debug, Subcommand)]
+pub enum CoverageCommand {
+    /// Rewrite sources with coverage probes into an output directory.
+    Instrument(CoverageInstrumentArgs),
+
+    /// Print per-file coverage from a captured simulator log.
+    Report(CoverageReportArgs),
+
+    /// Instrument, build, run under the simulator, and report in one step.
+    Test(CoverageTestArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CoverageInstrumentArgs {
+    /// Monkey C source files or directories to instrument. Defaults to the
+    /// whole project (the nearest ancestor holding `manifest.xml`), so the
+    /// tool can be run from any subdirectory of it.
+    pub files: Vec<PathBuf>,
+
+    /// Directory that receives the instrumented copies. Cleared on each run
+    /// so stale instrumented files never leak into a build. Defaults to
+    /// `{repo_root}/bin/coverage`.
+    #[arg(long)]
+    pub out: Option<PathBuf>,
+
+    /// Additional annotation names (beyond `test` and `release`) whose
+    /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
+    /// or repeated `--exclude-annotation foo --exclude-annotation bar`.
+    #[arg(long, value_delimiter = ',')]
+    pub exclude_annotation: Vec<String>,
+
+    /// Jungle file describing the project, copied and rewritten into
+    /// `{out}/coverage.jungle` so the instrumented build can be compiled with
+    /// `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
+    #[arg(long)]
+    pub jungle: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct CoverageReportArgs {
+    /// Captured simulator output containing COVHIT lines (e.g. from
+    /// `monkeydo -t`). Pass `-` to read from stdin, e.g.
+    /// `monkeydo … -t | rafiki coverage report -`.
+    pub log: PathBuf,
+
+    /// Directory produced by `instrument`, holding coverage-manifest.tsv.
+    /// Defaults to `{repo_root}/bin/coverage`.
+    #[arg(long)]
+    pub dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub struct CoverageTestArgs {
+    /// Monkey C source files or directories to instrument. Defaults to the
+    /// whole project (the nearest ancestor holding `manifest.xml`), so the
+    /// tool can be run from any subdirectory of it.
+    pub files: Vec<PathBuf>,
+
+    /// Device to build and run for, e.g. `fr965`. Passed to `monkeyc -d` and
+    /// `monkeydo`.
+    #[arg(short = 'd', long)]
+    pub device: String,
+
+    /// Developer key used to sign the build. Passed to `monkeyc -y`.
+    #[arg(short = 'y', long)]
+    pub key: PathBuf,
+
+    /// Directory that receives the instrumented copies. Cleared on each run
+    /// so stale instrumented files never leak into a build. Defaults to
+    /// `{repo_root}/bin/coverage`.
+    #[arg(long)]
+    pub out: Option<PathBuf>,
+
+    /// Additional annotation names (beyond `test` and `release`) whose
+    /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
+    /// or repeated `--exclude-annotation foo --exclude-annotation bar`.
+    #[arg(long, value_delimiter = ',')]
+    pub exclude_annotation: Vec<String>,
+
+    /// Jungle file describing the project, copied and rewritten into
+    /// `{out}/coverage.jungle` so the instrumented build can be compiled with
+    /// `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
+    #[arg(long)]
+    pub jungle: Option<PathBuf>,
+
+    /// Print the monkeyc/monkeydo commands this would run, without running
+    /// them.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// If the first `monkeydo` attempt produces no coverage hits, launch the
+    /// simulator with `connectiq` (installed alongside `monkeyc`/`monkeydo`)
+    /// and retry once. Left off by default because `connectiq` brings an
+    /// already-running simulator's window to the front, which is only worth
+    /// doing when `monkeydo` actually needed it.
+    #[arg(long)]
+    pub start_simulator: bool,
+
+    /// Seconds to wait for the simulator to come up before retrying. Only
+    /// used with `--start-simulator`.
+    #[arg(long, default_value_t = 5)]
+    pub simulator_boot_time: u64,
+
+    /// Extra arguments forwarded to `monkeyc` verbatim, after `--`, e.g.
+    /// `-- -O 3 -w`.
+    #[arg(last = true)]
+    pub monkeyc_args: Vec<String>,
+}
+
 #[derive(Debug, Args)]
 pub struct CompletionsArgs {
     /// The shell to generate a completion script for.
@@ -317,5 +430,53 @@ mod tests {
         };
 
         assert_eq!(args.disable, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn coverage_instrument_parses_its_flags() {
+        let cli = Cli::try_parse_from([
+            "rafiki",
+            "coverage",
+            "instrument",
+            "--out",
+            "bin/cov",
+            "--exclude-annotation",
+            "debug,background",
+            "src/",
+        ])
+        .expect("parses");
+        let Command::Coverage(CoverageCommand::Instrument(args)) = cli.command else {
+            panic!("expected coverage instrument");
+        };
+
+        assert_eq!(args.out, Some(PathBuf::from("bin/cov")));
+        assert_eq!(args.exclude_annotation, vec!["debug", "background"]);
+        assert_eq!(args.files, vec![PathBuf::from("src/")]);
+    }
+
+    #[test]
+    fn coverage_report_reads_the_log_positionally() {
+        let cli = Cli::try_parse_from(["rafiki", "coverage", "report", "-"]).expect("parses");
+        let Command::Coverage(CoverageCommand::Report(args)) = cli.command else {
+            panic!("expected coverage report");
+        };
+
+        assert_eq!(args.log, PathBuf::from("-"));
+        assert_eq!(args.dir, None);
+    }
+
+    #[test]
+    fn coverage_test_forwards_trailing_args_to_monkeyc() {
+        let cli = Cli::try_parse_from([
+            "rafiki", "coverage", "test", "-d", "fr965", "-y", "key.der", "--", "-O", "3",
+        ])
+        .expect("parses");
+        let Command::Coverage(CoverageCommand::Test(args)) = cli.command else {
+            panic!("expected coverage test");
+        };
+
+        assert_eq!(args.device, "fr965");
+        assert_eq!(args.key, PathBuf::from("key.der"));
+        assert_eq!(args.monkeyc_args, vec!["-O", "3"]);
     }
 }

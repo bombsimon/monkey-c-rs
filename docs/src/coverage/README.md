@@ -1,6 +1,6 @@
 # Coverage
 
-`monkey-c-coverage` measures function-level test coverage for Monkey C by
+`rafiki coverage` measures function-level test coverage for Monkey C by
 rewriting the source before compilation — Connect IQ has no native coverage
 support to hook into.
 
@@ -16,7 +16,7 @@ simulator, and report — in one step, using the paths `instrument` already
 decided instead of asking you to retype them:
 
 ```sh
-monkey-c-coverage test -d <device> -y key
+rafiki coverage test -d <device> -y key
 ```
 
 That needs `monkeyc` and `monkeydo` on `PATH`, and the simulator already
@@ -48,7 +48,7 @@ Add `--start-simulator` to have it launch the simulator itself (via
 `monkeydo` attempt comes back with no coverage hits, and retry once:
 
 ```sh
-monkey-c-coverage test -d <device> -y key --start-simulator
+rafiki coverage test -d <device> -y key --start-simulator
 ```
 
 `--start-simulator` is opt-in rather than default because `connectiq` brings
@@ -62,9 +62,9 @@ when `monkeydo` actually needed it. Pass `--dry-run` to print the
 or to debug one stage at a time:
 
 ```sh
-monkey-c-coverage instrument
+rafiki coverage instrument
 monkeyc -f bin/coverage/coverage.jungle -d <device> -o bin/coverage/cov.prg -y key --unit-test
-monkeydo bin/coverage/cov.prg <device> -t | monkey-c-coverage report -
+monkeydo bin/coverage/cov.prg <device> -t | rafiki coverage report -
 ```
 
 > [!NOTE]
@@ -75,7 +75,7 @@ piping it straight into `report`:
 
 ```sh
 monkeydo bin/coverage/cov.prg <device> -t | tee bin/coverage/run.log
-monkey-c-coverage report bin/coverage/run.log
+rafiki coverage report bin/coverage/run.log
 ```
 
 ## How it works

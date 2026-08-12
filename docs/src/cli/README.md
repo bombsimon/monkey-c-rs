@@ -6,6 +6,7 @@
 | -------------------- | ---------------------------------------------------- |
 | `rafiki fmt`         | Format source files                                  |
 | `rafiki lint`        | Report and optionally fix lint findings              |
+| `rafiki coverage`    | Measure [test coverage](../coverage/README.md)       |
 | `rafiki server`      | Run the [language server](../lsp/README.md) on stdio |
 | `rafiki completions` | Print a shell completion script                      |
 
@@ -57,7 +58,7 @@ rafiki fmt --diff      # prints a unified diff of the changes
 | Code | Meaning                                                                          |
 | ---- | -------------------------------------------------------------------------------- |
 | `0`  | Clean: nothing to report                                                         |
-| `1`  | The check found something — unformatted files, lint findings                     |
+| `1`  | The check found something — unformatted files, lint findings, a failing test     |
 | `2`  | The command could not run — bad arguments, unreadable file, broken configuration |
 
 Separating `1` from `2` lets CI tell a failing check apart from a broken
