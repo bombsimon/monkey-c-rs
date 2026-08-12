@@ -2,6 +2,8 @@
 
 [Introduction](README.md)
 
+- [CLI](./cli/README.md)
+- [Configuration](./configuration/README.md)
 - [Parser](./parser/README.md)
 - [Formatter](./formatter/README.md)
 - [LSP](./lsp/README.md)

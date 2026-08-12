@@ -1,0 +1,31 @@
+[package]
+name = "rafiki"
+description = "Formatter, linter and language server for the Monkey C language"
+keywords = ["monkey-c", "garmin", "formatter", "linter", "lsp"]
+categories = ["development-tools", "command-line-utilities"]
+readme = "../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rafiki"
+path = "src/main.rs"
+
+[dependencies]
+ariadne = "0.6"
+clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+comfy-table.workspace = true
+ignore = "0.4"
+monkey-c-config.workspace = true
+monkey-c-coverage.workspace = true
+monkey-c-formatter.workspace = true
+monkey-c-linter.workspace = true
+monkey-c-lsp.workspace = true
+monkey-c-parser.workspace = true
+similar = "3"
+
+[dev-dependencies]
+tempfile = "3"

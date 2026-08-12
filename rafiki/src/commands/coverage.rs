@@ -1,190 +1,65 @@
-use clap::{Parser, Subcommand};
+//! `rafiki coverage` — instrument, run and report Monkey C test coverage.
+//!
+//! Connect IQ has no native coverage support, so coverage is obtained by
+//! rewriting the source before compilation: [`monkey_c_coverage::instrument`]
+//! splices a probe after every function body's opening brace, a generated
+//! runtime module prints each probe's id the first time it executes, and
+//! `report` joins the captured simulator log back against a manifest of
+//! those probes.
+//!
+//! Everything anchors to the Connect IQ project root — the nearest ancestor
+//! holding `manifest.xml` — rather than the working directory, since `fmt`
+//! and `lint`'s "current directory" default makes no sense for a build
+//! pipeline that also needs to find `monkey.jungle` and write build output
+//! under a fixed `bin/` regardless of which subdirectory it is invoked from.
+
 use comfy_table::Table;
+use monkey_c_config::FilesSettings;
 use monkey_c_coverage::{
     FunctionSite, coverage_jungle, instrument, manifest_line, parse_hits, parse_manifest_line,
     runtime_module,
 };
-use monkey_c_diagnostics::{already_reported, read_source, read_stdin_source, render_parse_error};
 
 use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::{ExitCode, Output};
+use std::process::Output;
 use std::time::Duration;
+
+use crate::cli::{CoverageCommand, CoverageInstrumentArgs, CoverageTestArgs, GlobalArgs};
+use crate::diagnostics::{self, Renderer};
+use crate::discovery;
 
 const MANIFEST_FILE: &str = "coverage-manifest.tsv";
 
-#[derive(Parser)]
-#[command(version, about = "Test-coverage instrumentation for Monkey C")]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
+pub fn run(global: &GlobalArgs, command: &CoverageCommand) -> io::Result<bool> {
+    let renderer = global.renderer();
 
-#[derive(Subcommand)]
-enum Command {
-    /// Rewrite sources with coverage probes into an output directory.
-    Instrument {
-        /// Directory that receives the instrumented copies. Cleared on each
-        /// run so stale instrumented files never leak into a build.
-        /// Defaults to `{repo_root}/bin/coverage`.
-        #[arg(long)]
-        out: Option<PathBuf>,
-        /// Additional annotation names (beyond `test` and `release`) whose
-        /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
-        /// or repeated `--exclude-annotation foo --exclude-annotation bar`.
-        #[arg(long, value_delimiter = ',')]
-        exclude_annotation: Vec<String>,
-        /// Jungle file describing the project, copied and rewritten into
-        /// `{out}/coverage.jungle` so the instrumented build can be compiled
-        /// with `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
-        #[arg(long)]
-        jungle: Option<PathBuf>,
-        /// Monkey C source files or directories to instrument. Defaults to
-        /// the whole project (the nearest ancestor holding `manifest.xml`),
-        /// so the tool can be run from any subdirectory of it.
-        files: Vec<PathBuf>,
-    },
-    /// Print per-file coverage from a captured simulator log.
-    Report {
-        /// Directory produced by `instrument`, holding coverage-manifest.tsv.
-        /// Defaults to `{repo_root}/bin/coverage`.
-        #[arg(long)]
-        dir: Option<PathBuf>,
-        /// Captured simulator output containing COVHIT lines (e.g. from
-        /// monkeydo -t). Pass `-` to read from stdin, e.g.
-        /// `monkeydo … -t | monkey-c-coverage report -`.
-        log: PathBuf,
-    },
-    /// Instrument, build, run under the simulator, and report in one step.
-    Test {
-        /// Device to build and run for, e.g. `fr965`. Passed to `monkeyc -d`
-        /// and `monkeydo`.
-        #[arg(short = 'd', long)]
-        device: String,
-        /// Developer key used to sign the build. Passed to `monkeyc -y`.
-        #[arg(short = 'y', long)]
-        key: PathBuf,
-        /// Directory that receives the instrumented copies. Cleared on each
-        /// run so stale instrumented files never leak into a build.
-        /// Defaults to `{repo_root}/bin/coverage`.
-        #[arg(long)]
-        out: Option<PathBuf>,
-        /// Additional annotation names (beyond `test` and `release`) whose
-        /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
-        /// or repeated `--exclude-annotation foo --exclude-annotation bar`.
-        #[arg(long, value_delimiter = ',')]
-        exclude_annotation: Vec<String>,
-        /// Jungle file describing the project, copied and rewritten into
-        /// `{out}/coverage.jungle` so the instrumented build can be compiled
-        /// with `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
-        #[arg(long)]
-        jungle: Option<PathBuf>,
-        /// Print the monkeyc/monkeydo commands this would run, without
-        /// running them.
-        #[arg(long)]
-        dry_run: bool,
-        /// If the first `monkeydo` attempt produces no coverage hits, launch
-        /// the simulator with `connectiq` (installed alongside
-        /// `monkeyc`/`monkeydo`) and retry once. Left off by default because
-        /// `connectiq` brings an already-running simulator's window to the
-        /// front, which is only worth doing when `monkeydo` actually needed
-        /// it.
-        #[arg(long)]
-        start_simulator: bool,
-        /// Seconds to wait for the simulator to come up before retrying.
-        /// Only used with `--start-simulator`.
-        #[arg(long, default_value_t = 5)]
-        simulator_boot_time: u64,
-        /// Monkey C source files or directories to instrument. Defaults to
-        /// the whole project (the nearest ancestor holding `manifest.xml`),
-        /// so the tool can be run from any subdirectory of it.
-        files: Vec<PathBuf>,
-        /// Extra arguments forwarded to `monkeyc` verbatim, after `--`,
-        /// e.g. `-- -O 3 -w`.
-        #[arg(last = true)]
-        monkeyc_args: Vec<String>,
-    },
-}
-
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match run(&cli.command) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(error) => {
-            // Parse and invalid-UTF-8 errors are already rendered via ariadne
-            // by `render_parse_error` / `read_source`.
-            if error.kind() != io::ErrorKind::Other {
-                eprintln!("{error}");
-            }
-
-            ExitCode::from(1)
-        }
-    }
-}
-
-fn run(command: &Command) -> io::Result<()> {
     match command {
-        Command::Instrument {
-            out,
-            exclude_annotation,
-            jungle,
-            files,
-        } => run_instrument(out.as_deref(), exclude_annotation, jungle.as_deref(), files).map(drop),
-        Command::Report { dir, log } => run_report(dir.as_deref(), log),
-        Command::Test {
-            device,
-            key,
-            out,
-            exclude_annotation,
-            jungle,
-            dry_run,
-            start_simulator,
-            simulator_boot_time,
-            files,
-            monkeyc_args,
-        } => run_test(&TestOptions {
-            device,
-            key,
-            out: out.as_deref(),
-            exclude_annotation,
-            jungle: jungle.as_deref(),
-            files,
-            monkeyc_args,
-            dry_run: *dry_run,
-            start_simulator: *start_simulator,
-            simulator_boot_time: *simulator_boot_time,
-        }),
+        CoverageCommand::Instrument(args) => run_instrument(&renderer, args).map(|_| true),
+        CoverageCommand::Report(args) => {
+            run_report(&renderer, args.dir.as_deref(), &args.log).map(|_| true)
+        }
+        CoverageCommand::Test(args) => run_test(&renderer, args),
     }
-}
-
-/// Arguments for [`run_test`], grouped to keep the function signature
-/// readable — see [`Command::Test`] for what each one means.
-struct TestOptions<'a> {
-    device: &'a str,
-    key: &'a Path,
-    out: Option<&'a Path>,
-    exclude_annotation: &'a [String],
-    jungle: Option<&'a Path>,
-    files: &'a [PathBuf],
-    monkeyc_args: &'a [String],
-    dry_run: bool,
-    start_simulator: bool,
-    simulator_boot_time: u64,
 }
 
 /// Instrument, compile, run under the simulator, and report — see
-/// [`Command::Test`]. `device` and `key` are forwarded to `monkeyc`/`monkeydo`
-/// verbatim; everything else is the same as `instrument`, reused here so the
-/// compile and run steps see exactly the paths `instrument` just wrote.
-fn run_test(options: &TestOptions) -> io::Result<()> {
+/// [`CoverageCommand::Test`]. `device` and `key` are forwarded to
+/// `monkeyc`/`monkeydo` verbatim; everything else is the same as
+/// `instrument`, reused here so the compile and run steps see exactly the
+/// paths `instrument` just wrote.
+fn run_test(renderer: &Renderer, args: &CoverageTestArgs) -> io::Result<bool> {
     let out = run_instrument(
-        options.out,
-        options.exclude_annotation,
-        options.jungle,
-        options.files,
+        renderer,
+        &CoverageInstrumentArgs {
+            files: args.files.clone(),
+            out: args.out.clone(),
+            exclude_annotation: args.exclude_annotation.clone(),
+            jungle: args.jungle.clone(),
+        },
     )?;
 
     let jungle_path = out.join("coverage.jungle");
@@ -196,30 +71,30 @@ fn run_test(options: &TestOptions) -> io::Result<()> {
         "-f".to_string(),
         jungle_path.display().to_string(),
         "-d".to_string(),
-        options.device.to_string(),
+        args.device.clone(),
         "-o".to_string(),
         binary_path.display().to_string(),
         "-y".to_string(),
-        options.key.display().to_string(),
+        args.key.display().to_string(),
         "--unit-test".to_string(),
     ];
-    monkeyc_command.extend(options.monkeyc_args.iter().cloned());
+    monkeyc_command.extend(args.monkeyc_args.iter().cloned());
 
     let monkeydo_command = [
         "monkeydo".to_string(),
         binary_path.display().to_string(),
-        options.device.to_string(),
+        args.device.clone(),
         "-t".to_string(),
     ];
 
-    if options.dry_run {
+    if args.dry_run {
         eprintln!("{}", monkeyc_command.join(" "));
         eprintln!("{}", monkeydo_command.join(" "));
-        if options.start_simulator {
+        if args.start_simulator {
             eprintln!("connectiq  # only if the monkeydo attempt above produces no coverage hits");
         }
 
-        return Ok(());
+        return Ok(true);
     }
 
     run_monkeyc(&monkeyc_command)?;
@@ -228,28 +103,28 @@ fn run_test(options: &TestOptions) -> io::Result<()> {
     let mut stdout = String::from_utf8_lossy(&monkeydo_output.stdout).into_owned();
     let mut hits = parse_hits(&stdout);
 
-    if hits.is_empty() && options.start_simulator {
+    if hits.is_empty() && args.start_simulator {
         eprintln!(
             "monkeydo produced no coverage hits; starting the simulator with `connectiq` and retrying once"
         );
 
-        start_simulator(Duration::from_secs(options.simulator_boot_time))?;
+        start_simulator(Duration::from_secs(args.simulator_boot_time))?;
         monkeydo_output = run_captured(&monkeydo_command)?;
         stdout = String::from_utf8_lossy(&monkeydo_output.stdout).into_owned();
         hits = parse_hits(&stdout);
     }
 
     if hits.is_empty() {
-        // Nothing ran at all — even after a retry, if `--start-simulator`
-        // was given. A "0/N covered" table would dress this up as a real
-        // (if terrible) coverage result, when actually the build never
-        // executed; show what monkeydo said instead and stop here, same as
-        // a `monkeyc` failure, rather than handing it to `report`.
+        // Nothing ran at all — even after a retry, if `--start-simulator` was
+        // given. A "0/N covered" table would dress this up as a real (if
+        // terrible) coverage result, when actually the build never executed;
+        // show what monkeydo said instead and stop here, same as a `monkeyc`
+        // failure, rather than handing it to `report`.
         println!();
         print_captured(&monkeydo_output);
         println!();
 
-        return Err(already_reported());
+        return Err(diagnostics::already_reported());
     }
 
     // Coverage hits only tell us code ran, not whether the tests it ran
@@ -262,8 +137,8 @@ fn run_test(options: &TestOptions) -> io::Result<()> {
     let failed = summary.is_some_and(summary_failed);
 
     if failed {
-        // Something's wrong: show everything monkeydo printed to help debug
-        // — `summary` is part of this, so it isn't also printed on its own.
+        // Something's wrong: show everything monkeydo printed to help debug —
+        // `summary` is part of this, so it isn't also printed on its own.
         // Coverage is still meaningful here (the code did run), so this
         // still falls through to `report` below rather than stopping.
         println!();
@@ -277,14 +152,11 @@ fn run_test(options: &TestOptions) -> io::Result<()> {
 
     fs::write(&log_path, &monkeydo_output.stdout)?;
 
-    run_report(Some(&out), &log_path)?;
+    run_report(renderer, Some(&out), &log_path)?;
 
-    if failed {
-        // Already shown via `print_captured` above.
-        return Err(already_reported());
-    }
-
-    Ok(())
+    // A failing test is a finding, not a broken invocation — it is already
+    // printed above, so the command only needs to report "not clean" here.
+    Ok(!failed)
 }
 
 /// Find monkeydo's own test-runner summary line, e.g. `PASSED (passed=1,
@@ -328,7 +200,7 @@ fn run_monkeyc(command: &[String]) -> io::Result<()> {
     if !output.status.success() {
         print_captured(&output);
 
-        return Err(already_reported());
+        return Err(diagnostics::already_reported());
     }
 
     Ok(())
@@ -373,34 +245,34 @@ fn start_simulator(boot_time: Duration) -> io::Result<()> {
     Ok(())
 }
 
-fn run_instrument(
-    out: Option<&Path>,
-    exclude_annotation: &[String],
-    jungle: Option<&Path>,
-    files: &[PathBuf],
-) -> io::Result<PathBuf> {
-    let exclude_annotation: Vec<&str> = exclude_annotation.iter().map(String::as_str).collect();
+fn run_instrument(renderer: &Renderer, args: &CoverageInstrumentArgs) -> io::Result<PathBuf> {
+    let exclude_annotation: Vec<&str> =
+        args.exclude_annotation.iter().map(String::as_str).collect();
     let root = project_root()?;
-    let out = out.map_or_else(|| root.join("bin/coverage"), Path::to_path_buf);
-    let jungle = jungle.map_or_else(|| root.join("monkey.jungle"), Path::to_path_buf);
+    let out = args
+        .out
+        .clone()
+        .unwrap_or_else(|| root.join("bin/coverage"));
+    let jungle = args
+        .jungle
+        .clone()
+        .unwrap_or_else(|| root.join("monkey.jungle"));
 
-    // A previous run's files would otherwise be recycled into the next
-    // build (and report) even after their sources were renamed or removed.
+    // A previous run's files would otherwise be recycled into the next build
+    // (and report) even after their sources were renamed or removed.
     if out.exists() {
         fs::remove_dir_all(&out)?;
     }
 
-    let default_files = [root.clone()];
-    let files = if files.is_empty() {
-        &default_files[..]
+    let paths: Vec<PathBuf> = if args.files.is_empty() {
+        vec![root.clone()]
     } else {
-        files
+        // Always ignore any explicit path that names our own output
+        // directory — it holds generated files from a previous run.
+        args.files.iter().filter(|p| **p != out).cloned().collect()
     };
 
-    // The compiler and Monkey C Optimizer both write build artifacts under
-    // `{root}/bin` (our own `--out` default lives there too), so a
-    // whole-project walk must never descend into it.
-    let files = collect_mc_files(&out, &root.join("bin"), files)?;
+    let files = collect_mc_files(&root, &paths)?;
     if files.is_empty() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -412,12 +284,12 @@ fn run_instrument(
     let mut next_id = 0;
 
     for file in &files {
-        let source = read_source(file)?;
+        let source = renderer.read_source(file)?;
         let dest = mirrored_path(file, &root);
         let name = dest.to_string_lossy().into_owned();
         let result = instrument(&source, &name, next_id, &exclude_annotation).map_err(|e| {
-            render_parse_error(&name, &source, &e);
-            already_reported()
+            renderer.parse_error(&name, &source, &e);
+            diagnostics::already_reported()
         })?;
 
         next_id += result.sites.len();
@@ -432,14 +304,14 @@ fn run_instrument(
     write(&out.join("AutoGeneratedCov.mc"), &runtime_module(next_id))?;
     write(&out.join(MANIFEST_FILE), &manifest)?;
 
-    let jungle_source = read_source(&jungle)?;
-    // `manifest.xml` isn't copied into `out` the way `.mc` sources are, so the
-    // copied jungle needs a path back to wherever it actually lives.
+    let jungle_source = renderer.read_source(&jungle)?;
+    // `manifest.xml` isn't copied into `out` the way `.mc` sources are, so
+    // the copied jungle needs a path back to wherever it actually lives.
     let manifest_path = relative_path(&out, &root.join("manifest.xml"));
     let coverage_jungle_source = coverage_jungle(&jungle_source, &manifest_path.to_string_lossy())
         .map_err(|e| {
-            render_parse_error(&jungle.display().to_string(), &jungle_source, &e);
-            already_reported()
+            renderer.parse_error(&jungle.display().to_string(), &jungle_source, &e);
+            diagnostics::already_reported()
         })?;
 
     write(&out.join("coverage.jungle"), &coverage_jungle_source)?;
@@ -453,9 +325,9 @@ fn run_instrument(
 }
 
 /// The Connect IQ project root: the nearest ancestor holding `manifest.xml`.
-/// Everything anchors here rather than the working directory, so the mirrored
-/// tree, `--out` and the manifest paths come out the same wherever the tool is
-/// invoked from.
+/// Everything anchors here rather than the working directory, so the
+/// mirrored tree, `--out` and the manifest paths come out the same wherever
+/// the tool is invoked from.
 fn project_root() -> io::Result<PathBuf> {
     let mut dir = env::current_dir()?;
 
@@ -476,38 +348,28 @@ fn project_root() -> io::Result<PathBuf> {
     }
 }
 
-/// Resolve `paths` into a deterministic, deduplicated list of `.mc` files.
-/// Files are accepted as-is regardless of extension (so explicit per-file
-/// invocations always work); directories are walked recursively, skipping
-/// hidden ones and `exclude_dir` (the compiler and Monkey C Optimizer write
-/// build artifacts there, and our own `out` default lives under it). Every
-/// path is canonicalized before being collected, so overlapping inputs (an
-/// explicit file plus a directory containing it, or `source/A.mc` alongside
-/// `./source/A.mc`) dedupe to one entry instead of instrumenting the same
-/// file twice under different ids. Copied from `monkey-c-formatter` until it
-/// grows a shared home.
-fn collect_mc_files(out: &Path, exclude_dir: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for p in paths {
-        // Always ignore any files in our output directory, they're generated files.
-        if p == out {
-            continue;
-        }
+/// Resolve `paths` into a deterministic, canonicalized list of `.mc` files
+/// under `root`, reusing [`discovery::collect`] for the walk itself: hidden
+/// directories are skipped, named files are accepted whatever their
+/// extension, and `bin/` — where the compiler and Monkey C Optimizer write
+/// build artifacts, including our own `--out` default — is always excluded
+/// so a whole-project walk never re-instruments a previous run's output.
+/// Every path is canonicalized before being returned, so overlapping inputs
+/// (an explicit file plus a directory containing it, or `source/A.mc`
+/// alongside `./source/A.mc`) dedupe to one entry instead of instrumenting
+/// the same file twice under different ids.
+fn collect_mc_files(root: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
+    let settings = FilesSettings {
+        exclude: vec!["bin/**".to_string()],
+        respect_gitignore: false,
+    };
 
-        let meta = fs::metadata(p)
-            .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", p.display())))?;
+    let files = discovery::collect(paths, &settings, root)?;
 
-        if meta.is_file() {
-            files.push(fs::canonicalize(p)?);
-        } else if meta.is_dir() {
-            walk_dir(&fs::canonicalize(p)?, exclude_dir, &mut files)?;
-        } else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("{}: not a file or directory", p.display()),
-            ));
-        }
-    }
+    let mut files: Vec<PathBuf> = files
+        .iter()
+        .map(fs::canonicalize)
+        .collect::<io::Result<_>>()?;
 
     files.sort();
     files.dedup();
@@ -515,39 +377,14 @@ fn collect_mc_files(out: &Path, exclude_dir: &Path, paths: &[PathBuf]) -> io::Re
     Ok(files)
 }
 
-fn walk_dir(dir: &Path, exclude_dir: &Path, out: &mut Vec<PathBuf>) -> io::Result<()> {
-    if dir == exclude_dir {
-        return Ok(());
-    }
-
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_type = entry.file_type()?;
-
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with('.') {
-            continue;
-        }
-
-        if file_type.is_dir() {
-            walk_dir(&path, exclude_dir, out)?;
-        } else if file_type.is_file() && path.extension().is_some_and(|e| e == "mc") {
-            out.push(fs::canonicalize(&path)?);
-        }
-    }
-
-    Ok(())
-}
-
-fn run_report(dir: Option<&Path>, log: &Path) -> io::Result<()> {
+fn run_report(renderer: &Renderer, dir: Option<&Path>, log: &Path) -> io::Result<()> {
     let dir = match dir {
         Some(dir) => dir.to_path_buf(),
         None => project_root()?.join("bin/coverage"),
     };
 
-    let sites: Vec<FunctionSite> = read_source(&dir.join(MANIFEST_FILE))?
+    let sites: Vec<FunctionSite> = renderer
+        .read_source(&dir.join(MANIFEST_FILE))?
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| {
@@ -561,9 +398,9 @@ fn run_report(dir: Option<&Path>, log: &Path) -> io::Result<()> {
         .collect::<io::Result<_>>()?;
 
     let log = if log == Path::new("-") {
-        read_stdin_source()?
+        renderer.read_stdin_source()?
     } else {
-        read_source(log)?
+        renderer.read_source(log)?
     };
 
     let hits: HashSet<usize> = parse_hits(&log);
@@ -614,8 +451,9 @@ fn run_report(dir: Option<&Path>, log: &Path) -> io::Result<()> {
         100.0 * covered as f64 / total as f64
     );
 
-    // Zero hits across every site means the instrumented build never ran or its
-    // output was not captured — a broken pipeline rather than 0% coverage.
+    // Zero hits across every site means the instrumented build never ran or
+    // its output was not captured — a broken pipeline rather than 0%
+    // coverage.
     if covered == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -678,4 +516,54 @@ fn relative_path(from: &Path, to: &Path) -> PathBuf {
     }
 
     relative
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mirrored_path_strips_the_project_root() {
+        let root = Path::new("/project");
+        assert_eq!(
+            mirrored_path(Path::new("/project/source/A.mc"), root),
+            PathBuf::from("source/A.mc")
+        );
+    }
+
+    #[test]
+    fn mirrored_path_falls_back_to_the_absolute_path_outside_root() {
+        let root = Path::new("/project");
+        assert_eq!(
+            mirrored_path(Path::new("/other/A.mc"), root),
+            PathBuf::from("other/A.mc")
+        );
+    }
+
+    #[test]
+    fn relative_path_walks_up_to_the_common_ancestor() {
+        assert_eq!(
+            relative_path(
+                Path::new("/project/bin/coverage"),
+                Path::new("/project/manifest.xml")
+            ),
+            PathBuf::from("../../manifest.xml")
+        );
+    }
+
+    #[test]
+    fn a_summary_reporting_failures_is_recognised() {
+        assert!(summary_failed("FAILED (passed=0, failed=1, errors=0)"));
+        assert!(summary_failed("FAILED (passed=0, failed=0, errors=1)"));
+        assert!(!summary_failed("PASSED (passed=1, failed=0, errors=0)"));
+    }
+
+    #[test]
+    fn test_summary_finds_the_verdict_line_among_other_output() {
+        let stdout = "some noise\nPASSED (passed=2, failed=0, errors=0)\nmore noise\n";
+        assert_eq!(
+            test_summary(stdout),
+            Some("PASSED (passed=2, failed=0, errors=0)")
+        );
+    }
 }

@@ -19,7 +19,35 @@
 > what could or should be configurable etc. Please create an issue for any bug
 > or feature request.
 
+## Installing
+
+Everything is one command, `rafiki`.
+
+```sh
+cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki
+```
+
+```sh
+rafiki fmt                               # format the project
+rafiki lint --fix                        # lint, applying what can be fixed
+rafiki server                            # run the language server (for your editor)
+rafiki coverage test -d <device> -y key  # measure test coverage
+```
+
+Settings can be pinned per project in a `rafiki.toml`, which the language server
+reads too, so an editor and the command line always agree. See the [CLI][cli] and
+[configuration][configuration] docs.
+
 ## What's in this project
+
+### `rafiki`
+
+The command-line interface, and the only binary. The formatter, linter,
+language server and coverage instrumentation are linked into it and reached as
+`rafiki fmt`, `rafiki lint`, `rafiki server` and `rafiki coverage`. See
+[`rafiki`][cli].
+
+---
 
 ### `monkey-c-parser`
 
@@ -42,29 +70,29 @@ be edited, and writes itself back out.
 
 ### `monkey-c-formatter`
 
-A formatter to format [Monkey C] code. See [`monkey-c-formatter`][formatter]
+The formatter behind `rafiki fmt`. See [`monkey-c-formatter`][formatter]
 
-The main reason this project was created. An opinionated zero-config formatter
-that produces a deterministic formatting experience similar to [ruff] and
-[rustfmt].
+The main reason this project was created. An opinionated near-zero-config
+formatter that produces a deterministic formatting experience similar to [ruff]
+and [rustfmt].
 
 ---
 
 ### `monkey-c-linter`
 
-A linter for [Monkey C] with machine-applicable fixes. See
+The linter behind `rafiki lint`, with machine-applicable fixes. See
 [`monkey-c-linter`][linter]
 
 Rules walk the AST produced by `monkey-c-parser` and emit diagnostics with
 optional `--fix` suggestions that patch source byte ranges directly. The
 linter is independent of the formatter and fixes don't reformat unrelated code.
-Run the formatter after `--fix` if you want whitespace normalised.
+Run `rafiki fmt` after `--fix` if you want whitespace normalised.
 
 ---
 
 ### `monkey-c-lsp`
 
-A [Language Server][lsp] for [Monkey C]. See [`monkey-c-lsp`][lsp-crate]
+The [Language Server][lsp] behind `rafiki server`. See [`monkey-c-lsp`][lsp-crate]
 
 Exposes the parser, linter, and formatter over LSP so any compatible editor
 gets live diagnostics (parse errors and lints) and document formatting. It
@@ -72,9 +100,17 @@ speaks over stdio and keeps whole documents in memory (full sync).
 
 ---
 
+### `monkey-c-config`
+
+The `rafiki.toml` format, shared by the CLI and the language server so both
+resolve a project's settings the same way. See [`monkey-c-config`][config-crate]
+
+---
+
 ### `monkey-c-coverage`
 
-Function-level test coverage for [Monkey C]. See [`monkey-c-coverage`][coverage]
+The function-level test coverage instrumentation behind `rafiki coverage`. See
+[`monkey-c-coverage`][coverage-crate]
 
 Connect IQ has no native coverage support, so the source is instrumented
 before compilation: a probe after each function's opening brace records which
@@ -107,7 +143,10 @@ This repository is licensed under the [MIT License][license]
 
 [Monkey C]: https://developer.garmin.com/connect-iq/monkey-c/
 [awesome-garmin]: https://github.com/bombsimon/awesome-garmin
-[coverage]: monkey-c-coverage
+[cli]: https://bombsimon.github.io/monkey-c-rs/cli/
+[config-crate]: monkey-c-config
+[configuration]: https://bombsimon.github.io/monkey-c-rs/configuration/
+[coverage-crate]: monkey-c-coverage
 [formatter]: monkey-c-formatter
 [garmin-monkeyc.nvim]: https://github.com/bombsimon/garmin-monkeyc.nvim
 [jungle-reference]: https://developer.garmin.com/connect-iq/reference-guides/jungle-reference/

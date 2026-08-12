@@ -1,13 +1,11 @@
 [package]
 name = "monkey-c-linter"
+description = "Linter with machine-applicable fixes for the Monkey C language"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ariadne.workspace = true
-clap.workspace = true
 convert_case = "0.6"
-monkey-c-diagnostics.workspace = true
 monkey-c-parser.workspace = true
