@@ -80,6 +80,10 @@ fn dispatch_expr(expr: &Expr, pos: ExprPosition, ctx: &LintContext, diags: &mut 
         diags.push(d);
     }
 
+    if let Some(d) = rules::bool_comparison::check_expr(expr, pos, ctx) {
+        diags.push(d);
+    }
+
     if let Some(d) = rules::redundant_resource_ref::check_expr(expr, pos, ctx) {
         diags.push(d);
     }
