@@ -8,16 +8,15 @@
 //!   underscore prefix followed by `camelCase`.
 //! - **Module-scope variables** (top-level or inside `module { … }`):
 //!   `camelCase`.
+//! - **Local variables** (`var` inside a function body or a `for`-loop
+//!   init): `camelCase`.
 //! - **Enum variants**: `SCREAMING_SNAKE_CASE`. Every variant in one
 //!   enum must share a `<PREFIX>_` so call sites read as
 //!   `Color.COLOR_RED` rather than `Color.RED`.
 //!
-//! Local variables inside function bodies are intentionally not checked
-//! here yet — that walker exists as `Stmt::Var` and can be added later.
-//!
 //! [conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
 use convert_case::{Case, Casing};
-use monkey_c_parser::ast::{Ast, EnumDecl, FunctionDecl, Span, VarDecl, Visibility};
+use monkey_c_parser::ast::{Ast, EnumDecl, FunctionDecl, Span, Stmt, VarDecl, Visibility};
 
 use crate::Diagnostic;
 use crate::visit::LintContext;
@@ -63,6 +62,27 @@ pub fn check_ast(ast: &Ast, _ctx: &LintContext) -> Vec<Diagnostic> {
     }
 
     diags
+}
+
+/// Checks statement-level nodes. Only `var` declarations carry names to
+/// check; every other statement kind is a no-op here.
+pub fn check_stmt(stmt: &Stmt, _ctx: &LintContext) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+
+    if let Stmt::Var(v) = stmt {
+        check_var_decl(v, &mut diags);
+    }
+
+    diags
+}
+
+/// Checks a local `var` declaration's binding names, whether it's a plain
+/// statement (`Stmt::Var`) or a `for`-loop init (`ForInit::Var`) — both
+/// share the same [`VarDecl`] shape.
+pub fn check_var_decl(v: &VarDecl, diags: &mut Vec<Diagnostic>) {
+    for b in &v.bindings {
+        check_camel(&b.name.node, b.span, "local variable", diags);
+    }
 }
 
 fn check_class_member(member: &Ast, diags: &mut Vec<Diagnostic>) {
@@ -387,6 +407,51 @@ mod tests {
         // The Garmin convention is `_camelCase`; `mValue` is the older
         // Hungarian convention and is rejected.
         assert_eq!(rule_diags("class Foo { private var mValue; }").len(), 1);
+    }
+
+    #[test]
+    fn allows_camel_local_var() {
+        assert!(rule_diags("function f() { var myTotal = 0; }").is_empty());
+    }
+
+    #[test]
+    fn flags_pascal_local_var() {
+        let diags = rule_diags("function f() { var MyTotal = 0; }");
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("local variable"));
+        assert!(diags[0].message.contains("camelCase"));
+    }
+
+    #[test]
+    fn flags_underscore_local_var() {
+        // _-prefix is reserved for private class members.
+        assert_eq!(rule_diags("function f() { var _myTotal = 0; }").len(), 1);
+    }
+
+    #[test]
+    fn flags_local_var_in_nested_block() {
+        let src = "function f() { if (true) { var MyTotal = 0; } }";
+        assert_eq!(rule_diags(src).len(), 1);
+    }
+
+    #[test]
+    fn flags_multiple_bindings_in_one_local_var_decl() {
+        assert_eq!(
+            rule_diags("function f() { var MyA = 1, MyB = 2; }").len(),
+            2
+        );
+    }
+
+    #[test]
+    fn allows_camel_for_loop_var() {
+        assert!(rule_diags("function f() { for (var i = 0; i < 1; i += 1) {} }").is_empty());
+    }
+
+    #[test]
+    fn flags_pascal_for_loop_var() {
+        let diags = rule_diags("function f() { for (var Index = 0; Index < 1; Index += 1) {} }");
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("local variable"));
     }
 
     #[test]
