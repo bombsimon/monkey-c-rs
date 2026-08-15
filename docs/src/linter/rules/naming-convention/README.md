@@ -12,6 +12,7 @@ conventions][conventions].
 | Public class members                   | `camelCase`                                  | `var myValue;`            |
 | Private/protected/hidden class members | `_camelCase`                                 | `private var _value;`     |
 | Module-scope variables                 | `camelCase`                                  | `var myCounter = 0;`      |
+| Local variables                        | `camelCase`                                  | `var myTotal = 0;`        |
 | Enum variants                          | `SCREAMING_SNAKE_CASE` sharing a `<PREFIX>_` | `COLOR_RED`, `COLOR_BLUE` |
 
 ## Rationale
@@ -20,15 +21,13 @@ Naming conventions buy consistency at zero ongoing cost — readers don't
 have to wonder whether `myThing` is a class or a function. The rules
 above mirror Garmin's official conventions verbatim.
 
-Two intentional gaps:
-
-- **`const` declarations** are not checked. Constants conventionally use
-  `SCREAMING_SNAKE_CASE` in Monkey C SDK code and an idiom like
-  `example.SOME_CONST` reads better than `example.someConst`. The rule
-  leaves both module-scope and class-scope `const` alone regardless of
-  visibility.
-- **Local variables** inside function bodies are not checked yet. Adding
-  that requires walking `Stmt::Var` and is on the to-do list.
+`const` declarations are left unchecked, not as a gap but because
+Garmin's conventions don't define a case for them — there's nothing to
+enforce. SDK code commonly uses `SCREAMING_SNAKE_CASE` for constants
+(an idiom like `example.SOME_CONST` reads better than
+`example.someConst`), but that's convention-by-example rather than a
+documented rule, so the linter leaves both module-scope and
+class-scope `const` alone regardless of visibility.
 
 ## Example
 

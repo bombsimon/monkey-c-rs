@@ -116,6 +116,13 @@ fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     }
 }
 
+/// Called once per [`Stmt`] visited by [`walk_stmt`]. Rules that care about
+/// a single statement (a `var` declaration, a `throw`, …) hook here and
+/// pattern-match on the variant they want.
+fn dispatch_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    diags.extend(rules::naming_convention::check_stmt(stmt, ctx));
+}
+
 fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     dispatch_ast(ast, ctx, diags);
 
@@ -184,6 +191,8 @@ fn walk_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
 }
 
 fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
+    dispatch_stmt(stmt, ctx, diags);
+
     match stmt {
         Stmt::Block(b) => {
             for s in &b.stmts {
@@ -218,6 +227,8 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
                         }
                     }
                     ForInit::Var(v) => {
+                        rules::naming_convention::check_var_decl(v, diags);
+
                         for b in &v.bindings {
                             if let Some(t) = &b.type_ {
                                 walk_type(t, ctx, diags);
