@@ -130,10 +130,12 @@ resources currently needs to fix those up by hand.
 
 ### `report`
 
-| Argument | Default               | Meaning                                          |
-| -------- | --------------------- | ------------------------------------------------ |
-| `<LOG>`  | required              | Captured simulator log; `-` reads it from stdin. |
-| `--dir`  | `{root}/bin/coverage` | Directory holding `coverage-manifest.tsv`.       |
+| Argument       | Default               | Meaning                                                                                                                          |
+| -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `<LOG>`        | required              | Captured simulator log; `-` reads it from stdin.                                                                                 |
+| `--dir`        | `{root}/bin/coverage` | Directory holding `coverage-manifest.tsv`.                                                                                       |
+| `--out-format` | `text`                | `text` for a human-readable table, or `lcov` for an LCOV `.info` file (`genhtml`, VS Code Coverage Gutters, Codecov, Coveralls). |
+| `--out`        | stdout                | Write the report here instead of stdout.                                                                                         |
 
 The simulator may reinitialize module state between unit tests, so probe ids
 can repeat in the log; `report` deduplicates while joining. Only lines that
@@ -142,13 +144,20 @@ interleaves is ignored.
 
 ### `test`
 
-Takes every `instrument` flag above plus:
+Takes `instrument`'s `[FILES]...`, `--exclude-annotation` and `--jungle`
+flags, plus `report`'s `--out-format`/`--out` for the report it produces at
+the end. `--out` on `instrument` and `--instrument-out` here both mean the
+instrumentation output directory — they're just named differently since
+`test` also needs `--out` for the report path.
 
-| Flag                    | Default  | Meaning                                                                           |
-| ----------------------- | -------- | --------------------------------------------------------------------------------- |
-| `-d`, `--device`        | required | Device to build and run for, e.g. `fr965`. Passed to `monkeyc -d` and `monkeydo`. |
-| `-y`, `--key`           | required | Developer key. Passed to `monkeyc -y`.                                            |
-| `--start-simulator`     | off      | Launch `connectiq` and retry once if the first `monkeydo` attempt has no hits.    |
-| `--simulator-boot-time` | `5`      | Seconds to wait after launching the simulator before retrying.                    |
-| `--dry-run`             | off      | Print the `monkeyc`/`monkeydo` commands instead of running them.                  |
-| `-- <MONKEYC_ARGS>...`  | none     | Extra arguments forwarded to `monkeyc` verbatim, e.g. `-- -O 3 -w`.               |
+| Flag                    | Default               | Meaning                                                                           |
+| ----------------------- | --------------------- | --------------------------------------------------------------------------------- |
+| `-d`, `--device`        | required              | Device to build and run for, e.g. `fr965`. Passed to `monkeyc -d` and `monkeydo`. |
+| `-y`, `--key`           | required              | Developer key. Passed to `monkeyc -y`.                                            |
+| `--instrument-out`      | `{root}/bin/coverage` | Instrumentation output directory (same as `instrument`'s `--out`).                |
+| `--out-format`          | `text`                | `text` for a human-readable table, or `lcov` for an LCOV `.info` file.            |
+| `--out`                 | stdout                | Write the coverage report here instead of stdout.                                 |
+| `--start-simulator`     | off                   | Launch `connectiq` and retry once if the first `monkeydo` attempt has no hits.    |
+| `--simulator-boot-time` | `5`                   | Seconds to wait after launching the simulator before retrying.                    |
+| `--dry-run`             | off                   | Print the `monkeyc`/`monkeydo` commands instead of running them.                  |
+| `-- <MONKEYC_ARGS>...`  | none                  | Extra arguments forwarded to `monkeyc` verbatim, e.g. `-- -O 3 -w`.               |

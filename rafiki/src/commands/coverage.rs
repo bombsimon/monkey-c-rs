@@ -22,6 +22,7 @@ use monkey_c_coverage::{
 
 use std::collections::{BTreeMap, HashSet};
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
@@ -503,21 +504,21 @@ fn render_lcov(by_file: &BTreeMap<&str, Vec<&FunctionSite>>, hits: &HashSet<usiz
     let mut report = String::new();
 
     for (file, file_sites) in by_file {
-        report.push_str(&format!("SF:{file}\n"));
+        let _ = writeln!(report, "SF:{file}");
 
         for site in file_sites {
-            report.push_str(&format!("FN:{},{}\n", site.line, site.name));
+            let _ = writeln!(report, "FN:{},{}", site.line, site.name);
         }
 
         let mut hit_count = 0;
         for site in file_sites {
             let hit = usize::from(hits.contains(&site.id));
             hit_count += hit;
-            report.push_str(&format!("FNDA:{hit},{}\n", site.name));
+            let _ = writeln!(report, "FNDA:{hit},{}", site.name);
         }
 
-        report.push_str(&format!("FNF:{}\n", file_sites.len()));
-        report.push_str(&format!("FNH:{hit_count}\n"));
+        let _ = writeln!(report, "FNF:{}", file_sites.len());
+        let _ = writeln!(report, "FNH:{hit_count}");
         report.push_str("end_of_record\n");
     }
 
