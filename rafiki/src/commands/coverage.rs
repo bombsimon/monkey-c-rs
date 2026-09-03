@@ -22,13 +22,16 @@ use monkey_c_coverage::{
 
 use std::collections::{BTreeMap, HashSet};
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Output;
 use std::time::Duration;
 
-use crate::cli::{CoverageCommand, CoverageInstrumentArgs, CoverageTestArgs, GlobalArgs};
+use crate::cli::{
+    CoverageCommand, CoverageInstrumentArgs, CoverageTestArgs, GlobalArgs, OutFormat,
+};
 use crate::diagnostics::{self, Renderer};
 use crate::discovery;
 
@@ -39,9 +42,14 @@ pub fn run(global: &GlobalArgs, command: &CoverageCommand) -> io::Result<bool> {
 
     match command {
         CoverageCommand::Instrument(args) => run_instrument(&renderer, args).map(|_| true),
-        CoverageCommand::Report(args) => {
-            run_report(&renderer, args.dir.as_deref(), &args.log).map(|_| true)
-        }
+        CoverageCommand::Report(args) => run_report(
+            &renderer,
+            args.dir.as_deref(),
+            &args.log,
+            args.out_format,
+            args.out.as_deref(),
+        )
+        .map(|_| true),
         CoverageCommand::Test(args) => run_test(&renderer, args),
     }
 }
@@ -56,7 +64,7 @@ fn run_test(renderer: &Renderer, args: &CoverageTestArgs) -> io::Result<bool> {
         renderer,
         &CoverageInstrumentArgs {
             files: args.files.clone(),
-            out: args.out.clone(),
+            out: args.instrument_out.clone(),
             exclude_annotation: args.exclude_annotation.clone(),
             jungle: args.jungle.clone(),
         },
@@ -152,7 +160,13 @@ fn run_test(renderer: &Renderer, args: &CoverageTestArgs) -> io::Result<bool> {
 
     fs::write(&log_path, &monkeydo_output.stdout)?;
 
-    run_report(renderer, Some(&out), &log_path)?;
+    run_report(
+        renderer,
+        Some(&out),
+        &log_path,
+        args.out_format,
+        args.out.as_deref(),
+    )?;
 
     // A failing test is a finding, not a broken invocation — it is already
     // printed above, so the command only needs to report "not clean" here.
@@ -377,7 +391,13 @@ fn collect_mc_files(root: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> 
     Ok(files)
 }
 
-fn run_report(renderer: &Renderer, dir: Option<&Path>, log: &Path) -> io::Result<()> {
+fn run_report(
+    renderer: &Renderer,
+    dir: Option<&Path>,
+    log: &Path,
+    format: OutFormat,
+    out: Option<&Path>,
+) -> io::Result<()> {
     let dir = match dir {
         Some(dir) => dir.to_path_buf(),
         None => project_root()?.join("bin/coverage"),
@@ -397,6 +417,13 @@ fn run_report(renderer: &Renderer, dir: Option<&Path>, log: &Path) -> io::Result
         })
         .collect::<io::Result<_>>()?;
 
+    if sites.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "manifest contains no reportable sites",
+        ));
+    }
+
     let log = if log == Path::new("-") {
         renderer.read_stdin_source()?
     } else {
@@ -410,18 +437,43 @@ fn run_report(renderer: &Renderer, dir: Option<&Path>, log: &Path) -> io::Result
         by_file.entry(&site.file).or_default().push(site);
     }
 
+    let covered = sites.iter().filter(|s| hits.contains(&s.id)).count();
+
+    let report = match format {
+        OutFormat::Text => render_text(&by_file, &hits, covered, sites.len()),
+        OutFormat::Lcov => render_lcov(&by_file, &hits),
+    };
+
+    write_report(out, &report)?;
+
+    // Zero hits across every site means the instrumented build never ran or
+    // its output was not captured — a broken pipeline rather than 0%
+    // coverage.
+    if covered == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "no coverage hits in the log — did the instrumented build run and was its output captured?",
+        ));
+    }
+
+    Ok(())
+}
+
+/// The default `--out-format text`: one row per file plus a `TOTAL` summary
+/// line.
+fn render_text(
+    by_file: &BTreeMap<&str, Vec<&FunctionSite>>,
+    hits: &HashSet<usize>,
+    covered: usize,
+    total: usize,
+) -> String {
     let mut table = Table::new();
     table
         .load_style(comfy_table::presets::UTF8_FULL.with_rounded_corners())
         .set_header(vec!["FILE", "COVERED", "MISSED"]);
 
-    let mut total = 0;
-    let mut covered = 0;
-
-    for (file, file_sites) in &by_file {
+    for (file, file_sites) in by_file {
         let hit = file_sites.iter().filter(|s| hits.contains(&s.id)).count();
-        total += file_sites.len();
-        covered += hit;
         let missed: Vec<&str> = file_sites
             .iter()
             .filter(|s| !hits.contains(&s.id))
@@ -437,31 +489,51 @@ fn run_report(renderer: &Renderer, dir: Option<&Path>, log: &Path) -> io::Result
         ]);
     }
 
-    println!("{table}");
-
-    if total == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "manifest contains no reportable sites",
-        ));
-    }
-
-    println!(
-        "\nTOTAL {covered}/{total} functions executed ({:.0}%)",
+    format!(
+        "{table}\n\nTOTAL {covered}/{total} functions executed ({:.0}%)\n",
         100.0 * covered as f64 / total as f64
-    );
+    )
+}
 
-    // Zero hits across every site means the instrumented build never ran or
-    // its output was not captured — a broken pipeline rather than 0%
-    // coverage.
-    if covered == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "no coverage hits in the log — did the instrumented build run and was its output captured?",
-        ));
+/// The `--out-format lcov` report: an LCOV `.info` file, understood by
+/// `genhtml`, VS Code's Coverage Gutters, Codecov and Coveralls. Coverage
+/// here is function-level only (see the crate-level docs on
+/// `monkey_c_coverage`), which `FN`/`FNDA` records capture directly without
+/// needing per-line `DA` data the instrumentation never collected.
+fn render_lcov(by_file: &BTreeMap<&str, Vec<&FunctionSite>>, hits: &HashSet<usize>) -> String {
+    let mut report = String::new();
+
+    for (file, file_sites) in by_file {
+        let _ = writeln!(report, "SF:{file}");
+
+        for site in file_sites {
+            let _ = writeln!(report, "FN:{},{}", site.line, site.name);
+        }
+
+        let mut hit_count = 0;
+        for site in file_sites {
+            let hit = usize::from(hits.contains(&site.id));
+            hit_count += hit;
+            let _ = writeln!(report, "FNDA:{hit},{}", site.name);
+        }
+
+        let _ = writeln!(report, "FNF:{}", file_sites.len());
+        let _ = writeln!(report, "FNH:{hit_count}");
+        report.push_str("end_of_record\n");
     }
 
-    Ok(())
+    report
+}
+
+/// Write a rendered report to `out`, or stdout when no path was given.
+fn write_report(out: Option<&Path>, report: &str) -> io::Result<()> {
+    match out {
+        Some(path) => write(path, report),
+        None => {
+            print!("{report}");
+            Ok(())
+        }
+    }
 }
 
 fn write(path: &Path, contents: &str) -> io::Result<()> {
@@ -521,6 +593,40 @@ fn relative_path(from: &Path, to: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_lcov_emits_one_record_per_file() {
+        let hit = FunctionSite {
+            id: 0,
+            file: "source/A.mc".into(),
+            name: "A.hit".into(),
+            line: 2,
+        };
+        let missed = FunctionSite {
+            id: 1,
+            file: "source/A.mc".into(),
+            name: "A.missed".into(),
+            line: 5,
+        };
+        let sites = [&hit, &missed];
+        let mut by_file: BTreeMap<&str, Vec<&FunctionSite>> = BTreeMap::new();
+        by_file.insert("source/A.mc", sites.to_vec());
+        let hits = HashSet::from([0]);
+
+        let report = render_lcov(&by_file, &hits);
+
+        assert_eq!(
+            report,
+            "SF:source/A.mc\n\
+             FN:2,A.hit\n\
+             FN:5,A.missed\n\
+             FNDA:1,A.hit\n\
+             FNDA:0,A.missed\n\
+             FNF:2\n\
+             FNH:1\n\
+             end_of_record\n"
+        );
+    }
 
     #[test]
     fn mirrored_path_strips_the_project_root() {

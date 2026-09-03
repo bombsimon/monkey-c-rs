@@ -274,6 +274,23 @@ pub struct CoverageReportArgs {
     /// Defaults to `{repo_root}/bin/coverage`.
     #[arg(long)]
     pub dir: Option<PathBuf>,
+
+    /// Report format.
+    #[arg(long, value_name = "FORMAT", default_value = "text")]
+    pub out_format: OutFormat,
+
+    /// Write the report here instead of stdout.
+    #[arg(long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutFormat {
+    /// Human-readable table.
+    Text,
+    /// LCOV `.info` format, understood by `genhtml`, VS Code's Coverage
+    /// Gutters, Codecov and Coveralls.
+    Lcov,
 }
 
 #[derive(Debug, Args)]
@@ -296,7 +313,7 @@ pub struct CoverageTestArgs {
     /// so stale instrumented files never leak into a build. Defaults to
     /// `{repo_root}/bin/coverage`.
     #[arg(long)]
-    pub out: Option<PathBuf>,
+    pub instrument_out: Option<PathBuf>,
 
     /// Additional annotation names (beyond `test` and `release`) whose
     /// declarations should be skipped, e.g. `--exclude-annotation foo,bar`
@@ -305,10 +322,18 @@ pub struct CoverageTestArgs {
     pub exclude_annotation: Vec<String>,
 
     /// Jungle file describing the project, copied and rewritten into
-    /// `{out}/coverage.jungle` so the instrumented build can be compiled with
-    /// `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
+    /// `{instrument_out}/coverage.jungle` so the instrumented build can be
+    /// compiled with `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
     #[arg(long)]
     pub jungle: Option<PathBuf>,
+
+    /// Report format.
+    #[arg(long, value_name = "FORMAT", default_value = "text")]
+    pub out_format: OutFormat,
+
+    /// Write the report here instead of stdout.
+    #[arg(long, value_name = "PATH")]
+    pub out: Option<PathBuf>,
 
     /// Print the monkeyc/monkeydo commands this would run, without running
     /// them.
@@ -463,6 +488,29 @@ mod tests {
 
         assert_eq!(args.log, PathBuf::from("-"));
         assert_eq!(args.dir, None);
+        assert_eq!(args.out_format, OutFormat::Text);
+        assert_eq!(args.out, None);
+    }
+
+    #[test]
+    fn coverage_report_parses_out_format_and_out() {
+        let cli = Cli::try_parse_from([
+            "rafiki",
+            "coverage",
+            "report",
+            "-",
+            "--out-format",
+            "lcov",
+            "--out",
+            "coverage.info",
+        ])
+        .expect("parses");
+        let Command::Coverage(CoverageCommand::Report(args)) = cli.command else {
+            panic!("expected coverage report");
+        };
+
+        assert_eq!(args.out_format, OutFormat::Lcov);
+        assert_eq!(args.out, Some(PathBuf::from("coverage.info")));
     }
 
     #[test]
