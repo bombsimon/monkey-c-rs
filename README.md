@@ -30,7 +30,7 @@ cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki
 > breaking changes.
 >
 > ```sh
-> cargo install --git https://github.com/user/repo --rev a1b2c3d
+> cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki --rev a1b2c3d
 > ```
 
 ## Usage
