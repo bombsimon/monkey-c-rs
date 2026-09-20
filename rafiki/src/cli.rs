@@ -256,11 +256,13 @@ pub struct CoverageInstrumentArgs {
     #[arg(long, value_delimiter = ',')]
     pub exclude_annotation: Vec<String>,
 
-    /// Jungle file describing the project, copied and rewritten into
-    /// `{out}/coverage.jungle` so the instrumented build can be compiled with
-    /// `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
-    #[arg(long)]
-    pub jungle: Option<PathBuf>,
+    /// Jungle files describing the project. The first is copied and rewritten
+    /// into `{out}/coverage.jungle`; any further ones (e.g. a barrels jungle)
+    /// are passed through unmodified. Repeat `--jungle`, or separate them
+    /// with `;` in one flag, the same way `monkeyc -f` accepts several.
+    /// Defaults to `{repo_root}/monkey.jungle`.
+    #[arg(long, value_delimiter = ';')]
+    pub jungle: Vec<PathBuf>,
 }
 
 #[derive(Debug, Args)]
@@ -321,11 +323,13 @@ pub struct CoverageTestArgs {
     #[arg(long, value_delimiter = ',')]
     pub exclude_annotation: Vec<String>,
 
-    /// Jungle file describing the project, copied and rewritten into
-    /// `{instrument_out}/coverage.jungle` so the instrumented build can be
-    /// compiled with `monkeyc -f`. Defaults to `{repo_root}/monkey.jungle`.
-    #[arg(long)]
-    pub jungle: Option<PathBuf>,
+    /// Jungle files describing the project. The first is copied and rewritten
+    /// into `{instrument_out}/coverage.jungle`; any further ones (e.g. a
+    /// barrels jungle) are passed through unmodified. Repeat `--jungle`, or
+    /// separate them with `;` in one flag, the same way `monkeyc -f` accepts
+    /// several. Defaults to `{repo_root}/monkey.jungle`.
+    #[arg(long, value_delimiter = ';')]
+    pub jungle: Vec<PathBuf>,
 
     /// Report format.
     #[arg(long, value_name = "FORMAT", default_value = "text")]
