@@ -19,7 +19,14 @@ pub fn enabled(when: ColorWhen, stream: Stream) -> bool {
     match when {
         ColorWhen::Always => true,
         ColorWhen::Never => false,
-        ColorWhen::Auto => auto(stream, &env_overrides()),
+        ColorWhen::Auto => auto(is_terminal(stream), &env_overrides()),
+    }
+}
+
+fn is_terminal(stream: Stream) -> bool {
+    match stream {
+        Stream::Stdout => io::stdout().is_terminal(),
+        Stream::Stderr => io::stderr().is_terminal(),
     }
 }
 
@@ -46,7 +53,14 @@ fn is_set(name: &str) -> bool {
     env::var_os(name).is_some_and(|value| !value.is_empty() && value != "0")
 }
 
-fn auto(stream: Stream, env: &EnvOverrides) -> bool {
+/// The environment-independent part of the `Auto` decision, taking whether
+/// the stream is a terminal as a plain `bool` rather than querying it
+/// directly — `io::stdout()`/`io::stderr()` reflect the real process's file
+/// descriptors regardless of how a test harness captures `print!` output, so
+/// a test asserting on `Stream::Stdout` directly would pass or fail based on
+/// whether `cargo test` itself happened to run with a terminal attached,
+/// rather than on this function's own logic.
+fn auto(is_terminal: bool, env: &EnvOverrides) -> bool {
     if env.force_color {
         return true;
     }
@@ -55,10 +69,7 @@ fn auto(stream: Stream, env: &EnvOverrides) -> bool {
         return false;
     }
 
-    match stream {
-        Stream::Stdout => io::stdout().is_terminal(),
-        Stream::Stderr => io::stderr().is_terminal(),
-    }
+    is_terminal
 }
 
 #[cfg(test)]
@@ -78,7 +89,7 @@ mod tests {
             no_color: true,
             ..EnvOverrides::default()
         };
-        assert!(!auto(Stream::Stdout, &env));
+        assert!(!auto(true, &env));
     }
 
     #[test]
@@ -87,7 +98,7 @@ mod tests {
             dumb_terminal: true,
             ..EnvOverrides::default()
         };
-        assert!(!auto(Stream::Stderr, &env));
+        assert!(!auto(true, &env));
     }
 
     #[test]
@@ -97,11 +108,16 @@ mod tests {
             force_color: true,
             dumb_terminal: true,
         };
-        assert!(auto(Stream::Stdout, &env));
+        assert!(auto(false, &env));
     }
 
     #[test]
     fn a_non_terminal_stream_is_plain() {
-        assert!(!auto(Stream::Stdout, &EnvOverrides::default()));
+        assert!(!auto(false, &EnvOverrides::default()));
+    }
+
+    #[test]
+    fn a_terminal_stream_with_no_overrides_is_colour() {
+        assert!(auto(true, &EnvOverrides::default()));
     }
 }
