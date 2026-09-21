@@ -403,12 +403,9 @@ fn respond(
     id: RequestId,
     result: serde_json::Value,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let response = Response {
-        id,
-        result: Some(result),
-        error: None,
-    };
-    connection.sender.send(Message::Response(response))?;
+    connection
+        .sender
+        .send(Message::Response(Response::new_ok(id, result)))?;
 
     Ok(())
 }
