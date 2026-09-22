@@ -1,0 +1,17 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_hugged_width(r#\"\nfunction fn() {\n    someFn({ \"foo\" => \"bar\", \"baz\" => \"qux\" });\n    someFn({\n        \"foo\" => \"bar\",\n    });\n    var x = new Foo({ :foo => \"bar\", :baz => \"qux\" });\n}\n\"#.trim(),\n20)"
+---
+function fn() {
+    someFn({
+        "foo" => "bar",
+        "baz" => "qux"
+    });
+    someFn({
+        "foo" => "bar",
+    });
+    var x = new Foo({
+        :foo => "bar",
+        :baz => "qux"
+    });
+}

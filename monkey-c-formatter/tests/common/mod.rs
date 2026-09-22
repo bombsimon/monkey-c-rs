@@ -33,12 +33,22 @@ pub fn format_all_enabled(src: &str) -> String {
         src,
         Formatter::new(src)
             .with_alignment(true)
-            .with_decl_wrap(true),
+            .with_decl_wrap(true)
+            .with_hug_brackets(true),
     )
 }
 
 pub fn format_width(src: &str, width: usize) -> String {
     run(src, Formatter::new(src).with_line_width(width))
+}
+
+pub fn format_hugged_width(src: &str, width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_hug_brackets(true)
+            .with_line_width(width),
+    )
 }
 
 pub fn format_aligned_width(src: &str, width: usize) -> String {

@@ -47,6 +47,9 @@ pub struct Formatter {
     /// When `true`, multi-binding `var`/`const` declarations break each
     /// binding onto its own indented line.
     wrap_multi_bindings: bool,
+    /// When `true`, an array or dict that is a call's only argument keeps its
+    /// brackets on the call's parentheses, so only the entries break.
+    hug_brackets: bool,
     /// Positional drain cursor over all source comments. Advanced forward as
     /// the formatter builds the Doc tree; each comment is emitted exactly once
     /// at the first output position that follows its source location.
@@ -63,6 +66,7 @@ impl Formatter {
             line_width: 100,
             align_pairs: false,
             wrap_multi_bindings: false,
+            hug_brackets: false,
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
     }
@@ -82,6 +86,13 @@ impl Formatter {
     /// Enable per-binding wrapping for multi-binding `var`/`const` declarations.
     pub fn with_decl_wrap(mut self, decl_wrap: bool) -> Self {
         self.wrap_multi_bindings = decl_wrap;
+        self
+    }
+
+    /// Keep a sole array or dict argument's brackets next to the call's parentheses
+    /// (`f([` … `])`, `f({` … `})`) instead of breaking both delimiters onto their own lines.
+    pub fn with_hug_brackets(mut self, hug_brackets: bool) -> Self {
+        self.hug_brackets = hug_brackets;
         self
     }
 
@@ -1939,11 +1950,22 @@ impl Formatter {
                     .first()
                     .map(|a| a.value.span().start)
                     .unwrap_or(e.span.end);
+                let callee = self.expr_with_leading(&e.callee);
+
+                if let Some(args) = self.hugged_sole_collection(
+                    &e.args,
+                    e.args_trailing_comma,
+                    e.args_open,
+                    e.span.end,
+                ) {
+                    return Doc::concat(vec![callee, args]);
+                }
+
                 let after_open_force_newline =
                     self.after_open_has_line_comment(e.args_open, first_arg_start);
                 let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
                 Doc::concat(vec![
-                    self.expr_with_leading(&e.callee),
+                    callee,
                     self.format_list(
                         "(",
                         ")",
@@ -1979,6 +2001,19 @@ impl Formatter {
                     .first()
                     .map(|a| a.value.span().start)
                     .unwrap_or(e.span.end);
+                let hugged = e.args_open.and_then(|args_open| {
+                    self.hugged_sole_collection(
+                        &e.args,
+                        e.args_trailing_comma,
+                        args_open,
+                        e.span.end,
+                    )
+                });
+
+                if let Some(args) = hugged {
+                    return Doc::concat(vec![Doc::text(format!("new {}", e.class)), args]);
+                }
+
                 let after_open_force_newline = e
                     .args_open
                     .is_some_and(|start| self.after_open_has_line_comment(start, first_arg_start));
@@ -2056,6 +2091,50 @@ impl Formatter {
             Expr::Self_(_) => Doc::text("self"),
             Expr::Bling(_) => Doc::text("$"),
         }
+    }
+
+    /// The `(…)` of a call whose only argument is an array or dict literal, rendered as
+    /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. `None` when
+    /// hugging is off or does not apply, including when a comment sits between the parentheses
+    /// and the brackets, since hugging would have nowhere to put it.
+    fn hugged_sole_collection(
+        &self,
+        args: &[CallArg],
+        args_trailing_comma: bool,
+        args_open: usize,
+        call_end: usize,
+    ) -> Option<Doc> {
+        if !self.hug_brackets || args_trailing_comma {
+            return None;
+        }
+
+        let [argument] = args else {
+            return None;
+        };
+
+        if !matches!(argument.value, Expr::Array(_) | Expr::Dict(_)) {
+            return None;
+        }
+
+        let array_span = *argument.value.span();
+        let before_array = Span {
+            start: args_open + 1,
+            end: array_span.start,
+        };
+        let after_array = Span {
+            start: array_span.end,
+            end: call_end,
+        };
+
+        if self.has_comments_in(before_array) || self.has_comments_in(after_array) {
+            return None;
+        }
+
+        Some(Doc::concat(vec![
+            Doc::text("("),
+            self.expr_inner_to_doc(&argument.value),
+            Doc::text(")"),
+        ]))
     }
 
     fn call_args_to_items(&self, args: &[CallArg], args_close: usize) -> Vec<ListItem> {

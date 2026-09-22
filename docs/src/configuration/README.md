@@ -12,6 +12,7 @@ and the defaults are what the tools use with no configuration anywhere.
 line-width = 111
 alignment = true
 wrap-declarations = false
+hug-brackets = false
 
 [lint]
 enable = []
@@ -51,14 +52,38 @@ exactly that one rule and not the file's disables as well.
 
 ## `[format]`
 
-| Key                 | Type    | Default | Meaning                                              |
-| ------------------- | ------- | ------- | ---------------------------------------------------- |
-| `line-width`        | integer | `111`   | Target width before a group is broken onto lines.    |
-| `alignment`         | boolean | `true`  | Column-align separators across related entries.      |
-| `wrap-declarations` | boolean | `false` | Break each binding of a multi-binding `var`/`const`. |
+| Key                 | Type    | Default | Meaning                                                          |
+| ------------------- | ------- | ------- | ---------------------------------------------------------------- |
+| `line-width`        | integer | `111`   | Target width before a group is broken onto lines.                |
+| `alignment`         | boolean | `true`  | Column-align separators across related entries.                  |
+| `wrap-declarations` | boolean | `false` | Break each binding of a multi-binding `var`/`const`.             |
+| `hug-brackets`      | boolean | `false` | Keep a sole array or dict argument's brackets on the call's `(`. |
 
 As flags: `--line-width`/`-l`, `--alignment`/`--no-alignment`,
-`--wrap-declarations`/`-w`/`--no-wrap-declarations`.
+`--wrap-declarations`/`-w`/`--no-wrap-declarations`,
+`--hug-brackets`/`--no-hug-brackets`.
+
+With `hug-brackets`, a call whose only argument is an array or a dict breaks
+inside the brackets rather than around them:
+
+```monkey-c
+// hug-brackets = false
+someFn(
+    [
+        "foo",
+        "bar"
+    ]
+);
+
+// hug-brackets = true
+someFn([
+    "foo",
+    "bar"
+]);
+someFn({
+    "foo" => "bar",
+});
+```
 
 ## `[lint]`
 
@@ -105,7 +130,7 @@ rafiki: rafiki.toml: TOML parse error at line 2, column 1
   |
 2 | line_width = 40
   | ^^^^^^^^^^
-unknown field `line_width`, expected one of `line-width`, `alignment`, `wrap-declarations`
+unknown field `line_width`, expected one of `line-width`, `alignment`, `wrap-declarations`, `hug-brackets`
 ```
 
 The CLI treats that as a fatal error (exit code `2`). The language server instead

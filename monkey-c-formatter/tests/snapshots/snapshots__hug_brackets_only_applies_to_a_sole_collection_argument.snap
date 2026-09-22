@@ -1,0 +1,21 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_hugged_width(r#\"\nfunction fn() {\n    someFn([\"foo\", \"bar\", \"baz\"], 1);\n    someFn({ :foo => \"bar\", :baz => \"qux\" }, 1);\n}\n\"#.trim(),\n20)"
+---
+function fn() {
+    someFn(
+        [
+            "foo",
+            "bar",
+            "baz"
+        ],
+        1
+    );
+    someFn(
+        {
+            :foo => "bar",
+            :baz => "qux"
+        },
+        1
+    );
+}

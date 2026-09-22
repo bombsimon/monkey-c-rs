@@ -26,6 +26,7 @@ struct InitializationOptions {
     line_width: Option<usize>,
     alignment: Option<bool>,
     wrap_declarations: Option<bool>,
+    hug_brackets: Option<bool>,
 }
 
 /// Settings used throughout one language-server session.
@@ -41,6 +42,7 @@ impl InitializationOptions {
             line_width: self.line_width,
             alignment: self.alignment,
             wrap_declarations: self.wrap_declarations,
+            hug_brackets: self.hug_brackets,
         }
     }
 }
@@ -150,12 +152,13 @@ mod tests {
     #[test]
     fn initialization_options_override_only_named_keys() {
         let params = json!({
-            "initializationOptions": { "lineWidth": 80, "wrapDeclarations": true }
+            "initializationOptions": { "lineWidth": 80, "wrapDeclarations": true, "hugBrackets": true }
         });
         let (settings, _) = resolve(&ConfigSource::Defaults, &params);
 
         assert_eq!(settings.format.line_width, 80);
         assert!(settings.format.wrap_declarations);
+        assert!(settings.format.hug_brackets);
         // Unset key keeps its default.
         assert!(settings.format.alignment);
     }

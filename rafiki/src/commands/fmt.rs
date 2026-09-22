@@ -110,6 +110,7 @@ fn format_source(
         .with_line_width(settings.line_width)
         .with_alignment(settings.alignment)
         .with_decl_wrap(settings.wrap_declarations)
+        .with_hug_brackets(settings.hug_brackets)
         .format(&output);
 
     // Warn (without failing) about any comment the formatter could not carry

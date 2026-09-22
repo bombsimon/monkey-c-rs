@@ -7,7 +7,10 @@
 //! Snapshots live under `tests/snapshots/`. See <https://insta.rs/> for the
 //! snapshot tooling.
 mod common;
-use common::{format, format_aligned, format_aligned_width, format_all_enabled, format_width};
+use common::{
+    format, format_aligned, format_aligned_width, format_all_enabled, format_hugged_width,
+    format_width,
+};
 
 #[test]
 fn format_inputs() {
@@ -380,6 +383,97 @@ fn array_no_trailing_comma_breaks_when_wide() {
     insta::assert_snapshot!(format_width(
         "var a = [\"a_long_string\", \"another_long_string\"];",
         30
+    ));
+}
+
+const SOLE_ARRAY_ARGUMENT: &str = r#"
+function fn() {
+    someFn(["foo", "bar", "baz"]);
+    var x = new Foo(["foo", "bar", "baz"]);
+}
+"#;
+
+#[test]
+fn sole_array_argument_breaks_around_brackets_by_default() {
+    insta::assert_snapshot!(format_width(SOLE_ARRAY_ARGUMENT.trim(), 20));
+}
+
+#[test]
+fn sole_array_argument_hugs_brackets() {
+    insta::assert_snapshot!(format_hugged_width(SOLE_ARRAY_ARGUMENT.trim(), 20));
+}
+
+#[test]
+fn hugged_array_stays_flat_when_it_fits() {
+    insta::assert_snapshot!(format_hugged_width(
+        "function fn() { someFn([1, 2, 3]); }",
+        111
+    ));
+}
+
+#[test]
+fn sole_dict_argument_hugs_brackets() {
+    insta::assert_snapshot!(format_hugged_width(
+        r#"
+function fn() {
+    someFn({ "foo" => "bar", "baz" => "qux" });
+    someFn({
+        "foo" => "bar",
+    });
+    var x = new Foo({ :foo => "bar", :baz => "qux" });
+}
+"#
+        .trim(),
+        20
+    ));
+}
+
+#[test]
+fn hug_brackets_only_applies_to_a_sole_collection_argument() {
+    insta::assert_snapshot!(format_hugged_width(
+        r#"
+function fn() {
+    someFn(["foo", "bar", "baz"], 1);
+    someFn({ :foo => "bar", :baz => "qux" }, 1);
+}
+"#
+        .trim(),
+        20
+    ));
+}
+
+#[test]
+fn hugged_array_keeps_its_own_trailing_comma_and_comments() {
+    insta::assert_snapshot!(format_hugged_width(
+        r#"
+function fn() {
+    someFn([
+        "foo", // first
+        "bar",
+    ]);
+}
+"#
+        .trim(),
+        111
+    ));
+}
+
+#[test]
+fn hug_brackets_yields_to_comments_around_the_array() {
+    insta::assert_snapshot!(format_hugged_width(
+        r#"
+function fn() {
+    someFn( // leading
+        ["foo", "bar", "baz"]
+    );
+    someFn(
+        ["foo", "bar", "baz"] // trailing
+    );
+    someFn(["foo", "bar", "baz"],);
+}
+"#
+        .trim(),
+        111
     ));
 }
 
