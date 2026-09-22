@@ -44,8 +44,8 @@ pub struct Formatter {
     /// When `true`, runs of related entries are rendered with their separator
     /// operators column-aligned.
     align_pairs: bool,
-    /// When `true`, multi-binding `var`/`const` declarations break each
-    /// binding onto its own indented line.
+    /// When `true`, multi-binding `var`/`const` declarations that exceed the
+    /// line width break each binding onto its own indented line.
     wrap_multi_bindings: bool,
     /// When `true`, an array or dict that is a call's only argument keeps its
     /// brackets on the call's parentheses, so only the entries break.
@@ -83,7 +83,7 @@ impl Formatter {
         self
     }
 
-    /// Enable per-binding wrapping for multi-binding `var`/`const` declarations.
+    /// Enable per-binding wrapping for multi-binding `var`/`const` declarations that don't fit.
     pub fn with_decl_wrap(mut self, decl_wrap: bool) -> Self {
         self.wrap_multi_bindings = decl_wrap;
         self
@@ -854,20 +854,23 @@ impl Formatter {
             parts.push(Doc::text("static "));
         }
 
-        parts.push(Doc::text(keyword.to_string()));
-
-        let mut indented = vec![Doc::HardLine];
+        let mut indented = vec![Doc::Line];
         for (i, b) in bindings.iter().enumerate() {
             if i > 0 {
                 indented.push(Doc::text(","));
-                indented.push(Doc::HardLine);
+                indented.push(Doc::Line);
             }
 
             indented.push(self.binding_to_doc(b));
         }
 
-        parts.push(Doc::Indent(indented));
-        parts.push(Doc::text(";"));
+        // The `;` sits inside the group so a declaration that only overflows
+        // by its terminator still breaks.
+        parts.push(Doc::group(vec![
+            Doc::text(keyword.to_string()),
+            Doc::Indent(indented),
+            Doc::text(";"),
+        ]));
 
         Doc::Concat(parts)
     }

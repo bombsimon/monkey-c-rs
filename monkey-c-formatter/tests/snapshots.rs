@@ -9,7 +9,7 @@
 mod common;
 use common::{
     format, format_aligned, format_aligned_width, format_all_enabled, format_hugged_width,
-    format_width,
+    format_width, format_wrapped_width,
 };
 
 #[test]
@@ -383,6 +383,24 @@ fn array_no_trailing_comma_breaks_when_wide() {
     insta::assert_snapshot!(format_width(
         "var a = [\"a_long_string\", \"another_long_string\"];",
         30
+    ));
+}
+
+#[test]
+fn wrapped_declaration_stays_flat_when_it_fits() {
+    insta::assert_snapshot!(format_wrapped_width("var a = 1, b = 2;", 17));
+}
+
+#[test]
+fn wrapped_declaration_breaks_when_its_semicolon_overflows() {
+    insta::assert_snapshot!(format_wrapped_width("var a = 1, b = 2;", 16));
+}
+
+#[test]
+fn wrapped_declaration_measures_from_its_indentation() {
+    insta::assert_snapshot!(format_wrapped_width(
+        "class Foo { const A = 1, B = 2; function f() { var i, j, k = 0; } }",
+        23
     ));
 }
 

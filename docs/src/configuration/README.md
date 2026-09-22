@@ -52,12 +52,12 @@ exactly that one rule and not the file's disables as well.
 
 ## `[format]`
 
-| Key                 | Type    | Default | Meaning                                                          |
-| ------------------- | ------- | ------- | ---------------------------------------------------------------- |
-| `line-width`        | integer | `111`   | Target width before a group is broken onto lines.                |
-| `alignment`         | boolean | `true`  | Column-align separators across related entries.                  |
-| `wrap-declarations` | boolean | `false` | Break each binding of a multi-binding `var`/`const`.             |
-| `hug-brackets`      | boolean | `false` | Keep a sole array or dict argument's brackets on the call's `(`. |
+| Key                 | Type    | Default | Meaning                                                           |
+| ------------------- | ------- | ------- | ----------------------------------------------------------------- |
+| `line-width`        | integer | `111`   | Target width before a group is broken onto lines.                 |
+| `alignment`         | boolean | `true`  | Column-align separators across related entries.                   |
+| `wrap-declarations` | boolean | `false` | Break a multi-binding `var`/`const` that overflows, one per line. |
+| `hug-brackets`      | boolean | `false` | Keep a sole array or dict argument's brackets on the call's `(`.  |
 
 As flags: `--line-width`/`-l`, `--alignment`/`--no-alignment`,
 `--wrap-declarations`/`-w`/`--no-wrap-declarations`,

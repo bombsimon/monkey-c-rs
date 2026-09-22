@@ -179,8 +179,8 @@ pub struct FormatArgs {
     #[arg(long, overrides_with = "alignment")]
     pub no_alignment: bool,
 
-    /// Wrap multiple declarations similar to the Prettier formatter.
-    /// [default: disabled]
+    /// Wrap multiple declarations similar to the Prettier formatter when they
+    /// exceed the line width. [default: disabled]
     #[arg(short = 'w', long, overrides_with = "no_wrap_declarations")]
     pub wrap_declarations: bool,
 

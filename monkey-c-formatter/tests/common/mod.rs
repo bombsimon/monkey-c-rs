@@ -42,6 +42,15 @@ pub fn format_width(src: &str, width: usize) -> String {
     run(src, Formatter::new(src).with_line_width(width))
 }
 
+pub fn format_wrapped_width(src: &str, width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_decl_wrap(true)
+            .with_line_width(width),
+    )
+}
+
 pub fn format_hugged_width(src: &str, width: usize) -> String {
     run(
         src,
