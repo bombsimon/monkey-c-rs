@@ -55,7 +55,7 @@ exactly that one rule and not the file's disables as well.
 | Key                 | Type    | Default | Meaning                                                           |
 | ------------------- | ------- | ------- | ----------------------------------------------------------------- |
 | `line-width`        | integer | `111`   | Target width before a group is broken onto lines.                 |
-| `alignment`         | boolean | `true`  | Column-align separators across related entries.                   |
+| `alignment`         | boolean | `true`  | Column-align separators and trailing comments.                    |
 | `wrap-declarations` | boolean | `false` | Break a multi-binding `var`/`const` that overflows, one per line. |
 | `hug-brackets`      | boolean | `false` | Keep a sole array or dict argument's brackets on the call's `(`.  |
 

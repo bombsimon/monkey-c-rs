@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: format_aligned(CONSECUTIVE_TRAILING_COMMENTS.trim())
+---
+function f() {
+    matchplans = MatchPlan.MATCHPLANS2018; // plans
+    teams = Teams.TEAMS;                   // teams
+}

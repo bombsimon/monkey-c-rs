@@ -33,6 +33,23 @@ fn crlf_comments_do_not_keep_carriage_returns() {
     insta::assert_snapshot!(formatted);
 }
 
+const CONSECUTIVE_TRAILING_COMMENTS: &str = r#"
+function f() {
+    matchplans = MatchPlan.MATCHPLANS2018; // plans
+    teams = Teams.TEAMS; // teams
+}
+"#;
+
+#[test]
+fn trailing_comments_stay_put_without_alignment() {
+    insta::assert_snapshot!(format(CONSECUTIVE_TRAILING_COMMENTS.trim()));
+}
+
+#[test]
+fn trailing_comments_align_with_alignment() {
+    insta::assert_snapshot!(format_aligned(CONSECUTIVE_TRAILING_COMMENTS.trim()));
+}
+
 #[test]
 fn empty_class() {
     insta::assert_snapshot!(format("class Foo {}"));

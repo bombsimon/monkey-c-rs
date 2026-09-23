@@ -42,7 +42,7 @@ pub struct Formatter {
     /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
     /// When `true`, runs of related entries are rendered with their separator
-    /// operators column-aligned.
+    /// operators column-aligned, as are trailing comments on consecutive lines.
     align_pairs: bool,
     /// When `true`, multi-binding `var`/`const` declarations that exceed the
     /// line width break each binding onto its own indented line.
@@ -77,7 +77,7 @@ impl Formatter {
         self
     }
 
-    /// Enable column-aligned separators across related entries (opt-in).
+    /// Enable column-aligned separators and trailing comments across related entries (opt-in).
     pub fn with_alignment(mut self, align_pairs: bool) -> Self {
         self.align_pairs = align_pairs;
         self
@@ -102,13 +102,17 @@ impl Formatter {
 
         let doc = self.ast_to_doc(&output.ast);
         let rendered = render(&doc, self.line_width);
-        let mut aligned = align_trailing_comments(&rendered);
+        let mut formatted = if self.align_pairs {
+            align_trailing_comments(&rendered)
+        } else {
+            rendered
+        };
 
-        if !aligned.ends_with('\n') {
-            aligned.push('\n');
+        if !formatted.ends_with('\n') {
+            formatted.push('\n');
         }
 
-        aligned
+        formatted
     }
 
     /// "No comment left behind": source comments that did **not** survive into

@@ -91,6 +91,9 @@ When alignment is enabled the formatter pads names so that the separator
 operators (`=>` in dictionaries, `=` in enum variants) line up in a vertical
 column. The intent is purely visual — to make related entries easier to scan.
 
+Trailing comments on consecutive lines are aligned into a column the same way,
+and are left where they are when alignment is disabled.
+
 Alignment only kicks in when an entry is already rendered multi-line. For
 dictionaries that follows the magic trailing comma rule above. For enums the
 formatter looks for runs of two or more consecutive variants that all have an
