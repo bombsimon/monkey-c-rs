@@ -119,3 +119,43 @@ fn test_group_width_boundary_breaks() {
     let result = render(&doc, 10);
     assert!(result.contains('\n'));
 }
+
+fn call_args(args: &str) -> Doc {
+    Doc::group(vec![
+        Doc::text("f("),
+        Doc::Indent(vec![Doc::soft_line(), Doc::text(args)]),
+        Doc::soft_line(),
+        Doc::text(")"),
+    ])
+}
+
+#[test]
+fn test_group_breaks_when_following_text_overflows() {
+    // The group alone is 10 columns, but the `;` after it pushes the line to 11.
+    let doc = Doc::concat(vec![call_args("12345678"), Doc::text(";")]);
+    assert_eq!(render(&doc, 10), "f(\n    12345678\n);");
+}
+
+#[test]
+fn test_group_measures_only_up_to_the_next_line_break() {
+    let doc = Doc::concat(vec![
+        call_args("12345678"),
+        Doc::text(";"),
+        Doc::hard_line(),
+        Doc::text("a line after the break that is far too long to fit"),
+    ]);
+    assert_eq!(
+        render(&doc, 12),
+        "f(12345678);\na line after the break that is far too long to fit"
+    );
+}
+
+#[test]
+fn test_line_comment_does_not_count_towards_fit() {
+    let doc = Doc::concat(vec![
+        call_args("12345678"),
+        Doc::text(";"),
+        Doc::line_comment(" // a trailing comment"),
+    ]);
+    assert_eq!(render(&doc, 12), "f(12345678); // a trailing comment");
+}

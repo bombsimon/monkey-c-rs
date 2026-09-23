@@ -256,11 +256,11 @@ impl Formatter {
         for c in &comments {
             let comment_start_line = self.line_index.line(c.span.start as u32);
             if comment_start_line == last_line {
-                parts.push(Doc::text(" "));
+                parts.push(self.same_line_comment_to_doc(c));
             } else {
                 parts.push(Doc::HardLine);
+                parts.push(self.comment_to_doc(c));
             }
-            parts.push(self.comment_to_doc(c));
             last_line = self.line_index.line(c.span.end.saturating_sub(1) as u32);
         }
 
@@ -319,8 +319,7 @@ impl Formatter {
 
         let mut parts = Vec::new();
         for c in &comments {
-            parts.push(Doc::text(" "));
-            parts.push(self.comment_to_doc(c));
+            parts.push(self.same_line_comment_to_doc(c));
         }
 
         Doc::Concat(parts)
@@ -347,8 +346,19 @@ impl Formatter {
         if c.is_block {
             self.block_comment_to_doc(&c.text)
         } else {
-            Doc::text(format!("//{}", c.text))
+            Doc::line_comment(format!("//{}", c.text))
         }
+    }
+
+    /// Render a comment that follows code on the same line, including the space separating them.
+    /// For a `//` comment the space is part of the comment doc, so neither counts toward whether
+    /// the code before it fits.
+    fn same_line_comment_to_doc(&self, c: &CommentStmt) -> Doc {
+        if c.is_block {
+            return Doc::concat(vec![Doc::text(" "), self.block_comment_to_doc(&c.text)]);
+        }
+
+        Doc::line_comment(format!(" //{}", c.text))
     }
 
     /// Render a `/* … */` comment, placing the closing `*/` on its own line

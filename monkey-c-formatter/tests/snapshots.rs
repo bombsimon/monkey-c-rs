@@ -51,6 +51,23 @@ fn trailing_comments_align_with_alignment() {
 }
 
 #[test]
+fn call_breaks_when_its_terminator_overflows() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    if (true) {
+        var monthformat = WatchUi.loadResource(Rez.Strings.Default_Format_Month);
+        var day = monthString.substring(monthpos + 1, monthString.length()).toNumber();
+        var fits = WatchUi.loadResource(Rez.Strings.Month); // trailing comments are not measured
+    }
+}
+"#
+        .trim(),
+        80
+    ));
+}
+
+#[test]
 fn empty_class() {
     insta::assert_snapshot!(format("class Foo {}"));
 }
