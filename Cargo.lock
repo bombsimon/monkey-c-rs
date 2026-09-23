@@ -425,6 +425,7 @@ version = "0.2.0"
 dependencies = [
  "insta",
  "monkey-c-parser",
+ "unicode-width",
 ]
 
 [[package]]

@@ -68,6 +68,35 @@ function f() {
 }
 
 #[test]
+fn wide_characters_are_measured_by_display_width() {
+    // Each line is 43 columns but 47 or more bytes, so it only fits when measured by display
+    // width.
+    insta::assert_snapshot!(format_width(
+        r#"
+var teams = {:name => "上海申花", :x => 1};
+var plans = ["中超", "中超", "中超", "中"];
+"#
+        .trim(),
+        43
+    ));
+}
+
+#[test]
+fn wide_characters_align_by_display_width() {
+    insta::assert_snapshot!(format_aligned(
+        r#"
+var teams = {
+    "上海" => 1,
+    "SHANGHAI" => 2,
+};
+var name = "上海申花"; // name
+var id = 1; // id
+"#
+        .trim()
+    ));
+}
+
+#[test]
 fn empty_class() {
     insta::assert_snapshot!(format("class Foo {}"));
 }

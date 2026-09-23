@@ -1,0 +1,6 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(r#\"\nvar teams = {:name => \"上海申花\", :x => 1};\nvar plans = [\"中超\", \"中超\", \"中超\", \"中\"];\n\"#.trim(),\n43)"
+---
+var teams = {:name => "上海申花", :x => 1};
+var plans = ["中超", "中超", "中超", "中"];

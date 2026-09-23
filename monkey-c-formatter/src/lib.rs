@@ -1,7 +1,7 @@
 pub mod doc;
 mod operators;
 
-use doc::{Doc, render};
+use doc::{Doc, display_width, render};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
     DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant, Expr,
@@ -700,7 +700,7 @@ impl Formatter {
             parts.push(Doc::text(&v.name));
 
             if let Some(value) = &v.value {
-                let pad = name_pads[i].saturating_sub(v.name.len());
+                let pad = name_pads[i].saturating_sub(display_width(&v.name));
                 if pad > 0 {
                     parts.push(Doc::text(" ".repeat(pad)));
                 }
@@ -2620,11 +2620,11 @@ impl Formatter {
 /// token sequence (e.g. a call or binary expression as a key).
 fn expr_key_width(expr: &Expr) -> Option<usize> {
     match expr {
-        Expr::Ident(e) => Some(e.name.len()),
+        Expr::Ident(e) => Some(display_width(&e.name)),
         Expr::Me(_) => Some("me".len()),
         Expr::Self_(_) => Some("self".len()),
         Expr::Bling(_) => Some(1),
-        Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + e.property.len()),
+        Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + display_width(&e.property)),
         Expr::Lit(e) => Some(match &e.value {
             LiteralValue::Number(v) => v.len(),
             LiteralValue::Long(v) => v.to_string().len() + 1,
@@ -2632,10 +2632,10 @@ fn expr_key_width(expr: &Expr) -> Option<usize> {
             LiteralValue::HexLong(s) => 2 + s.len() + 1,
             LiteralValue::Float(lit) => format_float_lit(lit).len(),
             LiteralValue::Double(lit) => format_double_lit(lit).len(),
-            LiteralValue::String(v) => 2 + v.len(),
-            LiteralValue::Char(v) => 3 + v.len(),
+            LiteralValue::String(v) => 2 + display_width(v),
+            LiteralValue::Char(v) => 3 + display_width(v),
             LiteralValue::Boolean(v) => v.to_string().len(),
-            LiteralValue::Symbol(v) => 1 + v.len(),
+            LiteralValue::Symbol(v) => 1 + display_width(v),
             LiteralValue::Null => "null".len(),
             LiteralValue::NaN => "NaN".len(),
         }),
@@ -2700,7 +2700,7 @@ fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {
         let run_start = i;
         let mut max_name = 0;
         while i < variants.len() && variants[i].value.is_some() {
-            max_name = max_name.max(variants[i].name.len());
+            max_name = max_name.max(display_width(&variants[i].name));
             i += 1;
         }
 
@@ -2772,7 +2772,9 @@ fn align_trailing_comments(text: &str) -> String {
 
         if j - i >= 2 {
             let max_code = (i..j)
-                .filter_map(|k| analyzed[k].map(|(_, code_end, _)| code_end))
+                .filter_map(|k| {
+                    analyzed[k].map(|(_, code_end, _)| display_width(&lines[k][..code_end]))
+                })
                 .max()
                 .unwrap_or(0);
 
@@ -2783,7 +2785,7 @@ fn align_trailing_comments(text: &str) -> String {
                 let line = lines[k];
                 let code = &line[..code_end];
                 let comment = &line[comment_start..];
-                let pad = max_code - code_end;
+                let pad = max_code - display_width(code);
                 out[k] = format!("{code}{} {comment}", " ".repeat(pad));
             }
         }

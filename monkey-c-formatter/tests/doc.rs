@@ -159,3 +159,11 @@ fn test_line_comment_does_not_count_towards_fit() {
     ]);
     assert_eq!(render(&doc, 12), "f(12345678); // a trailing comment");
 }
+
+#[test]
+fn test_wide_characters_count_as_two_columns() {
+    // "上海" is 6 bytes but 4 columns, so `f("上海")` is 9 columns wide rather than 11.
+    let doc = call_args("\"上海\"");
+    assert_eq!(render(&doc, 9), "f(\"上海\")");
+    assert_eq!(render(&doc, 8), "f(\n    \"上海\"\n)");
+}

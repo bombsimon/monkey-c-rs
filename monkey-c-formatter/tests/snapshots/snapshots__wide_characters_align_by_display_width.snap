@@ -1,0 +1,10 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_aligned(r#\"\nvar teams = {\n    \"上海\" => 1,\n    \"SHANGHAI\" => 2,\n};\nvar name = \"上海申花\"; // name\nvar id = 1; // id\n\"#.trim())"
+---
+var teams = {
+    "上海"     => 1,
+    "SHANGHAI" => 2,
+};
+var name = "上海申花"; // name
+var id = 1;            // id

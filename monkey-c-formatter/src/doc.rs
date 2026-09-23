@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthStr;
+
 /// Formatting intermediate representation.
 ///
 /// Formatters build a `Doc` tree describing layout *intent*, then pass it to
@@ -127,7 +129,7 @@ pub fn render(doc: &Doc, width: usize) -> String {
             Doc::Empty => {}
             Doc::Text(s) | Doc::LineComment(s) => {
                 out.push_str(s);
-                col += s.len();
+                col += display_width(s);
             }
             Doc::HardLine => newline(&mut out, &mut col, indent),
             Doc::SoftLine => {
@@ -169,6 +171,12 @@ pub fn render(doc: &Doc, width: usize) -> String {
     out
 }
 
+/// The number of terminal columns `s` occupies, so wide characters such as CJK count as two
+/// columns and combining marks as none, matching how editors lay out the line.
+pub(crate) fn display_width(s: &str) -> usize {
+    s.width()
+}
+
 fn newline(out: &mut String, col: &mut usize, indent: usize) {
     out.push('\n');
     out.push_str(&" ".repeat(indent));
@@ -201,7 +209,7 @@ fn fits(group: &[Doc], rest: &[Command], mut remaining: usize) -> bool {
 
         match doc {
             Doc::Empty | Doc::LineComment(_) => {}
-            Doc::Text(s) => match remaining.checked_sub(s.len()) {
+            Doc::Text(s) => match remaining.checked_sub(display_width(s)) {
                 Some(left) => remaining = left,
                 None => return false,
             },
