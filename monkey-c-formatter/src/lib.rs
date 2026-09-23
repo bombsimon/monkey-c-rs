@@ -354,7 +354,9 @@ impl Formatter {
             return Doc::text(format!("/*{text}*/"));
         }
 
-        let trimmed = text.trim_end();
+        // The body is emitted verbatim, so CRLF sources would otherwise leave a `\r` on each line.
+        let normalized = text.replace("\r\n", "\n");
+        let trimmed = normalized.trim_end();
 
         Doc::concat(vec![
             Doc::text(format!("/*{trimmed}")),

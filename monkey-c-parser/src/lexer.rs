@@ -246,7 +246,8 @@ impl<'a> Lexer<'a> {
     fn read_comment(&mut self) -> String {
         let position = self.position;
 
-        while !self.is_newline_or_end() {
+        // The `\r` of a CRLF ending belongs to the line break, not the comment text.
+        while !self.is_newline_or_end() && !(self.ch == b'\r' && self.peek_char() == b'\n') {
             self.read_char();
         }
 

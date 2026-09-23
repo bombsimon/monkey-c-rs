@@ -143,6 +143,24 @@ fn test_comment() {
 }
 
 #[test]
+fn test_comment_excludes_crlf_line_ending() {
+    assert_eq!(
+        tokens("// a comment\r\nvar x;"),
+        vec![
+            Type::Comment(" a comment".into()),
+            Type::Var,
+            Type::Identifier("x".into()),
+            Type::Semicolon,
+        ]
+    );
+}
+
+#[test]
+fn test_comment_keeps_lone_carriage_return() {
+    assert_eq!(tokens("// a\rb\n"), vec![Type::Comment(" a\rb".into())]);
+}
+
+#[test]
 fn test_block_comment() {
     assert_eq!(
         tokens("/* block */ var x;"),

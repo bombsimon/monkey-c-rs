@@ -24,6 +24,16 @@ fn format_inputs() {
 }
 
 #[test]
+fn crlf_comments_do_not_keep_carriage_returns() {
+    let formatted = format(
+        "class A {\r\n    // line\r\n    var x = 1; // trailing\r\n    /* multi\r\n       line */\r\n}\r\n",
+    );
+
+    assert!(!formatted.contains('\r'), "{formatted:?}");
+    insta::assert_snapshot!(formatted);
+}
+
+#[test]
 fn empty_class() {
     insta::assert_snapshot!(format("class Foo {}"));
 }
