@@ -190,6 +190,21 @@ function f() {
 }
 
 #[test]
+fn inline_block_comment_is_not_aligned_as_trailing() {
+    insta::assert_snapshot!(format_aligned(
+        r#"
+function f() {
+    var a = foo(/* inline */ 1);
+    var b = 2; // trailing
+    var c = foo(/* inline */ 1); // trailing
+    var d = 3; // trailing
+}
+"#
+        .trim()
+    ));
+}
+
+#[test]
 fn empty_class() {
     insta::assert_snapshot!(format("class Foo {}"));
 }

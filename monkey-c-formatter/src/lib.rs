@@ -3100,6 +3100,17 @@ fn analyze_trailing(line: &str) -> Option<(usize, usize, usize)> {
         } else if c == b'\'' {
             in_char = true;
         } else if c == b'/' && i + 1 < bytes.len() && matches!(bytes[i + 1], b'/' | b'*') {
+            // A block comment with code after it on the same line is inline, not trailing.
+            if bytes[i + 1] == b'*'
+                && let Some(close) = line[i + 2..].find("*/")
+            {
+                let after = i + 2 + close + 2;
+                if !line[after..].trim().is_empty() {
+                    i = after;
+                    continue;
+                }
+            }
+
             comment_start = Some(i);
             break;
         }
