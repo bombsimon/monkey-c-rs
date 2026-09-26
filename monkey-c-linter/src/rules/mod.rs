@@ -11,18 +11,83 @@ pub mod redundant_resource_ref;
 pub mod super_initializer_call;
 pub mod unneeded_parens;
 
-/// Every rule's stable identifier, in alphabetical order. The single source of
-/// truth for the `--enable`/`--disable` CLI flags and their help listing.
-pub const ALL: &[&str] = &[
-    bool_comparison::RULE,
-    collapsible_if::RULE_ELSE_IF,
-    collapsible_if::RULE_IF,
-    compound_assignment::RULE,
-    ifs_same_cond::RULE,
-    import_order::RULE,
-    naming_convention::RULE,
-    one_class_per_file::RULE,
-    redundant_resource_ref::RULE,
-    super_initializer_call::RULE,
-    unneeded_parens::RULE,
+/// A lint rule as presented to users, in `--list-rules` and in the rule documentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rule {
+    pub name: &'static str,
+    pub summary: &'static str,
+    pub fix: FixAvailability,
+}
+
+/// Whether a rule's findings come with a fix `--fix` can apply.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FixAvailability {
+    Always,
+    Sometimes,
+    Never,
+}
+
+/// Every rule, in alphabetical order. The single source of truth for the
+/// `--enable`/`--disable` flags, their help listing and the rules table in the docs.
+pub const ALL: &[Rule] = &[
+    Rule {
+        name: bool_comparison::RULE,
+        summary: "Comparing with `true` or `false`",
+        fix: FixAvailability::Always,
+    },
+    Rule {
+        name: collapsible_if::RULE_ELSE_IF,
+        summary: "An `else` block that only contains an `if`",
+        fix: FixAvailability::Always,
+    },
+    Rule {
+        name: collapsible_if::RULE_IF,
+        summary: "An `if` that only contains another `if`",
+        fix: FixAvailability::Always,
+    },
+    Rule {
+        name: compound_assignment::RULE,
+        summary: "`x = x + n` instead of `x += n`",
+        fix: FixAvailability::Always,
+    },
+    Rule {
+        name: ifs_same_cond::RULE,
+        summary: "Two branches of an `if` chain with the same condition",
+        fix: FixAvailability::Never,
+    },
+    Rule {
+        name: import_order::RULE,
+        summary: "Imports that aren't sorted and grouped",
+        fix: FixAvailability::Sometimes,
+    },
+    Rule {
+        name: naming_convention::RULE,
+        summary: "Names that don't follow Garmin's coding conventions",
+        fix: FixAvailability::Never,
+    },
+    Rule {
+        name: one_class_per_file::RULE,
+        summary: "More than one class in a file",
+        fix: FixAvailability::Never,
+    },
+    Rule {
+        name: redundant_resource_ref::RULE,
+        summary: "The legacy `@` before a resource reference",
+        fix: FixAvailability::Always,
+    },
+    Rule {
+        name: super_initializer_call::RULE,
+        summary: "An `initialize` that doesn't call the parent's",
+        fix: FixAvailability::Never,
+    },
+    Rule {
+        name: unneeded_parens::RULE,
+        summary: "Parentheses that can't change how the code is read",
+        fix: FixAvailability::Always,
+    },
 ];
+
+/// Whether `name` is one of the rules in [`ALL`].
+pub fn exists(name: &str) -> bool {
+    ALL.iter().any(|rule| rule.name == name)
+}

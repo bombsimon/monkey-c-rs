@@ -7,8 +7,15 @@ clippy:
 doc:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --keep-going
 
+docs:
+    mdbook build docs
+    lychee --offline --include-fragments --index-files index.html --exclude-path docs/book/404.html --no-progress docs/book
+
 format:
     cargo fmt --all
 
 test:
     cargo test --workspace --all-features
+
+update-docs:
+    UPDATE_DOCS=1 cargo test -p monkey-c-linter --test rule_docs

@@ -15,7 +15,7 @@ use crate::settings;
 pub fn run(global: &GlobalArgs, args: &LintArgs) -> io::Result<bool> {
     if args.list_rules {
         for rule in rules::ALL {
-            println!("{rule}");
+            println!("{}", rule.name);
         }
 
         return Ok(true);
@@ -46,7 +46,7 @@ pub fn run(global: &GlobalArgs, args: &LintArgs) -> io::Result<bool> {
 fn validate_rule_names(settings: &LintSettings) -> io::Result<()> {
     let unknown: Vec<&str> = settings
         .named_rules()
-        .filter(|name| !rules::ALL.contains(name))
+        .filter(|name| !rules::exists(name))
         .collect();
 
     if unknown.is_empty() {
@@ -60,7 +60,7 @@ fn validate_rule_names(settings: &LintSettings) -> io::Result<()> {
     );
     message.push_str("\n\nAvailable rules:\n");
     for rule in rules::ALL {
-        message.push_str(&format!("  {rule}\n"));
+        message.push_str(&format!("  {}\n", rule.name));
     }
 
     Err(io::Error::new(io::ErrorKind::InvalidInput, message))
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn every_real_rule_name_validates() {
-        let all: Vec<&str> = rules::ALL.to_vec();
+        let all: Vec<&str> = rules::ALL.iter().map(|rule| rule.name).collect();
         validate_rule_names(&settings(&all, &[])).expect("the real rule list is accepted");
     }
 

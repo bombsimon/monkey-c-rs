@@ -71,7 +71,7 @@ pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, 
 
     let unknown: Vec<_> = lint
         .named_rules()
-        .filter(|name| !rules::ALL.contains(name))
+        .filter(|name| !rules::exists(name))
         .collect();
     if !unknown.is_empty() {
         warnings.push(format!(
