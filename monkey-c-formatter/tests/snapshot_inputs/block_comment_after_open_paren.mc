@@ -14,4 +14,9 @@ function f() {
     var g = new Foo /* c */ ([1, 2]);
     var h = new // c
         Foo(1);
+    foo /* c */ ();
+    foo /* a */ /* b */ (/* c */ 1);
+    a.b().foo /* c */ (1).c();
+    foo // c
+        (1);
 }

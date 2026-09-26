@@ -306,13 +306,12 @@ impl Formatter {
     }
 
     /// Like [`Self::drain_after_open_brace`] but hugs a leading block comment as `(/* c */ x)`.
-    /// `from` may sit before the `(` to also pull in comments preceding it.
-    fn drain_after_open_paren(&self, from: usize, close_pos: usize) -> Doc {
-        let from_line = self.line_index.line(from as u32);
+    fn drain_after_open_paren(&self, paren_pos: usize, close_pos: usize) -> Doc {
+        let paren_line = self.line_index.line(paren_pos as u32);
         let comments = self.comment_cursor.borrow_mut().drain_trailing(
-            from,
+            paren_pos,
             close_pos,
-            from_line,
+            paren_line,
             &self.line_index,
         );
         if comments.is_empty() {
@@ -325,6 +324,22 @@ impl Formatter {
                 parts.push(self.block_comment_to_doc(&c.text));
             } else {
                 parts.push(self.same_line_comment_to_doc(c));
+            }
+        }
+
+        Doc::Concat(parts)
+    }
+
+    /// Drain comments between a name and its `(`, kept in place as `foo /* c */()`. A `//` comment
+    /// ends its line, so the `(` continues indented on the next one.
+    fn drain_before_open_paren(&self, paren_pos: usize) -> Doc {
+        let comments = self.comment_cursor.borrow_mut().drain_before(paren_pos);
+        let mut parts = Vec::new();
+        for c in &comments {
+            parts.push(self.same_line_comment_to_doc(c));
+
+            if !c.is_block {
+                parts.push(Doc::Indent(vec![Doc::HardLine]));
             }
         }
 
@@ -1997,29 +2012,35 @@ impl Formatter {
                         Doc::text(&e.class),
                     ]),
                 ]);
+
+                let Some(args_open) = e.args_open else {
+                    return Doc::concat(vec![class, Doc::text("()")]);
+                };
+
+                let before_open = self.drain_before_open_paren(args_open);
                 let first_arg_start = e
                     .args
                     .first()
                     .map(|a| a.value.span().start)
                     .unwrap_or(e.span.end);
-                // Comments between the class and `(` go inside, like they do for calls.
-                let args_comments_start = e.args_open.map(|_| e.class_span.end);
-                let hugged = args_comments_start.and_then(|start| {
-                    self.hugged_sole_collection(&e.args, e.args_trailing_comma, start, e.span.end)
-                });
+                let hugged = self.hugged_sole_collection(
+                    &e.args,
+                    e.args_trailing_comma,
+                    args_open,
+                    e.span.end,
+                );
 
                 if let Some(args) = hugged {
-                    return Doc::concat(vec![class, args]);
+                    return Doc::concat(vec![class, before_open, args]);
                 }
 
-                let after_open_force_newline = args_comments_start
-                    .is_some_and(|start| self.after_open_has_line_comment(start, first_arg_start));
-                let after_open = args_comments_start
-                    .map(|start| self.drain_after_open_paren(start, first_arg_start))
-                    .unwrap_or(Doc::Empty);
+                let after_open_force_newline =
+                    self.after_open_has_line_comment(args_open, first_arg_start);
+                let after_open = self.drain_after_open_paren(args_open, first_arg_start);
 
                 Doc::concat(vec![
                     class,
+                    before_open,
                     self.format_list(
                         "(",
                         ")",
@@ -2092,12 +2113,12 @@ impl Formatter {
     /// The `(…)` of a call whose only argument is an array or dict literal, rendered as
     /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. Hugging
     /// saves a level of indentation for the entries. `None` when it does not apply, including when
-    /// a comment sits between `comments_start` and the brackets, since it would have nowhere to go.
+    /// a comment sits between the parentheses and the brackets, since it would have nowhere to go.
     fn hugged_sole_collection(
         &self,
         args: &[CallArg],
         args_trailing_comma: bool,
-        comments_start: usize,
+        args_open: usize,
         call_end: usize,
     ) -> Option<Doc> {
         if args_trailing_comma {
@@ -2114,7 +2135,7 @@ impl Formatter {
 
         let array_span = *argument.value.span();
         let before_array = Span {
-            start: comments_start,
+            start: args_open + 1,
             end: array_span.start,
         };
         let after_array = Span {
@@ -2135,10 +2156,11 @@ impl Formatter {
 
     /// The `(…)` part of a call.
     fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
+        let before_open = self.drain_before_open_paren(e.args_open);
         if let Some(args) =
             self.hugged_sole_collection(&e.args, e.args_trailing_comma, e.args_open, e.span.end)
         {
-            return args;
+            return Doc::concat(vec![before_open, args]);
         }
 
         // Only capture comments between `(` and the first argument as after-open.
@@ -2153,15 +2175,18 @@ impl Formatter {
             self.after_open_has_line_comment(e.args_open, first_arg_start);
         let after_open = self.drain_after_open_paren(e.args_open, first_arg_start);
 
-        self.format_list(
-            "(",
-            ")",
-            self.call_args_to_items(&e.args, e.span.end),
-            &[],
-            e.args_trailing_comma,
-            after_open,
-            after_open_force_newline,
-        )
+        Doc::concat(vec![
+            before_open,
+            self.format_list(
+                "(",
+                ")",
+                self.call_args_to_items(&e.args, e.span.end),
+                &[],
+                e.args_trailing_comma,
+                after_open,
+                after_open_force_newline,
+            ),
+        ])
     }
 
     fn call_args_to_items(&self, args: &[CallArg], args_close: usize) -> Vec<ListItem> {
