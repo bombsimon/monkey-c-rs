@@ -12,13 +12,16 @@ just test     # run all tests
 just clippy   # lint, with warnings as errors
 just format   # format the code
 just doc      # build the API docs, with warnings as errors
+just docs     # build the book and check its links
 ```
 
 Most formatter tests are [insta] snapshot tests. When a change alters the
 output, review the new snapshots with `cargo insta review` before accepting
 them. Every bug fix should come with a snapshot that shows the fixed case.
 
-The docs are an [mdBook] under `docs/`. Run `mdbook serve docs` to preview them.
+The docs are an [mdBook] under `docs/`. Run `mdbook serve docs` to preview them,
+and `just docs` to build them and check every link with [lychee], the same way
+CI does.
 
 ## Where things live
 
@@ -47,4 +50,5 @@ The docs are an [mdBook] under `docs/`. Run `mdbook serve docs` to preview them.
 [insta]: https://insta.rs/
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [justfile]: https://github.com/bombsimon/monkey-c-rs/blob/main/justfile
+[lychee]: https://github.com/lycheeverse/lychee
 [mdBook]: https://rust-lang.github.io/mdBook/

@@ -9,6 +9,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -37,3 +40,32 @@ jobs:
 
       - name: test
         run: cargo test --workspace --all-features
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install mdBook
+        uses: jontze/action-mdbook@6c0be56d14c4bf16861b00af61f50ff7400ce502 # v4.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build
+        working-directory: docs
+        run: mdbook build
+
+      # Checks the rendered HTML rather than the Markdown, since broken links
+      # often only appear once mdBook has rewritten them.
+      - name: Check links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --offline
+            --include-fragments
+            --index-files index.html
+            --exclude-path docs/book/404.html
+            --no-progress
+            docs/book
