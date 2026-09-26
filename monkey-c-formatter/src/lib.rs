@@ -305,6 +305,32 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
+    /// Like [`Self::drain_after_open_brace`] but hugs a leading block comment as `(/* c */ x)`.
+    /// `from` may sit before the `(` to also pull in comments preceding it.
+    fn drain_after_open_paren(&self, from: usize, close_pos: usize) -> Doc {
+        let from_line = self.line_index.line(from as u32);
+        let comments = self.comment_cursor.borrow_mut().drain_trailing(
+            from,
+            close_pos,
+            from_line,
+            &self.line_index,
+        );
+        if comments.is_empty() {
+            return Doc::Empty;
+        }
+
+        let mut parts = Vec::new();
+        for (i, c) in comments.iter().enumerate() {
+            if i == 0 && c.is_block {
+                parts.push(self.block_comment_to_doc(&c.text));
+            } else {
+                parts.push(self.same_line_comment_to_doc(c));
+            }
+        }
+
+        Doc::Concat(parts)
+    }
+
     /// Effective start of `span` — the position of its first leading comment
     /// (if one exists just before the span) or `span.start` itself.
     fn effective_start(&self, span: Span) -> usize {
@@ -1963,34 +1989,37 @@ impl Formatter {
                 Doc::Concat(parts)
             }
             Expr::New(e) => {
+                // Drained here or the first argument would claim them and move them inside `(`.
+                let class = Doc::concat(vec![
+                    Doc::text("new "),
+                    Doc::Indent(vec![
+                        self.drain_leading_doc(e.class_span.start),
+                        Doc::text(&e.class),
+                    ]),
+                ]);
                 let first_arg_start = e
                     .args
                     .first()
                     .map(|a| a.value.span().start)
                     .unwrap_or(e.span.end);
-                let hugged = e.args_open.and_then(|args_open| {
-                    self.hugged_sole_collection(
-                        &e.args,
-                        e.args_trailing_comma,
-                        args_open,
-                        e.span.end,
-                    )
+                // Comments between the class and `(` go inside, like they do for calls.
+                let args_comments_start = e.args_open.map(|_| e.class_span.end);
+                let hugged = args_comments_start.and_then(|start| {
+                    self.hugged_sole_collection(&e.args, e.args_trailing_comma, start, e.span.end)
                 });
 
                 if let Some(args) = hugged {
-                    return Doc::concat(vec![Doc::text(format!("new {}", e.class)), args]);
+                    return Doc::concat(vec![class, args]);
                 }
 
-                let after_open_force_newline = e
-                    .args_open
+                let after_open_force_newline = args_comments_start
                     .is_some_and(|start| self.after_open_has_line_comment(start, first_arg_start));
-                let after_open = e
-                    .args_open
-                    .map(|start| self.drain_after_open_brace(start, first_arg_start))
+                let after_open = args_comments_start
+                    .map(|start| self.drain_after_open_paren(start, first_arg_start))
                     .unwrap_or(Doc::Empty);
 
                 Doc::concat(vec![
-                    Doc::text(format!("new {}", e.class)),
+                    class,
                     self.format_list(
                         "(",
                         ")",
@@ -2063,12 +2092,12 @@ impl Formatter {
     /// The `(…)` of a call whose only argument is an array or dict literal, rendered as
     /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. Hugging
     /// saves a level of indentation for the entries. `None` when it does not apply, including when
-    /// a comment sits between the parentheses and the brackets, since it would have nowhere to go.
+    /// a comment sits between `comments_start` and the brackets, since it would have nowhere to go.
     fn hugged_sole_collection(
         &self,
         args: &[CallArg],
         args_trailing_comma: bool,
-        args_open: usize,
+        comments_start: usize,
         call_end: usize,
     ) -> Option<Doc> {
         if args_trailing_comma {
@@ -2085,7 +2114,7 @@ impl Formatter {
 
         let array_span = *argument.value.span();
         let before_array = Span {
-            start: args_open + 1,
+            start: comments_start,
             end: array_span.start,
         };
         let after_array = Span {
@@ -2122,7 +2151,7 @@ impl Formatter {
             .unwrap_or(e.span.end);
         let after_open_force_newline =
             self.after_open_has_line_comment(e.args_open, first_arg_start);
-        let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
+        let after_open = self.drain_after_open_paren(e.args_open, first_arg_start);
 
         self.format_list(
             "(",
@@ -2335,7 +2364,9 @@ impl Formatter {
         // When there's a block comment after the opening delimiter, separate
         // it from the content with `Doc::Line` (" " flat, newline+indent
         // expanded) so flat mode gives `(/* c */ x)` not `(/* c */x)`.
-        let indent_start = if has_after_open {
+        let indent_start = if has_after_open && inner.is_empty() {
+            vec![after_open]
+        } else if has_after_open {
             vec![after_open, Doc::Line]
         } else {
             vec![Doc::SoftLine]

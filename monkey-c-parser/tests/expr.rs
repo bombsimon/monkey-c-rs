@@ -332,6 +332,25 @@ fn test_new_expression_without_parens() {
 }
 
 #[test]
+fn test_new_expression_class_span() {
+    for source in [
+        "new /* c */ MyModule.Foo /* d */ (1)",
+        "new /* c */ MyModule.Foo",
+    ] {
+        let Expr::New(e) = parse_expr(source) else {
+            panic!("expected New");
+        };
+
+        // Spans are offsets into the function `parse_expr` wraps the source in.
+        let wrapped = format!("function f() {{ return {source}; }}");
+        assert_eq!(
+            &wrapped[e.class_span.start..e.class_span.end],
+            "MyModule.Foo"
+        );
+    }
+}
+
+#[test]
 fn test_new_expression_with_self_reference() {
     // `new self.classDef_()` — instantiating via a `Lang.Class` reference
     // stored on `self`.

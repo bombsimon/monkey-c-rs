@@ -3,8 +3,8 @@ source: monkey-c-formatter/tests/snapshots.rs
 expression: "format_aligned(r#\"\nfunction f() {\n    var a = foo(/* inline */ 1);\n    var b = 2; // trailing\n    var c = foo(/* inline */ 1); // trailing\n    var d = 3; // trailing\n}\n\"#.trim())"
 ---
 function f() {
-    var a = foo( /* inline */ 1);
-    var b = 2;                    // trailing
-    var c = foo( /* inline */ 1); // trailing
-    var d = 3;                    // trailing
+    var a = foo(/* inline */ 1);
+    var b = 2;                   // trailing
+    var c = foo(/* inline */ 1); // trailing
+    var d = 3;                   // trailing
 }
