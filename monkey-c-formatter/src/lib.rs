@@ -1970,10 +1970,16 @@ impl Formatter {
 
                 Doc::concat(vec![callee, self.call_arguments_to_doc(e)])
             }
-            Expr::Member(e) => Doc::concat(vec![
-                self.expr_with_leading(&e.object),
-                Doc::text(format!(".{}", e.property)),
-            ]),
+            Expr::Member(e) => {
+                if let Some(chain) = self.member_chain_to_doc(expr) {
+                    return chain;
+                }
+
+                Doc::concat(vec![
+                    self.expr_with_leading(&e.object),
+                    Doc::text(format!(".{}", e.property)),
+                ])
+            }
             Expr::Index(e) => {
                 let mut parts = vec![
                     self.expr_with_leading(&e.object),
@@ -2134,19 +2140,42 @@ impl Formatter {
     /// line when the chain does not fit, following Prettier's member-chain rules. `None` leaves
     /// short chains to the regular layout, which breaks inside the last call's arguments instead.
     /// See <https://github.com/prettier/prettier/blob/main/src/language-js/print/member-chain.js>.
+    ///
+    /// A comment between two groups sits where the chain breaks, so it forces the broken layout
+    /// even for chains that would otherwise stay on one line or are not calls at all.
     fn member_chain_to_doc(&self, expr: &Expr) -> Option<Doc> {
-        // A comment between links has no stable place once the links move between lines.
-        if self.has_comments_in(*expr.span()) {
+        let (head, links) = flatten_chain(expr);
+        let (head_links, groups) = group_chain_links(&links);
+
+        if groups.is_empty() {
             return None;
         }
 
-        let (head, links) = flatten_chain(expr);
-        let (head_links, groups) = group_chain_links(&links);
-        let first_call_stays_with_head = !groups.is_empty() && is_factory_like(head, head_links);
+        // Only the gap before a group becomes a line break. A comment anywhere else between
+        // links, such as between `.name` and `(`, has no place to go in either layout.
+        let inner_links = head_links
+            .iter()
+            .chain(groups.iter().flat_map(|group| &group[1..]));
+        if inner_links
+            .map(chain_link_gap)
+            .any(|gap| self.has_comments_in(gap))
+        {
+            return None;
+        }
+
+        let group_gaps: Vec<Span> = groups
+            .iter()
+            .map(|group| chain_link_gap(&group[0]))
+            .collect();
+        let has_group_comments = group_gaps.iter().any(|gap| self.has_comments_in(*gap));
+        let first_call_stays_with_head = !self.has_comments_in(group_gaps[0])
+            && groups.len() >= 2
+            && is_factory_like(head, head_links);
 
         // A chain with a single call after its head reads fine broken inside its arguments.
         let max_unbroken_groups = if first_call_stays_with_head { 2 } else { 1 };
-        if groups.len() <= max_unbroken_groups {
+        let is_call = matches!(expr, Expr::Call(_));
+        if !has_group_comments && (!is_call || groups.len() <= max_unbroken_groups) {
             return None;
         }
 
@@ -2154,42 +2183,55 @@ impl Formatter {
         head_parts.extend(head_links.iter().map(|link| self.chain_link_to_doc(link)));
         let head_doc = Doc::Concat(head_parts);
 
-        let group_docs: Vec<Doc> = groups
-            .iter()
-            .map(|group| {
-                Doc::Concat(
-                    group
-                        .iter()
-                        .map(|link| self.chain_link_to_doc(link))
-                        .collect(),
-                )
-            })
-            .collect();
-
-        let one_line = Doc::Concat([vec![head_doc.clone()], group_docs.clone()].concat());
-
-        let indent_groups = |groups: &[Doc]| {
-            Doc::Indent(
-                groups
+        // Comments on the line a group used to follow stay at the end of that line, and comments
+        // on their own lines move down with the group.
+        let mut before_group = Vec::new();
+        let mut group_docs = Vec::new();
+        for (group, gap) in groups.iter().zip(&group_gaps) {
+            let same_line = self.drain_trailing_doc_bounded(gap.start, gap.end);
+            let own_lines = self.drain_leading_doc(gap.end);
+            before_group.push((same_line, own_lines));
+            group_docs.push(Doc::Concat(
+                group
                     .iter()
-                    .flat_map(|group| [Doc::HardLine, group.clone()])
+                    .map(|link| self.chain_link_to_doc(link))
                     .collect(),
-            )
+            ));
+        }
+
+        let group_lines = |range: std::ops::Range<usize>| {
+            let mut parts = Vec::new();
+            for i in range {
+                let (same_line, own_lines) = &before_group[i];
+                parts.push(same_line.clone());
+                parts.push(Doc::Indent(vec![
+                    Doc::HardLine,
+                    own_lines.clone(),
+                    group_docs[i].clone(),
+                ]));
+            }
+
+            Doc::Concat(parts)
         };
 
         let expanded = if first_call_stays_with_head {
             // Keep the first call on the head's line only when it fits there whole. Otherwise
             // its arguments would break and leave the rest of the chain dangling after `)`.
-            let (first, rest) = group_docs.split_at(1);
             let head_with_first_call = Doc::group(vec![Doc::flat_or_break(
-                Doc::concat(vec![head_doc.clone(), first[0].clone()]),
-                Doc::concat(vec![head_doc, indent_groups(first)]),
+                Doc::concat(vec![head_doc.clone(), group_docs[0].clone()]),
+                Doc::concat(vec![head_doc.clone(), group_lines(0..1)]),
             )]);
 
-            Doc::concat(vec![head_with_first_call, indent_groups(rest)])
+            Doc::concat(vec![head_with_first_call, group_lines(1..groups.len())])
         } else {
-            Doc::concat(vec![head_doc, indent_groups(&group_docs)])
+            Doc::concat(vec![head_doc.clone(), group_lines(0..groups.len())])
         };
+
+        if has_group_comments {
+            return Some(expanded);
+        }
+
+        let one_line = Doc::Concat([vec![head_doc], group_docs].concat());
 
         Some(Doc::group(vec![Doc::flat_or_break(one_line, expanded)]))
     }
@@ -2803,6 +2845,25 @@ fn flatten_chain(expr: &Expr) -> (&Expr, Vec<ChainLink<'_>>) {
     links.reverse();
 
     (current, links)
+}
+
+/// The source between `link` and whatever it applies to, where comments can sit outside of any
+/// node. An index has none, since a comment after `[` is part of the index expression.
+fn chain_link_gap(link: &ChainLink) -> Span {
+    match link {
+        ChainLink::Member(e) => Span {
+            start: e.object.span().end,
+            end: e.span.end - e.property.len(),
+        },
+        ChainLink::Call(e) => Span {
+            start: e.callee.span().end,
+            end: e.args_open,
+        },
+        ChainLink::Index(e) => Span {
+            start: e.object.span().end,
+            end: e.object.span().end,
+        },
+    }
 }
 
 /// Split chain links into those that stay with the head and the `.name(…)` groups after it.

@@ -135,7 +135,46 @@ function f() {
 }
 
 #[test]
-fn member_chain_with_comments_keeps_regular_layout() {
+fn member_chain_keeps_comments_between_calls() {
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    var a = foo // after head
+        .bar()
+        .baz();
+    var b = foo
+        // own line
+        .bar()
+        .baz();
+    var c = foo.bar() // after call
+        .baz();
+    var d = foo /* block */ .bar().baz();
+}
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn short_chain_keeps_comments_between_links() {
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    var a = foo // one call
+        .bar();
+    var b = foo // no call
+        .bar;
+    View // module
+        .findDrawableById("id")
+        .setText("x");
+}
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn member_chain_with_comment_in_arguments_breaks() {
     insta::assert_snapshot!(format_width(
         r#"
 function f() {

@@ -1,0 +1,19 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    var a = foo // after head\n        .bar()\n        .baz();\n    var b = foo\n        // own line\n        .bar()\n        .baz();\n    var c = foo.bar() // after call\n        .baz();\n    var d = foo /* block */ .bar().baz();\n}\n\"#.trim())"
+---
+function f() {
+    var a = foo // after head
+        .bar()
+        .baz();
+    var b = foo
+        // own line
+        .bar()
+        .baz();
+    var c = foo
+        .bar() // after call
+        .baz();
+    var d = foo /* block */
+        .bar()
+        .baz();
+}

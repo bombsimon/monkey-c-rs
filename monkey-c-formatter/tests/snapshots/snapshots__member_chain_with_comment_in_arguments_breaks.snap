@@ -3,8 +3,10 @@ source: monkey-c-formatter/tests/snapshots.rs
 expression: "format_width(r#\"\nfunction f() {\n    var min = timeString.substring(\n        hourpos + 1, // start\n        timeString.length()\n    ).toNumber();\n}\n\"#.trim(),\n60)"
 ---
 function f() {
-    var min = timeString.substring(
-        hourpos + 1, // start
-        timeString.length()
-    ).toNumber();
+    var min = timeString
+        .substring(
+            hourpos + 1, // start
+            timeString.length()
+        )
+        .toNumber();
 }
