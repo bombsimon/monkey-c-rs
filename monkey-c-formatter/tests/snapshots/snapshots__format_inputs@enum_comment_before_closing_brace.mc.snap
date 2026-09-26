@@ -1,0 +1,12 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/enum_comment_before_closing_brace.mc
+---
+enum E {
+    A = 1,
+    // B = 2,
+}
+
+enum Empty {
+    // A = 1,
+}
