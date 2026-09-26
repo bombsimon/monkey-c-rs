@@ -45,9 +45,6 @@ pub struct Formatter {
     /// When `true`, runs of related entries are rendered with their separator
     /// operators column-aligned, as are trailing comments on consecutive lines.
     align_pairs: bool,
-    /// When `true`, multi-binding `var`/`const` declarations that exceed the
-    /// line width break each binding onto its own indented line.
-    wrap_multi_bindings: bool,
     /// Positional drain cursor over all source comments. Advanced forward as
     /// the formatter builds the Doc tree; each comment is emitted exactly once
     /// at the first output position that follows its source location.
@@ -63,7 +60,6 @@ impl Formatter {
             line_index: LineIndex::new(source),
             line_width: 100,
             align_pairs: false,
-            wrap_multi_bindings: false,
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
     }
@@ -77,12 +73,6 @@ impl Formatter {
     /// Enable column-aligned separators and trailing comments across related entries (opt-in).
     pub fn with_alignment(mut self, align_pairs: bool) -> Self {
         self.align_pairs = align_pairs;
-        self
-    }
-
-    /// Enable per-binding wrapping for multi-binding `var`/`const` declarations that don't fit.
-    pub fn with_decl_wrap(mut self, decl_wrap: bool) -> Self {
-        self.wrap_multi_bindings = decl_wrap;
         self
     }
 
@@ -805,12 +795,13 @@ impl Formatter {
     }
 
     fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
-        if self.wrap_multi_bindings && var_decl.bindings.len() >= 2 {
+        if var_decl.bindings.len() >= 2 {
             return self.wrapped_bindings_decl(
                 var_decl.visibility.as_ref(),
                 var_decl.is_static,
                 "var",
                 &var_decl.bindings,
+                var_decl.semi_pos,
             );
         }
 
@@ -821,12 +812,13 @@ impl Formatter {
     }
 
     fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
-        if self.wrap_multi_bindings && decl.bindings.len() >= 2 {
+        if decl.bindings.len() >= 2 {
             return self.wrapped_bindings_decl(
                 decl.visibility.as_ref(),
                 decl.is_static,
                 "const",
                 &decl.bindings,
+                decl.semi_pos,
             );
         }
 
@@ -850,6 +842,7 @@ impl Formatter {
         is_static: bool,
         keyword: &str,
         bindings: &[Binding],
+        semi_pos: usize,
     ) -> Doc {
         let mut parts: Vec<Doc> = Vec::new();
         if let Some(vis) = visibility {
@@ -872,11 +865,9 @@ impl Formatter {
 
         // The `;` sits inside the group so a declaration that only overflows
         // by its terminator still breaks.
-        parts.push(Doc::group(vec![
-            Doc::text(keyword.to_string()),
-            Doc::Indent(indented),
-            Doc::text(";"),
-        ]));
+        let mut group = vec![Doc::text(keyword.to_string()), Doc::Indent(indented)];
+        self.push_before_semi(&mut group, semi_pos);
+        parts.push(Doc::group(group));
 
         Doc::Concat(parts)
     }

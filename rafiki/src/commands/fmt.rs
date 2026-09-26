@@ -109,7 +109,6 @@ fn format_source(
     let formatted = Formatter::new(source)
         .with_line_width(settings.line_width)
         .with_alignment(settings.alignment)
-        .with_decl_wrap(settings.wrap_declarations)
         .format(&output);
 
     // Warn (without failing) about any comment the formatter could not carry

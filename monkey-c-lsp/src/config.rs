@@ -6,7 +6,7 @@
 //! means the same thing whether a file is formatted from an editor or from a
 //! terminal, while a client that deliberately sets a key still wins.
 //!
-//! `initializationOptions` keys are camelCase (`lineWidth`, `wrapDeclarations`)
+//! `initializationOptions` keys are camelCase (`lineWidth`, `alignment`)
 //! to match LSP/JSON convention rather than the file's kebab-case. Unknown keys
 //! are ignored and missing keys fall through, so old and new clients
 //! interoperate.
@@ -25,7 +25,6 @@ use crate::uri;
 struct InitializationOptions {
     line_width: Option<usize>,
     alignment: Option<bool>,
-    wrap_declarations: Option<bool>,
 }
 
 /// Settings used throughout one language-server session.
@@ -40,7 +39,6 @@ impl InitializationOptions {
         FormatConfig {
             line_width: self.line_width,
             alignment: self.alignment,
-            wrap_declarations: self.wrap_declarations,
         }
     }
 }
@@ -150,12 +148,11 @@ mod tests {
     #[test]
     fn initialization_options_override_only_named_keys() {
         let params = json!({
-            "initializationOptions": { "lineWidth": 80, "wrapDeclarations": true }
+            "initializationOptions": { "lineWidth": 80 }
         });
         let (settings, _) = resolve(&ConfigSource::Defaults, &params);
 
         assert_eq!(settings.format.line_width, 80);
-        assert!(settings.format.wrap_declarations);
         // Unset key keeps its default.
         assert!(settings.format.alignment);
     }

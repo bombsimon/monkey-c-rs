@@ -15,6 +15,19 @@ The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
 default width of 111 columns. 111 is chosen because 80 is too little and 222 is
 too much.
 
+## Declarations
+
+A `var` or `const` declaring several names stays on one line while it fits.
+Otherwise every binding goes on its own indented line:
+
+```monkey-c
+var a = 1, b = 2;
+
+var
+    firstLongBindingName = "some value",
+    secondLongBindingName = "another value";
+```
+
 ## Array and dictionary arguments
 
 When an array or dictionary is the only argument of a call, its brackets stay

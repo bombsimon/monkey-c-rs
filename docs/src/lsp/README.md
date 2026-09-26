@@ -45,11 +45,10 @@ override the file. Keys are camelCase there, to match LSP convention rather than
 the file's kebab-case; unknown keys are ignored and any key left unset falls
 through to the file and then to the default.
 
-| Key                | `rafiki.toml`                | Type    | Default |
-| ------------------ | ---------------------------- | ------- | ------- |
-| `lineWidth`        | `[format] line-width`        | integer | `111`   |
-| `alignment`        | `[format] alignment`         | boolean | `true`  |
-| `wrapDeclarations` | `[format] wrap-declarations` | boolean | `false` |
+| Key         | `rafiki.toml`         | Type    | Default |
+| ----------- | --------------------- | ------- | ------- |
+| `lineWidth` | `[format] line-width` | integer | `111`   |
+| `alignment` | `[format] alignment`  | boolean | `true`  |
 
 Both sources are read at startup, so change either and restart the server
 (`:LspRestart` in Neovim) to take effect. A `rafiki.toml` that fails to parse is
@@ -95,7 +94,6 @@ vim.api.nvim_create_autocmd("FileType", {
       init_options = {
         lineWidth = 111,
         alignment = true,
-        wrapDeclarations = false,
       },
     })
   end,

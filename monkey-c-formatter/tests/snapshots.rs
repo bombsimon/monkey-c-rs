@@ -13,26 +13,8 @@ use monkey_c_formatter::Formatter;
 // Configurations only the snapshot tests need. Shared helpers live in `common`, which every test
 // binary compiles, so anything there must be used by all of them.
 
-fn format_all_enabled(src: &str) -> String {
-    run(
-        src,
-        Formatter::new(src)
-            .with_alignment(true)
-            .with_decl_wrap(true),
-    )
-}
-
 fn format_width(src: &str, width: usize) -> String {
     run(src, Formatter::new(src).with_line_width(width))
-}
-
-fn format_wrapped_width(src: &str, width: usize) -> String {
-    run(
-        src,
-        Formatter::new(src)
-            .with_decl_wrap(true)
-            .with_line_width(width),
-    )
 }
 
 fn format_aligned_width(src: &str, width: usize) -> String {
@@ -50,7 +32,7 @@ fn format_inputs() {
         let raw = std::fs::read_to_string(path).expect("read input file");
         let input = raw.trim();
         insta::with_settings!({ omit_expression => true }, {
-            insta::assert_snapshot!(format_all_enabled(input));
+            insta::assert_snapshot!(format_aligned(input));
         });
     });
 }
@@ -601,19 +583,31 @@ fn array_no_trailing_comma_breaks_when_wide() {
 
 #[test]
 fn wrapped_declaration_stays_flat_when_it_fits() {
-    insta::assert_snapshot!(format_wrapped_width("var a = 1, b = 2;", 17));
+    insta::assert_snapshot!(format_width("var a = 1, b = 2;", 17));
 }
 
 #[test]
 fn wrapped_declaration_breaks_when_its_semicolon_overflows() {
-    insta::assert_snapshot!(format_wrapped_width("var a = 1, b = 2;", 16));
+    insta::assert_snapshot!(format_width("var a = 1, b = 2;", 16));
 }
 
 #[test]
 fn wrapped_declaration_measures_from_its_indentation() {
-    insta::assert_snapshot!(format_wrapped_width(
+    insta::assert_snapshot!(format_width(
         "class Foo { const A = 1, B = 2; function f() { var i, j, k = 0; } }",
         23
+    ));
+}
+
+#[test]
+fn wrapped_declaration_keeps_comment_before_semicolon() {
+    insta::assert_snapshot!(format_width(
+        r#"
+var a = 1, b = 2 /* fits */;
+var firstLongBindingName = "some value", secondLongBindingName = "another value" /* breaks */;
+"#
+        .trim(),
+        60
     ));
 }
 

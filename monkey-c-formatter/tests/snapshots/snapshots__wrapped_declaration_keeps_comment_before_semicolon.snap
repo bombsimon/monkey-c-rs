@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(r#\"\nvar a = 1, b = 2 /* fits */;\nvar firstLongBindingName = \"some value\", secondLongBindingName = \"another value\" /* breaks */;\n\"#.trim(),\n60)"
+---
+var a = 1, b = 2 /* fits */ ;
+var
+    firstLongBindingName = "some value",
+    secondLongBindingName = "another value" /* breaks */ ;

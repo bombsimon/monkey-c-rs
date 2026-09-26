@@ -11,7 +11,6 @@ and the defaults are what the tools use with no configuration anywhere.
 [format]
 line-width = 111
 alignment = true
-wrap-declarations = false
 
 [lint]
 enable = []
@@ -51,14 +50,12 @@ exactly that one rule and not the file's disables as well.
 
 ## `[format]`
 
-| Key                 | Type    | Default | Meaning                                                           |
-| ------------------- | ------- | ------- | ----------------------------------------------------------------- |
-| `line-width`        | integer | `111`   | Target width before a group is broken onto lines.                 |
-| `alignment`         | boolean | `true`  | Column-align separators and trailing comments.                    |
-| `wrap-declarations` | boolean | `false` | Break a multi-binding `var`/`const` that overflows, one per line. |
+| Key          | Type    | Default | Meaning                                           |
+| ------------ | ------- | ------- | ------------------------------------------------- |
+| `line-width` | integer | `111`   | Target width before a group is broken onto lines. |
+| `alignment`  | boolean | `true`  | Column-align separators and trailing comments.    |
 
-As flags: `--line-width`/`-l`, `--alignment`/`--no-alignment`,
-`--wrap-declarations`/`-w`/`--no-wrap-declarations`.
+As flags: `--line-width`/`-l`, `--alignment`/`--no-alignment`.
 
 ## `[lint]`
 
@@ -105,7 +102,7 @@ rafiki: rafiki.toml: TOML parse error at line 2, column 1
   |
 2 | line_width = 40
   | ^^^^^^^^^^
-unknown field `line_width`, expected one of `line-width`, `alignment`, `wrap-declarations`
+unknown field `line_width`, expected one of `line-width`, `alignment`
 ```
 
 The CLI treats that as a fatal error (exit code `2`). The language server instead
