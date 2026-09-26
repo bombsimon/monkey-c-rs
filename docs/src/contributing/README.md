@@ -15,6 +15,9 @@ just doc      # build the API docs, with warnings as errors
 just docs     # build the book and check its links
 ```
 
+Parts of the docs are generated from the code, like the table of lint rules.
+Tests fail when they fall behind, and `just update-docs` regenerates them.
+
 Most formatter tests are [insta] snapshot tests. When a change alters the
 output, review the new snapshots with `cargo insta review` before accepting
 them. Every bug fix should come with a snapshot that shows the fixed case.
@@ -41,11 +44,12 @@ CI does.
 1. Add a module under `monkey-c-linter/src/rules` with a `check_expr` or
    `check_stmt` function that returns a `Diagnostic`, and a fix if one is safe.
 2. Call it from the matching `dispatch_*` function in `visit.rs`.
-3. Add its name to `rules::ALL`, which the command line uses for `--enable`,
-   `--disable` and `--list-rules`.
+3. Add it to `rules::ALL` with a one-line summary and whether it has a fix.
+   The command line and the [Rules](../linter/rules) table are built from it.
 4. Add tests next to the rule for what it flags and what it leaves alone.
-5. Add a page under `docs/src/linter/rules`, and list it in the
-   [Rules](../linter/rules) table and in `docs/src/SUMMARY.md`.
+5. Add a page at `docs/src/linter/rules/<name>/README.md`, list it in
+   `docs/src/SUMMARY.md` and run `just update-docs` to add it to the rules
+   table.
 
 [insta]: https://insta.rs/
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new

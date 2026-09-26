@@ -16,3 +16,6 @@ format:
 
 test:
     cargo test --workspace --all-features
+
+update-docs:
+    UPDATE_DOCS=1 cargo test -p monkey-c-linter --test rule_docs

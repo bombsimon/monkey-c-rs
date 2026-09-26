@@ -156,7 +156,7 @@ fn available_rules_help() -> String {
 
     for rule in monkey_c_linter::rules::ALL {
         help.push_str("  ");
-        help.push_str(rule);
+        help.push_str(rule.name);
         help.push('\n');
     }
 
