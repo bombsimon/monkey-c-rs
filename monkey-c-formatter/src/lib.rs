@@ -1,13 +1,13 @@
 pub mod doc;
+mod member_chain;
 mod operators;
 
 use doc::{Doc, display_width, render};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr, CaseLabel, CommentStmt,
     ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant,
-    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, IndexExpr, InterfaceMember, LiteralValue,
-    MemberExpr, Span, Spanned, Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl,
-    Visibility,
+    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Span, Spanned,
+    Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
@@ -2118,118 +2118,6 @@ impl Formatter {
         ]))
     }
 
-    /// Lay out a call chain such as `a.b(x).c()` with each `.name(…)` group on its own indented
-    /// line when the chain does not fit, following Prettier's member-chain rules. `None` leaves
-    /// short chains to the regular layout, which breaks inside the last call's arguments instead.
-    /// See <https://github.com/prettier/prettier/blob/main/src/language-js/print/member-chain.js>.
-    ///
-    /// A comment between two groups sits where the chain breaks, so it forces the broken layout
-    /// even for chains that would otherwise stay on one line or are not calls at all.
-    fn member_chain_to_doc(&self, expr: &Expr) -> Option<Doc> {
-        let (head, links) = flatten_chain(expr);
-        let (head_links, groups) = group_chain_links(&links);
-
-        if groups.is_empty() {
-            return None;
-        }
-
-        // Only the gap before a group becomes a line break. A comment anywhere else between
-        // links, such as between `.name` and `(`, has no place to go in either layout.
-        let inner_links = head_links
-            .iter()
-            .chain(groups.iter().flat_map(|group| &group[1..]));
-        if inner_links
-            .map(chain_link_gap)
-            .any(|gap| self.has_comments_in(gap))
-        {
-            return None;
-        }
-
-        let group_gaps: Vec<Span> = groups
-            .iter()
-            .map(|group| chain_link_gap(&group[0]))
-            .collect();
-        let has_group_comments = group_gaps.iter().any(|gap| self.has_comments_in(*gap));
-        let first_call_stays_with_head = !self.has_comments_in(group_gaps[0])
-            && groups.len() >= 2
-            && is_factory_like(head, head_links);
-
-        // A chain with a single call after its head reads fine broken inside its arguments.
-        let max_unbroken_groups = if first_call_stays_with_head { 2 } else { 1 };
-        let is_call = matches!(expr, Expr::Call(_));
-        if !has_group_comments && (!is_call || groups.len() <= max_unbroken_groups) {
-            return None;
-        }
-
-        let mut head_parts = vec![self.expr_with_leading(head)];
-        head_parts.extend(head_links.iter().map(|link| self.chain_link_to_doc(link)));
-        let head_doc = Doc::Concat(head_parts);
-
-        // Comments on the line a group used to follow stay at the end of that line, and comments
-        // on their own lines move down with the group.
-        let mut before_group = Vec::new();
-        let mut group_docs = Vec::new();
-        for (group, gap) in groups.iter().zip(&group_gaps) {
-            let same_line = self.drain_trailing_doc_bounded(gap.start, gap.end);
-            let own_lines = self.drain_leading_doc(gap.end);
-            before_group.push((same_line, own_lines));
-            group_docs.push(Doc::Concat(
-                group
-                    .iter()
-                    .map(|link| self.chain_link_to_doc(link))
-                    .collect(),
-            ));
-        }
-
-        let group_lines = |range: std::ops::Range<usize>| {
-            let mut parts = Vec::new();
-            for i in range {
-                let (same_line, own_lines) = &before_group[i];
-                parts.push(same_line.clone());
-                parts.push(Doc::Indent(vec![
-                    Doc::HardLine,
-                    own_lines.clone(),
-                    group_docs[i].clone(),
-                ]));
-            }
-
-            Doc::Concat(parts)
-        };
-
-        let expanded = if first_call_stays_with_head {
-            // Keep the first call on the head's line only when it fits there whole. Otherwise
-            // its arguments would break and leave the rest of the chain dangling after `)`.
-            let head_with_first_call = Doc::group(vec![Doc::flat_or_break(
-                Doc::concat(vec![head_doc.clone(), group_docs[0].clone()]),
-                Doc::concat(vec![head_doc.clone(), group_lines(0..1)]),
-            )]);
-
-            Doc::concat(vec![head_with_first_call, group_lines(1..groups.len())])
-        } else {
-            Doc::concat(vec![head_doc.clone(), group_lines(0..groups.len())])
-        };
-
-        if has_group_comments {
-            return Some(expanded);
-        }
-
-        let one_line = Doc::Concat([vec![head_doc], group_docs].concat());
-
-        Some(Doc::group(vec![Doc::flat_or_break(one_line, expanded)]))
-    }
-
-    fn chain_link_to_doc(&self, link: &ChainLink) -> Doc {
-        match link {
-            ChainLink::Member(e) => Doc::text(format!(".{}", e.property)),
-            ChainLink::Call(e) => self.call_arguments_to_doc(e),
-            ChainLink::Index(e) => Doc::concat(vec![
-                Doc::text("["),
-                self.expr_with_leading(&e.index),
-                Doc::text("]"),
-            ]),
-        }
-    }
-
     /// The `(…)` part of a call.
     fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
         if let Some(args) =
@@ -2791,122 +2679,6 @@ fn collect_binary_chain<'a>(
     }
 
     operands.push(expr);
-}
-
-/// One postfix step of a call chain, applied to everything before it.
-enum ChainLink<'a> {
-    Member(&'a MemberExpr),
-    Call(&'a CallExpr),
-    Index(&'a IndexExpr),
-}
-
-/// Split `expr` into the innermost expression that is not a member access, call or index, and
-/// the links applied to it in source order.
-fn flatten_chain(expr: &Expr) -> (&Expr, Vec<ChainLink<'_>>) {
-    let mut links = Vec::new();
-    let mut current = expr;
-
-    loop {
-        match current {
-            Expr::Call(e) => {
-                links.push(ChainLink::Call(e));
-                current = &e.callee;
-            }
-            Expr::Member(e) => {
-                links.push(ChainLink::Member(e));
-                current = &e.object;
-            }
-            Expr::Index(e) => {
-                links.push(ChainLink::Index(e));
-                current = &e.object;
-            }
-            _ => break,
-        }
-    }
-
-    links.reverse();
-
-    (current, links)
-}
-
-/// The source between `link` and whatever it applies to, where comments can sit outside of any
-/// node. An index has none, since a comment after `[` is part of the index expression.
-fn chain_link_gap(link: &ChainLink) -> Span {
-    match link {
-        ChainLink::Member(e) => Span {
-            start: e.object.span().end,
-            end: e.span.end - e.property.len(),
-        },
-        ChainLink::Call(e) => Span {
-            start: e.callee.span().end,
-            end: e.args_open,
-        },
-        ChainLink::Index(e) => Span {
-            start: e.object.span().end,
-            end: e.object.span().end,
-        },
-    }
-}
-
-/// Split chain links into those that stay with the head and the `.name(…)` groups after it.
-///
-/// The head keeps calls and indexes applied directly to it (`f()[0]`) and the property accesses
-/// leading up to the first called member, so `Toybox.ActivityMonitor.getInfo()` keeps
-/// `Toybox.ActivityMonitor` together. After that a new group starts at every member access that
-/// follows a call.
-fn group_chain_links<'a, 'b>(
-    links: &'b [ChainLink<'a>],
-) -> (&'b [ChainLink<'a>], Vec<&'b [ChainLink<'a>]>) {
-    let is_member = |link: &ChainLink| matches!(link, ChainLink::Member(_));
-
-    let mut head_len = links.iter().take_while(|link| !is_member(link)).count();
-    while head_len + 1 < links.len()
-        && is_member(&links[head_len])
-        && is_member(&links[head_len + 1])
-    {
-        head_len += 1;
-    }
-
-    let (head_links, rest) = links.split_at(head_len);
-
-    let mut groups = Vec::new();
-    let mut group_start = 0;
-    let mut seen_call = false;
-
-    for (i, link) in rest.iter().enumerate() {
-        if seen_call && is_member(link) {
-            groups.push(&rest[group_start..i]);
-            group_start = i;
-            seen_call = false;
-        }
-
-        if matches!(link, ChainLink::Call(_)) {
-            seen_call = true;
-        }
-    }
-
-    if group_start < rest.len() {
-        groups.push(&rest[group_start..]);
-    }
-
-    (head_links, groups)
-}
-
-/// Whether the chain's head names a module, class or `me`, which reads as the subject of the
-/// chain, e.g. `View.findDrawableById("id")`. Such a head keeps its first call on its line.
-fn is_factory_like(head: &Expr, head_links: &[ChainLink]) -> bool {
-    let is_factory_name =
-        |name: &str| name.starts_with(char::is_uppercase) || name.chars().all(|c| c == '_');
-
-    match head_links.last() {
-        None => match head {
-            Expr::Me(_) | Expr::Self_(_) | Expr::Bling(_) => true,
-            Expr::Ident(e) => is_factory_name(&e.name),
-            _ => false,
-        },
-        Some(ChainLink::Member(e)) => is_factory_name(&e.property),
-        Some(_) => false,
-    }
 }
 
 fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {
