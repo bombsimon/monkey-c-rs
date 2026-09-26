@@ -178,15 +178,6 @@ pub struct FormatArgs {
     /// Do not align enum values and fat commas.
     #[arg(long, overrides_with = "alignment")]
     pub no_alignment: bool,
-
-    /// Wrap multiple declarations similar to the Prettier formatter.
-    /// [default: disabled]
-    #[arg(short = 'w', long, overrides_with = "no_wrap_declarations")]
-    pub wrap_declarations: bool,
-
-    /// Do not wrap multiple declarations.
-    #[arg(long, overrides_with = "wrap_declarations")]
-    pub no_wrap_declarations: bool,
 }
 
 impl FormatArgs {
@@ -194,7 +185,6 @@ impl FormatArgs {
         FormatConfig {
             line_width: self.line_width,
             alignment: flag_pair(self.alignment, self.no_alignment),
-            wrap_declarations: flag_pair(self.wrap_declarations, self.no_wrap_declarations),
         }
     }
 }
@@ -412,7 +402,7 @@ mod tests {
             .format
             .to_config();
         assert_eq!(config.alignment, Some(false));
-        assert_eq!(config.wrap_declarations, None);
+        assert_eq!(config.line_width, None);
     }
 
     #[test]

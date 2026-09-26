@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 monkey-c-parser.workspace = true
+unicode-width.workspace = true
 
 [dev-dependencies]
 insta = { version = "1", features = ["glob"] }

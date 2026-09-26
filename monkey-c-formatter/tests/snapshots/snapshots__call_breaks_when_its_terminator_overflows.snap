@@ -1,0 +1,15 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(r#\"\nfunction f() {\n    if (true) {\n        var monthformat = WatchUi.loadResource(Rez.Strings.Default_Format_Month);\n        var day = monthString.substring(monthpos + 1, monthString.length()).toNumber();\n        var fits = WatchUi.loadResource(Rez.Strings.Month); // trailing comments are not measured\n    }\n}\n\"#.trim(),\n80)"
+---
+function f() {
+    if (true) {
+        var monthformat = WatchUi.loadResource(
+            Rez.Strings.Default_Format_Month
+        );
+        var day = monthString
+            .substring(monthpos + 1, monthString.length())
+            .toNumber();
+        var fits = WatchUi.loadResource(Rez.Strings.Month); // trailing comments are not measured
+    }
+}

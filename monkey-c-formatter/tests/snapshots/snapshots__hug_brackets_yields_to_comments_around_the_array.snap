@@ -1,0 +1,15 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_hugged_width(r#\"\nfunction fn() {\n    someFn( // leading\n        [\"foo\", \"bar\", \"baz\"]\n    );\n    someFn(\n        [\"foo\", \"bar\", \"baz\"] // trailing\n    );\n    someFn([\"foo\", \"bar\", \"baz\"],);\n}\n\"#.trim(),\n111)"
+---
+function fn() {
+    someFn( // leading
+        ["foo", "bar", "baz"]
+    );
+    someFn(
+        ["foo", "bar", "baz"] // trailing
+    );
+    someFn(
+        ["foo", "bar", "baz"],
+    );
+}

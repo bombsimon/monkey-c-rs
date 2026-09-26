@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_hugged_width(\"function fn() { someFn([1, 2, 3]); }\", 111)"
+---
+function fn() {
+    someFn([1, 2, 3]);
+}

@@ -1,12 +1,13 @@
 pub mod doc;
+mod member_chain;
 mod operators;
 
-use doc::{Doc, render};
+use doc::{Doc, display_width, render};
 use monkey_c_parser::ast::{
-    ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
-    DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant, Expr,
-    FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Span, Spanned, Stmt,
-    SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
+    ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr, CaseLabel, CommentStmt,
+    ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant,
+    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Span, Spanned,
+    Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
@@ -42,11 +43,8 @@ pub struct Formatter {
     /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
     /// When `true`, runs of related entries are rendered with their separator
-    /// operators column-aligned.
+    /// operators column-aligned, as are trailing comments on consecutive lines.
     align_pairs: bool,
-    /// When `true`, multi-binding `var`/`const` declarations break each
-    /// binding onto its own indented line.
-    wrap_multi_bindings: bool,
     /// Positional drain cursor over all source comments. Advanced forward as
     /// the formatter builds the Doc tree; each comment is emitted exactly once
     /// at the first output position that follows its source location.
@@ -62,7 +60,6 @@ impl Formatter {
             line_index: LineIndex::new(source),
             line_width: 100,
             align_pairs: false,
-            wrap_multi_bindings: false,
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
     }
@@ -73,15 +70,9 @@ impl Formatter {
         self
     }
 
-    /// Enable column-aligned separators across related entries (opt-in).
+    /// Enable column-aligned separators and trailing comments across related entries (opt-in).
     pub fn with_alignment(mut self, align_pairs: bool) -> Self {
         self.align_pairs = align_pairs;
-        self
-    }
-
-    /// Enable per-binding wrapping for multi-binding `var`/`const` declarations.
-    pub fn with_decl_wrap(mut self, decl_wrap: bool) -> Self {
-        self.wrap_multi_bindings = decl_wrap;
         self
     }
 
@@ -91,13 +82,17 @@ impl Formatter {
 
         let doc = self.ast_to_doc(&output.ast);
         let rendered = render(&doc, self.line_width);
-        let mut aligned = align_trailing_comments(&rendered);
+        let mut formatted = if self.align_pairs {
+            align_trailing_comments(&rendered)
+        } else {
+            rendered
+        };
 
-        if !aligned.ends_with('\n') {
-            aligned.push('\n');
+        if !formatted.ends_with('\n') {
+            formatted.push('\n');
         }
 
-        aligned
+        formatted
     }
 
     /// "No comment left behind": source comments that did **not** survive into
@@ -241,11 +236,11 @@ impl Formatter {
         for c in &comments {
             let comment_start_line = self.line_index.line(c.span.start as u32);
             if comment_start_line == last_line {
-                parts.push(Doc::text(" "));
+                parts.push(self.same_line_comment_to_doc(c));
             } else {
                 parts.push(Doc::HardLine);
+                parts.push(self.comment_to_doc(c));
             }
-            parts.push(self.comment_to_doc(c));
             last_line = self.line_index.line(c.span.end.saturating_sub(1) as u32);
         }
 
@@ -304,8 +299,7 @@ impl Formatter {
 
         let mut parts = Vec::new();
         for c in &comments {
-            parts.push(Doc::text(" "));
-            parts.push(self.comment_to_doc(c));
+            parts.push(self.same_line_comment_to_doc(c));
         }
 
         Doc::Concat(parts)
@@ -332,8 +326,19 @@ impl Formatter {
         if c.is_block {
             self.block_comment_to_doc(&c.text)
         } else {
-            Doc::text(format!("//{}", c.text))
+            Doc::line_comment(format!("//{}", c.text.trim_end()))
         }
+    }
+
+    /// Render a comment that follows code on the same line, including the space separating them.
+    /// For a `//` comment the space is part of the comment doc, so neither counts toward whether
+    /// the code before it fits.
+    fn same_line_comment_to_doc(&self, c: &CommentStmt) -> Doc {
+        if c.is_block {
+            return Doc::concat(vec![Doc::text(" "), self.block_comment_to_doc(&c.text)]);
+        }
+
+        Doc::line_comment(format!(" //{}", c.text.trim_end()))
     }
 
     /// Render a `/* … */` comment, placing the closing `*/` on its own line
@@ -343,7 +348,11 @@ impl Formatter {
             return Doc::text(format!("/*{text}*/"));
         }
 
-        let trimmed = text.trim_end();
+        // The body is emitted line by line as written, so drop what trails each line, including
+        // the `\r` of CRLF line endings.
+        let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
+        let joined = lines.join("\n");
+        let trimmed = joined.trim_end();
 
         Doc::concat(vec![
             Doc::text(format!("/*{trimmed}")),
@@ -673,7 +682,7 @@ impl Formatter {
             parts.push(Doc::text(&v.name));
 
             if let Some(value) = &v.value {
-                let pad = name_pads[i].saturating_sub(v.name.len());
+                let pad = name_pads[i].saturating_sub(display_width(&v.name));
                 if pad > 0 {
                     parts.push(Doc::text(" ".repeat(pad)));
                 }
@@ -788,12 +797,13 @@ impl Formatter {
     }
 
     fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
-        if self.wrap_multi_bindings && var_decl.bindings.len() >= 2 {
+        if var_decl.bindings.len() >= 2 {
             return self.wrapped_bindings_decl(
                 var_decl.visibility.as_ref(),
                 var_decl.is_static,
                 "var",
                 &var_decl.bindings,
+                var_decl.semi_pos,
             );
         }
 
@@ -804,12 +814,13 @@ impl Formatter {
     }
 
     fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
-        if self.wrap_multi_bindings && decl.bindings.len() >= 2 {
+        if decl.bindings.len() >= 2 {
             return self.wrapped_bindings_decl(
                 decl.visibility.as_ref(),
                 decl.is_static,
                 "const",
                 &decl.bindings,
+                decl.semi_pos,
             );
         }
 
@@ -833,6 +844,7 @@ impl Formatter {
         is_static: bool,
         keyword: &str,
         bindings: &[Binding],
+        semi_pos: usize,
     ) -> Doc {
         let mut parts: Vec<Doc> = Vec::new();
         if let Some(vis) = visibility {
@@ -843,20 +855,21 @@ impl Formatter {
             parts.push(Doc::text("static "));
         }
 
-        parts.push(Doc::text(keyword.to_string()));
-
-        let mut indented = vec![Doc::HardLine];
+        let mut indented = vec![Doc::Line];
         for (i, b) in bindings.iter().enumerate() {
             if i > 0 {
                 indented.push(Doc::text(","));
-                indented.push(Doc::HardLine);
+                indented.push(Doc::Line);
             }
 
             indented.push(self.binding_to_doc(b));
         }
 
-        parts.push(Doc::Indent(indented));
-        parts.push(Doc::text(";"));
+        // The `;` sits inside the group so a declaration that only overflows
+        // by its terminator still breaks.
+        let mut group = vec![Doc::text(keyword.to_string()), Doc::Indent(indented)];
+        self.push_before_semi(&mut group, semi_pos);
+        parts.push(Doc::group(group));
 
         Doc::Concat(parts)
     }
@@ -1931,34 +1944,24 @@ impl Formatter {
                 self.expr_with_leading(&e.value),
             ]),
             Expr::Call(e) => {
-                // Only capture comments between `(` and the first argument as after-open.
-                // Comments inside an argument expression (e.g. `x - /* C */ 1`) must not
-                // be stolen here — they belong to the sub-expression's drain_leading_doc.
-                let first_arg_start = e
-                    .args
-                    .first()
-                    .map(|a| a.value.span().start)
-                    .unwrap_or(e.span.end);
-                let after_open_force_newline =
-                    self.after_open_has_line_comment(e.args_open, first_arg_start);
-                let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
+                if let Some(chain) = self.member_chain_to_doc(expr) {
+                    return chain;
+                }
+
+                let callee = self.expr_with_leading(&e.callee);
+
+                Doc::concat(vec![callee, self.call_arguments_to_doc(e)])
+            }
+            Expr::Member(e) => {
+                if let Some(chain) = self.member_chain_to_doc(expr) {
+                    return chain;
+                }
+
                 Doc::concat(vec![
-                    self.expr_with_leading(&e.callee),
-                    self.format_list(
-                        "(",
-                        ")",
-                        self.call_args_to_items(&e.args, e.span.end),
-                        &[],
-                        e.args_trailing_comma,
-                        after_open,
-                        after_open_force_newline,
-                    ),
+                    self.expr_with_leading(&e.object),
+                    Doc::text(format!(".{}", e.property)),
                 ])
             }
-            Expr::Member(e) => Doc::concat(vec![
-                self.expr_with_leading(&e.object),
-                Doc::text(format!(".{}", e.property)),
-            ]),
             Expr::Index(e) => {
                 let mut parts = vec![
                     self.expr_with_leading(&e.object),
@@ -1979,6 +1982,19 @@ impl Formatter {
                     .first()
                     .map(|a| a.value.span().start)
                     .unwrap_or(e.span.end);
+                let hugged = e.args_open.and_then(|args_open| {
+                    self.hugged_sole_collection(
+                        &e.args,
+                        e.args_trailing_comma,
+                        args_open,
+                        e.span.end,
+                    )
+                });
+
+                if let Some(args) = hugged {
+                    return Doc::concat(vec![Doc::text(format!("new {}", e.class)), args]);
+                }
+
                 let after_open_force_newline = e
                     .args_open
                     .is_some_and(|start| self.after_open_has_line_comment(start, first_arg_start));
@@ -2056,6 +2072,81 @@ impl Formatter {
             Expr::Self_(_) => Doc::text("self"),
             Expr::Bling(_) => Doc::text("$"),
         }
+    }
+
+    /// The `(…)` of a call whose only argument is an array or dict literal, rendered as
+    /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. Hugging
+    /// saves a level of indentation for the entries. `None` when it does not apply, including when
+    /// a comment sits between the parentheses and the brackets, since it would have nowhere to go.
+    fn hugged_sole_collection(
+        &self,
+        args: &[CallArg],
+        args_trailing_comma: bool,
+        args_open: usize,
+        call_end: usize,
+    ) -> Option<Doc> {
+        if args_trailing_comma {
+            return None;
+        }
+
+        let [argument] = args else {
+            return None;
+        };
+
+        if !matches!(argument.value, Expr::Array(_) | Expr::Dict(_)) {
+            return None;
+        }
+
+        let array_span = *argument.value.span();
+        let before_array = Span {
+            start: args_open + 1,
+            end: array_span.start,
+        };
+        let after_array = Span {
+            start: array_span.end,
+            end: call_end,
+        };
+
+        if self.has_comments_in(before_array) || self.has_comments_in(after_array) {
+            return None;
+        }
+
+        Some(Doc::concat(vec![
+            Doc::text("("),
+            self.expr_inner_to_doc(&argument.value),
+            Doc::text(")"),
+        ]))
+    }
+
+    /// The `(…)` part of a call.
+    fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
+        if let Some(args) =
+            self.hugged_sole_collection(&e.args, e.args_trailing_comma, e.args_open, e.span.end)
+        {
+            return args;
+        }
+
+        // Only capture comments between `(` and the first argument as after-open.
+        // Comments inside an argument expression (e.g. `x - /* C */ 1`) must not
+        // be stolen here — they belong to the sub-expression's drain_leading_doc.
+        let first_arg_start = e
+            .args
+            .first()
+            .map(|a| a.value.span().start)
+            .unwrap_or(e.span.end);
+        let after_open_force_newline =
+            self.after_open_has_line_comment(e.args_open, first_arg_start);
+        let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
+
+        self.format_list(
+            "(",
+            ")",
+            self.call_args_to_items(&e.args, e.span.end),
+            &[],
+            e.args_trailing_comma,
+            after_open,
+            after_open_force_newline,
+        )
     }
 
     fn call_args_to_items(&self, args: &[CallArg], args_close: usize) -> Vec<ListItem> {
@@ -2522,11 +2613,11 @@ impl Formatter {
 /// token sequence (e.g. a call or binary expression as a key).
 fn expr_key_width(expr: &Expr) -> Option<usize> {
     match expr {
-        Expr::Ident(e) => Some(e.name.len()),
+        Expr::Ident(e) => Some(display_width(&e.name)),
         Expr::Me(_) => Some("me".len()),
         Expr::Self_(_) => Some("self".len()),
         Expr::Bling(_) => Some(1),
-        Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + e.property.len()),
+        Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + display_width(&e.property)),
         Expr::Lit(e) => Some(match &e.value {
             LiteralValue::Number(v) => v.len(),
             LiteralValue::Long(v) => v.to_string().len() + 1,
@@ -2534,10 +2625,10 @@ fn expr_key_width(expr: &Expr) -> Option<usize> {
             LiteralValue::HexLong(s) => 2 + s.len() + 1,
             LiteralValue::Float(lit) => format_float_lit(lit).len(),
             LiteralValue::Double(lit) => format_double_lit(lit).len(),
-            LiteralValue::String(v) => 2 + v.len(),
-            LiteralValue::Char(v) => 3 + v.len(),
+            LiteralValue::String(v) => 2 + display_width(v),
+            LiteralValue::Char(v) => 3 + display_width(v),
             LiteralValue::Boolean(v) => v.to_string().len(),
-            LiteralValue::Symbol(v) => 1 + v.len(),
+            LiteralValue::Symbol(v) => 1 + display_width(v),
             LiteralValue::Null => "null".len(),
             LiteralValue::NaN => "NaN".len(),
         }),
@@ -2602,7 +2693,7 @@ fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {
         let run_start = i;
         let mut max_name = 0;
         while i < variants.len() && variants[i].value.is_some() {
-            max_name = max_name.max(variants[i].name.len());
+            max_name = max_name.max(display_width(&variants[i].name));
             i += 1;
         }
 
@@ -2674,7 +2765,9 @@ fn align_trailing_comments(text: &str) -> String {
 
         if j - i >= 2 {
             let max_code = (i..j)
-                .filter_map(|k| analyzed[k].map(|(_, code_end, _)| code_end))
+                .filter_map(|k| {
+                    analyzed[k].map(|(_, code_end, _)| display_width(&lines[k][..code_end]))
+                })
                 .max()
                 .unwrap_or(0);
 
@@ -2685,7 +2778,7 @@ fn align_trailing_comments(text: &str) -> String {
                 let line = lines[k];
                 let code = &line[..code_end];
                 let comment = &line[comment_start..];
-                let pad = max_code - code_end;
+                let pad = max_code - display_width(code);
                 out[k] = format!("{code}{} {comment}", " ".repeat(pad));
             }
         }
@@ -2761,6 +2854,17 @@ fn analyze_trailing(line: &str) -> Option<(usize, usize, usize)> {
         } else if c == b'\'' {
             in_char = true;
         } else if c == b'/' && i + 1 < bytes.len() && matches!(bytes[i + 1], b'/' | b'*') {
+            // A block comment with code after it on the same line is inline, not trailing.
+            if bytes[i + 1] == b'*'
+                && let Some(close) = line[i + 2..].find("*/")
+            {
+                let after = i + 2 + close + 2;
+                if !line[after..].trim().is_empty() {
+                    i = after;
+                    continue;
+                }
+            }
+
             comment_start = Some(i);
             break;
         }

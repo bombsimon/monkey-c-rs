@@ -1,0 +1,12 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+assertion_line: 33
+expression: formatted
+---
+class A {
+    // line
+    var x = 1; // trailing
+    /* multi
+       line
+    */
+}

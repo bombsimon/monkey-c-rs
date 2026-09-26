@@ -7,7 +7,6 @@ use serde::Deserialize;
 pub struct FormatSettings {
     pub line_width: usize,
     pub alignment: bool,
-    pub wrap_declarations: bool,
 }
 
 impl Default for FormatSettings {
@@ -15,7 +14,6 @@ impl Default for FormatSettings {
         Self {
             line_width: 111,
             alignment: true,
-            wrap_declarations: false,
         }
     }
 }
@@ -32,10 +30,6 @@ impl FormatSettings {
             self.alignment = alignment;
         }
 
-        if let Some(wrap_declarations) = config.wrap_declarations {
-            self.wrap_declarations = wrap_declarations;
-        }
-
         self
     }
 }
@@ -47,7 +41,6 @@ impl FormatSettings {
 pub struct FormatConfig {
     pub line_width: Option<usize>,
     pub alignment: Option<bool>,
-    pub wrap_declarations: Option<bool>,
 }
 
 #[cfg(test)]
@@ -70,12 +63,10 @@ mod tests {
         let file = FormatConfig {
             line_width: Some(80),
             alignment: Some(false),
-            wrap_declarations: None,
         };
         let flags = FormatConfig {
             line_width: Some(100),
             alignment: None,
-            wrap_declarations: Some(true),
         };
 
         let settings = FormatSettings::default()
@@ -85,6 +76,5 @@ mod tests {
         assert_eq!(settings.line_width, 100);
         // Unset by the higher-priority layer, so the file's value survives.
         assert!(!settings.alignment);
-        assert!(settings.wrap_declarations);
     }
 }

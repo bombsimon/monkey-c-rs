@@ -1,0 +1,13 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(r#\"\nfunction f() {\n    var a = foo // one call\n        .bar();\n    var b = foo // no call\n        .bar;\n    View // module\n        .findDrawableById(\"id\")\n        .setText(\"x\");\n}\n\"#.trim())"
+---
+function f() {
+    var a = foo // one call
+        .bar();
+    var b = foo // no call
+        .bar;
+    View // module
+        .findDrawableById("id")
+        .setText("x");
+}

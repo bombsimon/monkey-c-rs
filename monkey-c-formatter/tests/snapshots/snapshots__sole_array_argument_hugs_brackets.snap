@@ -1,0 +1,16 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_hugged_width(SOLE_ARRAY_ARGUMENT.trim(), 20)"
+---
+function fn() {
+    someFn([
+        "foo",
+        "bar",
+        "baz"
+    ]);
+    var x = new Foo([
+        "foo",
+        "bar",
+        "baz"
+    ]);
+}

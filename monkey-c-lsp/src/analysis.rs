@@ -75,7 +75,6 @@ pub fn format(text: &str, settings: &FormatSettings) -> Option<String> {
     let formatted = Formatter::new(text)
         .with_line_width(settings.line_width)
         .with_alignment(settings.alignment)
-        .with_decl_wrap(settings.wrap_declarations)
         .format(&output);
 
     Some(formatted)

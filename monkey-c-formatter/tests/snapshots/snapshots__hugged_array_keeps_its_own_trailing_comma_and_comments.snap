@@ -1,0 +1,10 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_hugged_width(r#\"\nfunction fn() {\n    someFn([\n        \"foo\", // first\n        \"bar\",\n    ]);\n}\n\"#.trim(),\n111)"
+---
+function fn() {
+    someFn([
+        "foo", // first
+        "bar",
+    ]);
+}

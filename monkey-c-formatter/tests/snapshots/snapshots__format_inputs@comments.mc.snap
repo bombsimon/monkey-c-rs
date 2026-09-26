@@ -15,7 +15,7 @@ Lorem ipsum dolor sit amet
             /* c3 */ arg /* c4*/ as /* c5 */ Number /*c6 */ /* c7 */ /* c8 */ /* c9 */ // c10
         ) as Void {
             /* c1 */ var /* c2 */ x /* c3 */ as /* c4 */ Number /* c5 */ = /* c6 */ 1 /* c7 */ ; // c8
-            /* c1 */ var y = new /* c2 */ Array<Number>[/* c3 */ 3 /* c4 */ ] /* c5 */ ; // c6
+            /* c1 */ var y = new /* c2 */ Array<Number>[/* c3 */ 3 /* c4 */ ] /* c5 */ ;         // c6
 
             /* c1 */ if (/* c2 */ /* c3 */ arg /* c4 */ > 3 /* c5 */) /* c6 */ { // c7
                 /* c1 */ System.println( /* c2 */ "x" /* c3 */);
@@ -27,7 +27,7 @@ Lorem ipsum dolor sit amet
             }
 
             // c1
-            for ( /* c1 */ var /* c2 */ i /* c3 */ = /* c4 */ 0; /* c5 */ /* c6 */ i /* c7 */
+            for (/* c1 */ var /* c2 */ i /* c3 */ = /* c4 */ 0; /* c5 */ /* c6 */ i /* c7 */
                 < /* c8 */ y.size(); /* c9 */ /* c10 */ i++ /* c11 */ ) {
                 // c1
                 y[/* c1 */ i /* c2 */ ] = i;

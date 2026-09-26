@@ -15,6 +15,52 @@ The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
 default width of 111 columns. 111 is chosen because 80 is too little and 222 is
 too much.
 
+## Declarations
+
+A `var` or `const` declaring several names stays on one line while it fits.
+Otherwise every binding goes on its own indented line:
+
+```monkey-c
+var a = 1, b = 2;
+
+var
+    firstLongBindingName = "some value",
+    secondLongBindingName = "another value";
+```
+
+## Array and dictionary arguments
+
+When an array or dictionary is the only argument of a call, its brackets stay
+next to the parentheses and only the entries break. That saves a level of
+indentation compared to breaking both:
+
+```monkey-c
+someFn([
+    "foo",
+    "bar"
+]);
+
+someFn({
+    "foo" => "bar",
+});
+```
+
+## Method chains
+
+A chain of calls that does not fit on one line is broken before each `.call()`,
+one per indented line, the way [Prettier][prettier] lays them out:
+
+```monkey-c
+var min = timeString
+    .substring(hourpos + 1, timeString.length())
+    .toNumber();
+```
+
+A chain with a single call, such as `dateString.substring(...)`, breaks inside
+its arguments instead. When the chain starts from a module, class or `me`, like
+`View.findDrawableById("id").setText(...)`, the first call counts as part of
+the start of the chain and stays on its line as long as it fits there.
+
 ## The magic trailing comma
 
 The formatter uses the same magic trailing comma as [ruff] to determine
@@ -91,6 +137,9 @@ When alignment is enabled the formatter pads names so that the separator
 operators (`=>` in dictionaries, `=` in enum variants) line up in a vertical
 column. The intent is purely visual — to make related entries easier to scan.
 
+Trailing comments on consecutive lines are aligned into a column the same way,
+and are left where they are when alignment is disabled.
+
 Alignment only kicks in when an entry is already rendered multi-line. For
 dictionaries that follows the magic trailing comma rule above. For enums the
 formatter looks for runs of two or more consecutive variants that all have an
@@ -159,4 +208,5 @@ break the run and stay as-is.
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [linter]: ../linter
+[prettier]: https://prettier.io
 [ruff]: https://github.com/astral-sh/ruff

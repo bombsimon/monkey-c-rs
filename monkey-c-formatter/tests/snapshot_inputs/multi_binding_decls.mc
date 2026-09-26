@@ -19,3 +19,5 @@ class Foo {
         }
     }
 }
+
+var firstLongBindingName = "some value", secondLongBindingName = "another value", thirdLongBindingName = 3;

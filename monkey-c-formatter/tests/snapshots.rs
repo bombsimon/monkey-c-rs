@@ -7,7 +7,24 @@
 //! Snapshots live under `tests/snapshots/`. See <https://insta.rs/> for the
 //! snapshot tooling.
 mod common;
-use common::{format, format_aligned, format_aligned_width, format_all_enabled, format_width};
+use common::{format, format_aligned, run};
+use monkey_c_formatter::Formatter;
+
+// Configurations only the snapshot tests need. Shared helpers live in `common`, which every test
+// binary compiles, so anything there must be used by all of them.
+
+fn format_width(src: &str, width: usize) -> String {
+    run(src, Formatter::new(src).with_line_width(width))
+}
+
+fn format_aligned_width(src: &str, width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_alignment(true)
+            .with_line_width(width),
+    )
+}
 
 #[test]
 fn format_inputs() {
@@ -15,9 +32,197 @@ fn format_inputs() {
         let raw = std::fs::read_to_string(path).expect("read input file");
         let input = raw.trim();
         insta::with_settings!({ omit_expression => true }, {
-            insta::assert_snapshot!(format_all_enabled(input));
+            insta::assert_snapshot!(format_aligned(input));
         });
     });
+}
+
+#[test]
+fn crlf_comments_do_not_keep_carriage_returns() {
+    let formatted = format(
+        "class A {\r\n    // line\r\n    var x = 1; // trailing\r\n    /* multi\r\n       line */\r\n}\r\n",
+    );
+
+    assert!(!formatted.contains('\r'), "{formatted:?}");
+    insta::assert_snapshot!(formatted);
+}
+
+#[test]
+fn comments_are_trimmed_at_end_of_line() {
+    insta::assert_snapshot!(format(
+        "class A {\n    // line   \n    var x = 1; // trailing \t\n    /* block   \n       inner   \n    */\n    /* kept   */\n}\n",
+    ));
+}
+
+const CONSECUTIVE_TRAILING_COMMENTS: &str = r#"
+function f() {
+    matchplans = MatchPlan.MATCHPLANS2018; // plans
+    teams = Teams.TEAMS; // teams
+}
+"#;
+
+#[test]
+fn trailing_comments_stay_put_without_alignment() {
+    insta::assert_snapshot!(format(CONSECUTIVE_TRAILING_COMMENTS.trim()));
+}
+
+#[test]
+fn trailing_comments_align_with_alignment() {
+    insta::assert_snapshot!(format_aligned(CONSECUTIVE_TRAILING_COMMENTS.trim()));
+}
+
+#[test]
+fn call_breaks_when_its_terminator_overflows() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    if (true) {
+        var monthformat = WatchUi.loadResource(Rez.Strings.Default_Format_Month);
+        var day = monthString.substring(monthpos + 1, monthString.length()).toNumber();
+        var fits = WatchUi.loadResource(Rez.Strings.Month); // trailing comments are not measured
+    }
+}
+"#
+        .trim(),
+        80
+    ));
+}
+
+#[test]
+fn wide_characters_are_measured_by_display_width() {
+    // Each line is 43 columns but 47 or more bytes, so it only fits when measured by display
+    // width.
+    insta::assert_snapshot!(format_width(
+        r#"
+var teams = {:name => "上海申花", :x => 1};
+var plans = ["中超", "中超", "中超", "中"];
+"#
+        .trim(),
+        43
+    ));
+}
+
+#[test]
+fn wide_characters_align_by_display_width() {
+    insta::assert_snapshot!(format_aligned(
+        r#"
+var teams = {
+    "上海" => 1,
+    "SHANGHAI" => 2,
+};
+var name = "上海申花"; // name
+var id = 1; // id
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn member_chain_breaks_one_call_per_line() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    var min = timeString.substring(hourpos + 1, timeString.length()).toNumber();
+    days = currentmoment.subtract(matchdatemoment).value().toLong().format("%d");
+    var fits = a.b().c().d();
+}
+"#
+        .trim(),
+        60
+    ));
+}
+
+#[test]
+fn member_chain_with_one_call_breaks_its_arguments() {
+    insta::assert_snapshot!(format_width(
+        "function f() { var monthString = dateString.substring(yearpos + 1, dateString.length()); }",
+        60
+    ));
+}
+
+#[test]
+fn member_chain_keeps_first_call_on_module_head() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    View.findDrawableById("LBL_MATCH_DAY").setText(Lang.format("$1$", [year]));
+    return Toybox.ActivityMonitor.getHeartRateHistory(1, true).next().heartRate.toString();
+    me.getItems(filter).first().name.toUpperCase();
+}
+"#
+        .trim(),
+        60
+    ));
+}
+
+#[test]
+fn member_chain_keeps_comments_between_calls() {
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    var a = foo // after head
+        .bar()
+        .baz();
+    var b = foo
+        // own line
+        .bar()
+        .baz();
+    var c = foo.bar() // after call
+        .baz();
+    var d = foo /* block */ .bar().baz();
+}
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn short_chain_keeps_comments_between_links() {
+    insta::assert_snapshot!(format(
+        r#"
+function f() {
+    var a = foo // one call
+        .bar();
+    var b = foo // no call
+        .bar;
+    View // module
+        .findDrawableById("id")
+        .setText("x");
+}
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn member_chain_with_comment_in_arguments_breaks() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    var min = timeString.substring(
+        hourpos + 1, // start
+        timeString.length()
+    ).toNumber();
+}
+"#
+        .trim(),
+        60
+    ));
+}
+
+#[test]
+fn inline_block_comment_is_not_aligned_as_trailing() {
+    insta::assert_snapshot!(format_aligned(
+        r#"
+function f() {
+    var a = foo(/* inline */ 1);
+    var b = 2; // trailing
+    var c = foo(/* inline */ 1); // trailing
+    var d = 3; // trailing
+}
+"#
+        .trim()
+    ));
 }
 
 #[test]
@@ -380,6 +585,119 @@ fn array_no_trailing_comma_breaks_when_wide() {
     insta::assert_snapshot!(format_width(
         "var a = [\"a_long_string\", \"another_long_string\"];",
         30
+    ));
+}
+
+#[test]
+fn wrapped_declaration_stays_flat_when_it_fits() {
+    insta::assert_snapshot!(format_width("var a = 1, b = 2;", 17));
+}
+
+#[test]
+fn wrapped_declaration_breaks_when_its_semicolon_overflows() {
+    insta::assert_snapshot!(format_width("var a = 1, b = 2;", 16));
+}
+
+#[test]
+fn wrapped_declaration_measures_from_its_indentation() {
+    insta::assert_snapshot!(format_width(
+        "class Foo { const A = 1, B = 2; function f() { var i, j, k = 0; } }",
+        23
+    ));
+}
+
+#[test]
+fn wrapped_declaration_keeps_comment_before_semicolon() {
+    insta::assert_snapshot!(format_width(
+        r#"
+var a = 1, b = 2 /* fits */;
+var firstLongBindingName = "some value", secondLongBindingName = "another value" /* breaks */;
+"#
+        .trim(),
+        60
+    ));
+}
+
+const SOLE_ARRAY_ARGUMENT: &str = r#"
+function fn() {
+    someFn(["foo", "bar", "baz"]);
+    var x = new Foo(["foo", "bar", "baz"]);
+}
+"#;
+
+#[test]
+fn sole_array_argument_hugs_brackets() {
+    insta::assert_snapshot!(format_width(SOLE_ARRAY_ARGUMENT.trim(), 20));
+}
+
+#[test]
+fn hugged_array_stays_flat_when_it_fits() {
+    insta::assert_snapshot!(format_width("function fn() { someFn([1, 2, 3]); }", 111));
+}
+
+#[test]
+fn sole_dict_argument_hugs_brackets() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function fn() {
+    someFn({ "foo" => "bar", "baz" => "qux" });
+    someFn({
+        "foo" => "bar",
+    });
+    var x = new Foo({ :foo => "bar", :baz => "qux" });
+}
+"#
+        .trim(),
+        20
+    ));
+}
+
+#[test]
+fn hug_brackets_only_applies_to_a_sole_collection_argument() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function fn() {
+    someFn(["foo", "bar", "baz"], 1);
+    someFn({ :foo => "bar", :baz => "qux" }, 1);
+}
+"#
+        .trim(),
+        20
+    ));
+}
+
+#[test]
+fn hugged_array_keeps_its_own_trailing_comma_and_comments() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function fn() {
+    someFn([
+        "foo", // first
+        "bar",
+    ]);
+}
+"#
+        .trim(),
+        111
+    ));
+}
+
+#[test]
+fn hug_brackets_yields_to_comments_around_the_array() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function fn() {
+    someFn( // leading
+        ["foo", "bar", "baz"]
+    );
+    someFn(
+        ["foo", "bar", "baz"] // trailing
+    );
+    someFn(["foo", "bar", "baz"],);
+}
+"#
+        .trim(),
+        111
     ));
 }
 

@@ -1,3 +1,5 @@
+use unicode_width::UnicodeWidthStr;
+
 /// Formatting intermediate representation.
 ///
 /// Formatters build a `Doc` tree describing layout *intent*, then pass it to
@@ -22,6 +24,10 @@
 pub enum Doc {
     /// Literal text with no embedded newlines.
     Text(String),
+    /// A `//` comment. Rendered like [`Doc::Text`] but has no width when deciding whether a
+    /// group fits, since it runs to the end of the line and breaking the code before it cannot
+    /// make it fit.
+    LineComment(String),
     /// Always a newline followed by current indentation. Never flattened.
     HardLine,
     /// Empty in flat mode; newline + indent in break mode.
@@ -50,6 +56,10 @@ pub enum Doc {
 impl Doc {
     pub fn text(s: impl Into<String>) -> Self {
         Doc::Text(s.into())
+    }
+
+    pub fn line_comment(s: impl Into<String>) -> Self {
+        Doc::LineComment(s.into())
     }
 
     pub fn group(docs: Vec<Doc>) -> Self {
@@ -92,119 +102,140 @@ enum Mode {
     Break,
 }
 
+/// A doc waiting to be rendered, with the indentation and mode it inherits from its parent.
+#[derive(Clone, Copy)]
+struct Command<'a> {
+    indent: usize,
+    mode: Mode,
+    doc: &'a Doc,
+}
+
 /// Render a `Doc` to a `String`, breaking groups that would exceed `width`.
+///
+/// Pending docs live on an explicit stack rather than the call stack so that a group's fit check
+/// can see what follows it. A group only fits if everything up to the next line break does, so
+/// a call's arguments break when the `);` after them would overflow.
 pub fn render(doc: &Doc, width: usize) -> String {
     let mut out = String::new();
     let mut col = 0usize;
-    render_doc(doc, width, 0, Mode::Break, &mut out, &mut col);
+    let mut stack = vec![Command {
+        indent: 0,
+        mode: Mode::Break,
+        doc,
+    }];
+
+    while let Some(Command { indent, mode, doc }) = stack.pop() {
+        match doc {
+            Doc::Empty => {}
+            Doc::Text(s) | Doc::LineComment(s) => {
+                out.push_str(s);
+                col += display_width(s);
+            }
+            Doc::HardLine => newline(&mut out, &mut col, indent),
+            Doc::SoftLine => {
+                if mode == Mode::Break {
+                    newline(&mut out, &mut col, indent);
+                }
+            }
+            Doc::Line => {
+                if mode == Mode::Flat {
+                    out.push(' ');
+                    col += 1;
+                } else {
+                    newline(&mut out, &mut col, indent);
+                }
+            }
+            Doc::Indent(docs) => push_all(&mut stack, docs, indent + 4, mode),
+            Doc::Group(docs) => {
+                let fits = mode == Mode::Flat || fits(docs, &stack, width.saturating_sub(col));
+                let child_mode = if fits { Mode::Flat } else { Mode::Break };
+
+                push_all(&mut stack, docs, indent, child_mode);
+            }
+            Doc::Concat(docs) => push_all(&mut stack, docs, indent, mode),
+            Doc::BlankLine => {
+                out.push('\n');
+                newline(&mut out, &mut col, indent);
+            }
+            Doc::FlatOrBreak(flat, break_) => {
+                let child = if mode == Mode::Flat { flat } else { break_ };
+                stack.push(Command {
+                    indent,
+                    mode,
+                    doc: child,
+                });
+            }
+        }
+    }
+
     out
 }
 
-fn render_doc(
-    doc: &Doc,
-    width: usize,
-    indent: usize,
-    mode: Mode,
-    out: &mut String,
-    col: &mut usize,
-) {
-    match doc {
-        Doc::Empty => {}
-        Doc::Text(s) => {
-            out.push_str(s);
-            *col += s.len();
-        }
-        Doc::HardLine => {
-            out.push('\n');
-            out.push_str(&" ".repeat(indent));
-            *col = indent;
-        }
-        Doc::SoftLine => {
-            if mode == Mode::Break {
-                out.push('\n');
-                out.push_str(&" ".repeat(indent));
-                *col = indent;
-            }
-        }
-        Doc::Line => {
-            if mode == Mode::Flat {
-                out.push(' ');
-                *col += 1;
-            } else {
-                out.push('\n');
-                out.push_str(&" ".repeat(indent));
-                *col = indent;
-            }
-        }
-        Doc::Indent(docs) => {
-            for d in docs {
-                render_doc(d, width, indent + 4, mode, out, col);
-            }
-        }
-        Doc::Group(docs) => {
-            let child_mode = if fits_flat(docs, width.saturating_sub(*col)) {
-                Mode::Flat
-            } else {
-                Mode::Break
-            };
+/// The number of terminal columns `s` occupies, so wide characters such as CJK count as two
+/// columns and combining marks as none, matching how editors lay out the line.
+pub(crate) fn display_width(s: &str) -> usize {
+    s.width()
+}
 
-            for d in docs {
-                render_doc(d, width, indent, child_mode, out, col);
-            }
-        }
-        Doc::Concat(docs) => {
-            for d in docs {
-                render_doc(d, width, indent, mode, out, col);
-            }
-        }
-        Doc::BlankLine => {
-            out.push_str("\n\n");
-            out.push_str(&" ".repeat(indent));
-            *col = indent;
-        }
-        Doc::FlatOrBreak(flat, break_) => {
-            let child = if mode == Mode::Flat { flat } else { break_ };
-            render_doc(child, width, indent, mode, out, col);
-        }
+fn newline(out: &mut String, col: &mut usize, indent: usize) {
+    out.push('\n');
+    out.push_str(&" ".repeat(indent));
+    *col = indent;
+}
+
+/// Push `docs` so that the first one is rendered first.
+fn push_all<'a>(stack: &mut Vec<Command<'a>>, docs: &'a [Doc], indent: usize, mode: Mode) {
+    for doc in docs.iter().rev() {
+        stack.push(Command { indent, mode, doc });
     }
 }
 
-/// Returns the flat (single-line) character width of `doc`, or `None` if it
-/// contains a [`Doc::HardLine`] or [`Doc::BlankLine`] and can never be flat.
-pub(crate) fn flat_width(doc: &Doc) -> Option<usize> {
-    match doc {
-        Doc::Empty => Some(0),
-        Doc::Text(s) => Some(s.len()),
-        Doc::HardLine | Doc::BlankLine => None,
-        Doc::SoftLine => Some(0),
-        Doc::Line => Some(1),
-        Doc::Indent(docs) | Doc::Group(docs) | Doc::Concat(docs) => {
-            let mut total = 0usize;
-            for d in docs {
-                total += flat_width(d)?;
-            }
+/// Whether `group` fits flat in `remaining` columns, together with whatever follows it on the
+/// same line. The docs in `rest` keep their own mode, so the first line break an enclosing
+/// broken group will take ends the measurement; a line break inside the flat group itself
+/// (a [`Doc::HardLine`] or [`Doc::BlankLine`]) means it can never be flat.
+fn fits(group: &[Doc], rest: &[Command], mut remaining: usize) -> bool {
+    let mut pending: Vec<(Mode, &Doc)> = group.iter().rev().map(|doc| (Mode::Flat, doc)).collect();
+    let mut rest = rest.iter().rev();
 
-            Some(total)
-        }
-        Doc::FlatOrBreak(flat, _) => flat_width(flat),
-    }
-}
+    loop {
+        let (mode, doc) = match pending.pop() {
+            Some(next) => next,
+            None => match rest.next() {
+                Some(command) => (command.mode, command.doc),
+                None => return true,
+            },
+        };
 
-/// Returns `true` if rendering `docs` in flat mode would fit within `remaining` columns.
-fn fits_flat(docs: &[Doc], remaining: usize) -> bool {
-    let mut total = 0usize;
-
-    for d in docs {
-        match flat_width(d) {
-            None => return false,
-            Some(w) => {
-                total += w;
-                if total > remaining {
-                    return false;
+        match doc {
+            Doc::Empty | Doc::LineComment(_) => {}
+            Doc::Text(s) => match remaining.checked_sub(display_width(s)) {
+                Some(left) => remaining = left,
+                None => return false,
+            },
+            Doc::HardLine | Doc::BlankLine => return mode == Mode::Break,
+            Doc::SoftLine => {
+                if mode == Mode::Break {
+                    return true;
                 }
             }
+            Doc::Line => {
+                if mode == Mode::Break {
+                    return true;
+                }
+
+                match remaining.checked_sub(1) {
+                    Some(left) => remaining = left,
+                    None => return false,
+                }
+            }
+            Doc::Indent(docs) | Doc::Group(docs) | Doc::Concat(docs) => {
+                pending.extend(docs.iter().rev().map(|doc| (mode, doc)));
+            }
+            Doc::FlatOrBreak(flat, break_) => {
+                let child = if mode == Mode::Flat { flat } else { break_ };
+                pending.push((mode, child));
+            }
         }
     }
-
-    true
 }
