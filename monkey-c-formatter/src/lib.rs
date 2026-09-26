@@ -326,7 +326,7 @@ impl Formatter {
         if c.is_block {
             self.block_comment_to_doc(&c.text)
         } else {
-            Doc::line_comment(format!("//{}", c.text))
+            Doc::line_comment(format!("//{}", c.text.trim_end()))
         }
     }
 
@@ -338,7 +338,7 @@ impl Formatter {
             return Doc::concat(vec![Doc::text(" "), self.block_comment_to_doc(&c.text)]);
         }
 
-        Doc::line_comment(format!(" //{}", c.text))
+        Doc::line_comment(format!(" //{}", c.text.trim_end()))
     }
 
     /// Render a `/* … */` comment, placing the closing `*/` on its own line
@@ -348,9 +348,11 @@ impl Formatter {
             return Doc::text(format!("/*{text}*/"));
         }
 
-        // The body is emitted verbatim, so CRLF sources would otherwise leave a `\r` on each line.
-        let normalized = text.replace("\r\n", "\n");
-        let trimmed = normalized.trim_end();
+        // The body is emitted line by line as written, so drop what trails each line, including
+        // the `\r` of CRLF line endings.
+        let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
+        let joined = lines.join("\n");
+        let trimmed = joined.trim_end();
 
         Doc::concat(vec![
             Doc::text(format!("/*{trimmed}")),

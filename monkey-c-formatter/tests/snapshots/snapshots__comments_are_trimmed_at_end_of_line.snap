@@ -1,0 +1,13 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+assertion_line: 52
+expression: "format(\"class A {\\n    // line   \\n    var x = 1; // trailing \\t\\n    /* block   \\n       inner   \\n    */\\n    /* kept   */\\n}\\n\",)"
+---
+class A {
+    // line
+    var x = 1; // trailing
+    /* block
+       inner
+    */
+    /* kept   */
+}

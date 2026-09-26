@@ -1,9 +1,8 @@
 use monkey_c_formatter::Formatter;
 use monkey_c_parser::parser::Parser;
 
-/// Run `formatter` over `src` and enforce the "no comment left behind"
-/// invariant: every test/fixture that flows through these helpers fails
-/// loudly if the formatter drops (or duplicates) a comment.
+/// Run `formatter` over `src` and enforce the invariants every output must hold: no comment is
+/// dropped (or duplicated), and no line ends in whitespace.
 pub fn run(src: &str, formatter: Formatter) -> String {
     let output = Parser::new(src).parse().expect("should parse");
     let formatted = formatter.format(&output);
@@ -14,6 +13,15 @@ pub fn run(src: &str, formatter: Formatter) -> String {
         "no comment left behind violated — {} comment(s) dropped:\n{:#?}",
         lost.len(),
         lost.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(),
+    );
+
+    let trailing_whitespace: Vec<&str> = formatted
+        .lines()
+        .filter(|line| line.ends_with(char::is_whitespace))
+        .collect();
+    assert!(
+        trailing_whitespace.is_empty(),
+        "lines end in whitespace:\n{trailing_whitespace:#?}",
     );
 
     formatted

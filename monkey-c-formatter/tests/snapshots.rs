@@ -47,6 +47,13 @@ fn crlf_comments_do_not_keep_carriage_returns() {
     insta::assert_snapshot!(formatted);
 }
 
+#[test]
+fn comments_are_trimmed_at_end_of_line() {
+    insta::assert_snapshot!(format(
+        "class A {\n    // line   \n    var x = 1; // trailing \t\n    /* block   \n       inner   \n    */\n    /* kept   */\n}\n",
+    ));
+}
+
 const CONSECUTIVE_TRAILING_COMMENTS: &str = r#"
 function f() {
     matchplans = MatchPlan.MATCHPLANS2018; // plans
