@@ -672,7 +672,7 @@ impl Formatter {
 
             let mut inner = Vec::new();
             if remaining_start.is_some() {
-                inner.push(self.drain_leading_doc(decl.span.end));
+                inner.push(self.drain_dangling_comments_doc(decl.span.end));
             }
 
             if inner.is_empty()
@@ -755,7 +755,7 @@ impl Formatter {
             .map(|c| c.span.start);
         if let Some(start) = remaining_start {
             push_gap(&mut inner, prev_end, start);
-            inner.push(self.drain_leading_doc(decl.span.end));
+            inner.push(self.drain_dangling_comments_doc(decl.span.end));
         }
 
         Doc::concat(vec![
