@@ -7,10 +7,52 @@
 //! Snapshots live under `tests/snapshots/`. See <https://insta.rs/> for the
 //! snapshot tooling.
 mod common;
-use common::{
-    format, format_aligned, format_aligned_width, format_all_enabled, format_hugged_width,
-    format_width, format_wrapped_width,
-};
+use common::{format, format_aligned, run};
+use monkey_c_formatter::Formatter;
+
+// Configurations only the snapshot tests need. Shared helpers live in `common`, which every test
+// binary compiles, so anything there must be used by all of them.
+
+fn format_all_enabled(src: &str) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_alignment(true)
+            .with_decl_wrap(true)
+            .with_hug_brackets(true),
+    )
+}
+
+fn format_width(src: &str, width: usize) -> String {
+    run(src, Formatter::new(src).with_line_width(width))
+}
+
+fn format_wrapped_width(src: &str, width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_decl_wrap(true)
+            .with_line_width(width),
+    )
+}
+
+fn format_hugged_width(src: &str, width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_hug_brackets(true)
+            .with_line_width(width),
+    )
+}
+
+fn format_aligned_width(src: &str, width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_alignment(true)
+            .with_line_width(width),
+    )
+}
 
 #[test]
 fn format_inputs() {
