@@ -5,8 +5,7 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/multiline_block_comment_nes
 function f() {
     if (x) {
         /* a
-           b
-        */
+           b */
         var y = 1;
     }
 }

@@ -321,7 +321,7 @@ impl Formatter {
         let mut parts = Vec::new();
         for (i, c) in comments.iter().enumerate() {
             if i == 0 && c.is_block {
-                parts.push(self.block_comment_to_doc(&c.text));
+                parts.push(self.block_comment_to_doc(c));
             } else {
                 parts.push(self.same_line_comment_to_doc(c));
             }
@@ -365,7 +365,7 @@ impl Formatter {
     /// Render a comment as a [`Doc`].
     fn comment_to_doc(&self, c: &CommentStmt) -> Doc {
         if c.is_block {
-            self.block_comment_to_doc(&c.text)
+            self.block_comment_to_doc(c)
         } else {
             Doc::line_comment(format!("//{}", c.text.trim_end()))
         }
@@ -376,30 +376,50 @@ impl Formatter {
     /// the code before it fits.
     fn same_line_comment_to_doc(&self, c: &CommentStmt) -> Doc {
         if c.is_block {
-            return Doc::concat(vec![Doc::text(" "), self.block_comment_to_doc(&c.text)]);
+            return Doc::concat(vec![Doc::text(" "), self.block_comment_to_doc(c)]);
         }
 
         Doc::line_comment(format!(" //{}", c.text.trim_end()))
     }
 
-    /// Render a `/* … */` comment, placing the closing `*/` on its own line
-    /// for multi-line bodies.
-    fn block_comment_to_doc(&self, text: &str) -> Doc {
-        if !text.contains('\n') {
+    /// Render a `/* … */` comment as written, apart from indentation. Every line moves by as
+    /// much as the line the comment starts on, so banners, ` *` gutters and indented content keep
+    /// their layout relative to the code they belong to.
+    fn block_comment_to_doc(&self, comment: &CommentStmt) -> Doc {
+        let text = &comment.text;
+        let Some((first_line, rest)) = text.split_once('\n') else {
             return Doc::text(format!("/*{text}*/"));
+        };
+
+        let start_line = self.line_index.line(comment.span.start as u32);
+        let source_indent = self.line_index.indent(start_line) as usize;
+        let dedent = |line: &str| -> String {
+            let indent_width = line.len() - line.trim_start_matches([' ', '\t']).len();
+
+            line[indent_width.min(source_indent)..].to_string()
+        };
+
+        // Drop what trails each line, including the `\r` of CRLF line endings, but keep the
+        // whitespace before an inline `*/`, as in `line 2 */`.
+        let mut lines: Vec<&str> = rest.split('\n').collect();
+        let last_line = lines.pop().unwrap_or_default();
+        let mut parts = vec![Doc::text(format!("/*{}", first_line.trim_end()))];
+        for line in lines {
+            let line = dedent(line.trim_end());
+
+            // A raw newline keeps blank lines free of the indentation a hard line would add.
+            if line.is_empty() {
+                parts.push(Doc::text("\n"));
+            } else {
+                parts.push(Doc::HardLine);
+                parts.push(Doc::text(line));
+            }
         }
 
-        // The body is emitted line by line as written, so drop what trails each line, including
-        // the `\r` of CRLF line endings.
-        let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
-        let joined = lines.join("\n");
-        let trimmed = joined.trim_end();
+        parts.push(Doc::HardLine);
+        parts.push(Doc::text(format!("{}*/", dedent(last_line))));
 
-        Doc::concat(vec![
-            Doc::text(format!("/*{trimmed}")),
-            Doc::HardLine,
-            Doc::text("*/"),
-        ])
+        Doc::concat(parts)
     }
 
     fn ast_to_doc(&self, ast: &Ast) -> Doc {
