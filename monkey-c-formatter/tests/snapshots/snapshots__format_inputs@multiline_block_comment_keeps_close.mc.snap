@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/multiline_block_comment_keeps_close.mc
+---
+function f() {
+    /* line 1
+       line 2 */
+    var x = 1;
+}

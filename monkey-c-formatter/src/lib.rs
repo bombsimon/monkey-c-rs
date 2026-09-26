@@ -382,8 +382,8 @@ impl Formatter {
         Doc::line_comment(format!(" //{}", c.text.trim_end()))
     }
 
-    /// Render a `/* … */` comment, placing the closing `*/` on its own line
-    /// for multi-line bodies.
+    /// Render a `/* … */` comment as written. The closing `*/` only gets a line of its own when
+    /// it had one in the source, so banners and `//*/` toggles survive formatting.
     fn block_comment_to_doc(&self, text: &str) -> Doc {
         if !text.contains('\n') {
             return Doc::text(format!("/*{text}*/"));
@@ -391,12 +391,17 @@ impl Formatter {
 
         // The body is emitted line by line as written, so drop what trails each line, including
         // the `\r` of CRLF line endings.
-        let lines: Vec<&str> = text.lines().map(str::trim_end).collect();
-        let joined = lines.join("\n");
-        let trimmed = joined.trim_end();
+        let (body, last_line) = text.rsplit_once('\n').unwrap_or(("", text));
+        let body_lines: Vec<&str> = body.lines().map(str::trim_end).collect();
+        let body = body_lines.join("\n");
+
+        // Whitespace before an inline `*/` is part of the comment, as in `line 2 */`.
+        if !last_line.trim().is_empty() {
+            return Doc::text(format!("/*{body}\n{last_line}*/"));
+        }
 
         Doc::concat(vec![
-            Doc::text(format!("/*{trimmed}")),
+            Doc::text(format!("/*{}", body.trim_end())),
             Doc::HardLine,
             Doc::text("*/"),
         ])
