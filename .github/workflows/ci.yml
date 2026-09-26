@@ -36,7 +36,7 @@ jobs:
       - name: doc
         env:
           RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --workspace --all-features --keep-going
+        run: cargo doc --workspace --all-features --no-deps --keep-going
 
       - name: test
         run: cargo test --workspace --all-features
