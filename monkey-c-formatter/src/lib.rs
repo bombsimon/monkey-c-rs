@@ -1591,7 +1591,14 @@ impl Formatter {
                 .last()
                 .map(|s| s.span().end)
                 .unwrap_or(case.label_span.end);
-            let case_trailing = self.drain_trailing_doc(trailing_anchor);
+            // Several labels can share a line, e.g. `case 1: case 2: // c`, so a comment after a
+            // later label belongs to that label and not this one.
+            let next_case_start = s
+                .cases
+                .get(i + 1)
+                .map(|next| next.span.start)
+                .unwrap_or(usize::MAX);
+            let case_trailing = self.drain_trailing_doc_bounded(trailing_anchor, next_case_start);
             let has_content = !case.stmts.is_empty() || !matches!(case_inner, Doc::Empty);
             if has_content || !matches!(case_trailing, Doc::Empty) {
                 body.push(Doc::Indent(vec![Doc::HardLine, case_inner, case_trailing]));
