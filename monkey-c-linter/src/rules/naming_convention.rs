@@ -100,7 +100,7 @@ fn check_module_member(member: &Ast, diags: &mut Vec<Diagnostic>) {
 }
 
 fn check_class_var(v: &VarDecl, diags: &mut Vec<Diagnostic>) {
-    let private = is_non_public(v.visibility.as_ref());
+    let private = is_non_public(v.modifiers.visibility());
     let label = if private {
         "private class member"
     } else {

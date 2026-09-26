@@ -1,6 +1,6 @@
 use monkey_c_parser::ast::{
-    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, ForInit, FunctionDecl, Stmt,
-    VarDecl, Visibility,
+    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, EnumDecl, Expr, ForInit,
+    FunctionDecl, Stmt, VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -29,6 +29,13 @@ fn first_class(src: &str) -> ClassDecl {
         .into_iter()
         .find_map(|n| if let Ast::Class(c) = n { Some(c) } else { None })
         .expect("no class found")
+}
+
+fn first_enum(src: &str) -> EnumDecl {
+    document_nodes(src)
+        .into_iter()
+        .find_map(|n| if let Ast::Enum(e) = n { Some(e) } else { None })
+        .expect("no enum found")
 }
 
 fn first_function(src: &str) -> FunctionDecl {
@@ -144,14 +151,18 @@ fn test_var_visibility() {
         ("class C { var x; }", None),
     ] {
         let v = class_var(src);
-        assert_eq!(v.visibility, expected, "visibility in `{src}`");
+        assert_eq!(
+            v.modifiers.visibility(),
+            expected.as_ref(),
+            "visibility in `{src}`"
+        );
     }
 }
 
 #[test]
 fn test_var_static() {
-    assert!(class_var("class C { static var x; }").is_static);
-    assert!(!class_var("class C { var x; }").is_static);
+    assert!(class_var("class C { static var x; }").modifiers.is_static());
+    assert!(!class_var("class C { var x; }").modifiers.is_static());
 }
 
 #[test]
@@ -174,7 +185,11 @@ fn test_const_declarations() {
         "Number"
     );
 
-    assert!(class_const("class C { static const RATE = 1; }").is_static);
+    assert!(
+        class_const("class C { static const RATE = 1; }")
+            .modifiers
+            .is_static()
+    );
 }
 
 #[test]
@@ -242,8 +257,89 @@ fn test_function_modifiers() {
         ),
     ] {
         let f = first_function(src);
-        assert_eq!(f.visibility, vis, "visibility in `{src}`");
-        assert_eq!(f.is_static, is_static, "is_static in `{src}`");
+        assert_eq!(
+            f.modifiers.visibility(),
+            vis.as_ref(),
+            "visibility in `{src}`"
+        );
+        assert_eq!(f.modifiers.is_static(), is_static, "is_static in `{src}`");
+    }
+}
+
+#[test]
+fn test_class_modifiers() {
+    for (src, vis, is_static) in [
+        ("class A {}", None, false),
+        ("private class A {}", Some(Visibility::Private), false),
+        ("static class A {}", None, true),
+        ("static hidden class A {}", Some(Visibility::Hidden), true),
+    ] {
+        let c = first_class(src);
+        assert_eq!(
+            c.modifiers.visibility(),
+            vis.as_ref(),
+            "visibility in `{src}`"
+        );
+        assert_eq!(c.modifiers.is_static(), is_static, "is_static in `{src}`");
+    }
+}
+
+#[test]
+fn test_enum_modifiers() {
+    for (src, vis, is_static) in [
+        ("enum { X }", None, false),
+        ("public enum B { X }", Some(Visibility::Public), false),
+        ("private enum { X }", Some(Visibility::Private), false),
+        (
+            "static protected enum B { X }",
+            Some(Visibility::Protected),
+            true,
+        ),
+    ] {
+        let e = first_enum(src);
+        assert_eq!(
+            e.modifiers.visibility(),
+            vis.as_ref(),
+            "visibility in `{src}`"
+        );
+        assert_eq!(e.modifiers.is_static(), is_static, "is_static in `{src}`");
+    }
+}
+
+#[test]
+fn test_module_modifiers() {
+    let Ast::Module(m) = &document_nodes("public module M {}")[0] else {
+        panic!("expected module");
+    };
+
+    assert_eq!(m.modifiers.visibility(), Some(&Visibility::Public));
+    assert!(!m.modifiers.is_static());
+}
+
+#[test]
+fn test_modifier_positions() {
+    let src = "class C { static private var x; }";
+    let modifiers = class_var(src).modifiers;
+    let visibility = modifiers.visibility.expect("visibility");
+
+    assert_eq!(modifiers.static_kw_start, src.find("static"));
+    assert_eq!(visibility.span.start, src.find("private").unwrap());
+    assert_eq!(visibility.span.end, src.find(" var").unwrap());
+}
+
+#[test]
+fn test_misplaced_modifiers_are_rejected() {
+    for src in [
+        "private typedef T as Number;",
+        "public using Toybox.System;",
+        "static import Toybox.System;",
+        "class C { hidden (:test) function f() {} }",
+        "class C { private }",
+        "private",
+        "class C { private public var x; }",
+        "class C { static private static var x; }",
+    ] {
+        parse_err(src);
     }
 }
 

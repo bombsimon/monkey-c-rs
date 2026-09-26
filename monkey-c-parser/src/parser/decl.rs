@@ -1,7 +1,7 @@
 use crate::ast::{
     AnnotationEntry, Ast, Binding, ClassDecl, ConstDecl, EnumDecl, EnumVariant, FunctionDecl,
-    ImportDecl, ModuleDecl, Parameter, Parens, Span, Spanned, TypedefDecl, UsingDecl, VarDecl,
-    Visibility,
+    ImportDecl, Modifiers, ModuleDecl, Parameter, Parens, Span, Spanned, TypedefDecl, UsingDecl,
+    VarDecl, Visibility,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -9,36 +9,19 @@ use crate::token;
 impl Parser<'_> {
     pub(crate) fn parse_declaration(&mut self) -> Result<Ast, ParserError> {
         let start = self.current_token_start;
-        let mut visibility = None;
-        let mut is_static = false;
-
-        loop {
-            match self.current_token {
-                token::Type::Private => {
-                    visibility = Some(Visibility::Private);
-                    self.next_token_span();
-                }
-                token::Type::Protected => {
-                    visibility = Some(Visibility::Protected);
-                    self.next_token_span();
-                }
-                token::Type::Public => {
-                    visibility = Some(Visibility::Public);
-                    self.next_token_span();
-                }
-                token::Type::Static => {
-                    is_static = true;
-                    self.next_token_span();
-                }
-                token::Type::Hidden => {
-                    visibility = Some(Visibility::Hidden);
-                    self.next_token_span();
-                }
-                _ => break,
-            }
-        }
+        let modifiers = self.parse_modifiers()?;
 
         match self.current_token.clone() {
+            token::Type::Class => self.parse_class_decl(start, modifiers),
+            token::Type::Const => self.parse_const_decl(start, modifiers),
+            token::Type::Enum => self.parse_enum_decl(start, modifiers),
+            token::Type::Function => self.parse_function_decl(start, modifiers),
+            token::Type::Module => self.parse_module_decl(start, modifiers),
+            token::Type::Var => self.parse_var_decl(start, modifiers),
+            _ if !modifiers.is_empty() => Err(self.parse_error(format!(
+                "Unexpected token after modifiers: {:?}",
+                self.current_token
+            ))),
             token::Type::LParen
                 if matches!(
                     self.lexer.peek_token_skip_comments().1,
@@ -47,21 +30,51 @@ impl Parser<'_> {
             {
                 self.parse_annotation_decl(start)
             }
-            token::Type::Class => self.parse_class_decl(start),
-            token::Type::Const => self.parse_const_decl(start, visibility, is_static),
-            token::Type::Function => self.parse_function_decl(start, visibility, is_static),
-            token::Type::Enum => self.parse_enum_decl(start),
             token::Type::Import => self.parse_import_decl(start),
             token::Type::Using => self.parse_using_decl(start),
             token::Type::Typedef => self.parse_typedef_decl(start),
-            token::Type::Module => self.parse_module_decl(start),
-            token::Type::Var => self.parse_var_decl(start, visibility, is_static),
             token::Type::Eof => Ok(Ast::Eof),
             _ => Err(self.parse_error(format!(
                 "Unexpected token at top level: {:?}",
                 self.current_token
             ))),
         }
+    }
+
+    /// Collect the modifiers in front of a declaration. Like the compiler, each kind may only be
+    /// given once, so no modifier is ever silently overwritten.
+    fn parse_modifiers(&mut self) -> Result<Modifiers, ParserError> {
+        let mut modifiers = Modifiers::default();
+
+        loop {
+            match self.current_token {
+                token::Type::Static if modifiers.is_static() => {
+                    return Err(self.parse_error("Duplicate `static` modifier"));
+                }
+                token::Type::Static => modifiers.static_kw_start = Some(self.current_token_start),
+                _ => {
+                    let Some(visibility) = visibility_keyword(&self.current_token) else {
+                        break;
+                    };
+
+                    if modifiers.visibility.is_some() {
+                        return Err(self.parse_error("Multiple visibility modifiers specified"));
+                    }
+
+                    modifiers.visibility = Some(Spanned {
+                        span: Span {
+                            start: self.current_token_start,
+                            end: self.current_token_end,
+                        },
+                        node: visibility,
+                    });
+                }
+            }
+
+            self.next_token_span();
+        }
+
+        Ok(modifiers)
     }
 
     /// Parse a `(:Name)`, `(:Name1, :Name2, …)`, or empty `()`/`( /* … */ )` annotation at a
@@ -112,7 +125,7 @@ impl Parser<'_> {
         Ok(Ast::Annotation(entries, Span { start, end }))
     }
 
-    fn parse_class_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+    fn parse_class_decl(&mut self, start: usize, modifiers: Modifiers) -> Result<Ast, ParserError> {
         self.next_token_span();
         let name_start = self.current_token_start;
         let name_node = self.parse_identifier()?;
@@ -157,6 +170,7 @@ impl Parser<'_> {
             extends_kw_start,
             body,
             brace_start,
+            modifiers,
             span: Span {
                 start,
                 end: rbrace_end,
@@ -178,12 +192,7 @@ impl Parser<'_> {
         Ok(body)
     }
 
-    fn parse_const_decl(
-        &mut self,
-        start: usize,
-        visibility: Option<Visibility>,
-        is_static: bool,
-    ) -> Result<Ast, ParserError> {
+    fn parse_const_decl(&mut self, start: usize, modifiers: Modifiers) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `const`
         let bindings = self.parse_bindings()?;
         let semi_pos = self.current_token_start;
@@ -192,8 +201,7 @@ impl Parser<'_> {
 
         Ok(Ast::Const(ConstDecl {
             bindings,
-            visibility,
-            is_static,
+            modifiers,
             semi_pos,
             span: Span {
                 start,
@@ -205,8 +213,7 @@ impl Parser<'_> {
     fn parse_function_decl(
         &mut self,
         start: usize,
-        visibility: Option<Visibility>,
-        is_static: bool,
+        modifiers: Modifiers,
     ) -> Result<Ast, ParserError> {
         self.next_token_span();
         let name_start = self.current_token_start;
@@ -249,13 +256,12 @@ impl Parser<'_> {
             returns,
             as_kw_start,
             body,
-            visibility,
-            is_static,
+            modifiers,
             span: Span { start, end },
         }))
     }
 
-    fn parse_enum_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+    fn parse_enum_decl(&mut self, start: usize, modifiers: Modifiers) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `enum`
 
         let name = if matches!(self.current_token, token::Type::Identifier(_)) {
@@ -333,6 +339,7 @@ impl Parser<'_> {
             variants,
             trailing_comma,
             brace_start,
+            modifiers,
             span: Span { start, end },
         }))
     }
@@ -434,7 +441,11 @@ impl Parser<'_> {
         }))
     }
 
-    fn parse_module_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
+    fn parse_module_decl(
+        &mut self,
+        start: usize,
+        modifiers: Modifiers,
+    ) -> Result<Ast, ParserError> {
         self.next_token_span(); // consume `module`
         let name_start = self.current_token_start;
         let name_node = self.parse_identifier()?;
@@ -457,6 +468,7 @@ impl Parser<'_> {
             name,
             body,
             brace_start,
+            modifiers,
             span: Span {
                 start,
                 end: rbrace_end,
@@ -464,14 +476,9 @@ impl Parser<'_> {
         }))
     }
 
-    fn parse_var_decl(
-        &mut self,
-        start: usize,
-        visibility: Option<Visibility>,
-        is_static: bool,
-    ) -> Result<Ast, ParserError> {
+    fn parse_var_decl(&mut self, start: usize, modifiers: Modifiers) -> Result<Ast, ParserError> {
         self.next_token_span();
-        let mut var_decl = self.parse_var_contents(visibility, is_static)?;
+        let mut var_decl = self.parse_var_contents(modifiers)?;
         let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
@@ -528,9 +535,7 @@ impl Parser<'_> {
                 name,
                 type_,
                 as_kw_start,
-                visibility: None,
                 initializer: None,
-                is_static: false,
                 span: Span {
                     start: arg_start,
                     end: arg_end,
@@ -573,15 +578,13 @@ impl Parser<'_> {
     /// Does NOT consume a trailing semicolon — callers set the final span after consuming it.
     pub(crate) fn parse_var_contents(
         &mut self,
-        visibility: Option<Visibility>,
-        is_static: bool,
+        modifiers: Modifiers,
     ) -> Result<VarDecl, ParserError> {
         let bindings = self.parse_bindings()?;
 
         Ok(VarDecl {
             bindings,
-            visibility,
-            is_static,
+            modifiers,
             // Callers fill in the real span and semi_pos after consuming the trailing semicolon.
             semi_pos: 0,
             span: Span { start: 0, end: 0 },
@@ -645,5 +648,15 @@ impl Parser<'_> {
             assign_kw_start,
             span: Span { start, end },
         })
+    }
+}
+
+fn visibility_keyword(token: &token::Type) -> Option<Visibility> {
+    match token {
+        token::Type::Hidden => Some(Visibility::Hidden),
+        token::Type::Private => Some(Visibility::Private),
+        token::Type::Protected => Some(Visibility::Protected),
+        token::Type::Public => Some(Visibility::Public),
+        _ => None,
     }
 }

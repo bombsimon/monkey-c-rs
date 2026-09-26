@@ -17,6 +17,9 @@ says. Parentheses, number literals, types and the legacy `@` prefix are kept
 exactly as written. Changes like removing redundant parentheses are left to the
 [linter][linter], where they can be reviewed on their own.
 
+The one exception is `new Foo`, which gets an empty argument list and becomes
+`new Foo()`. It doesn't change what the code does.
+
 ## Wrapping long lines
 
 The formatter uses the [Wadler]-[Lindig] algorithm to wrap lines at a default

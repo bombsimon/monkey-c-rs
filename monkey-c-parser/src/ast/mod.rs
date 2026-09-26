@@ -38,6 +38,28 @@ pub enum Visibility {
     Public,
 }
 
+/// The visibility and `static` keywords written in front of a declaration. Both keep their source
+/// position since the compiler accepts them in either order and the formatter keeps it as written.
+#[derive(Debug, Default, PartialEq)]
+pub struct Modifiers {
+    pub visibility: Option<Spanned<Visibility>>,
+    pub static_kw_start: Option<Position>,
+}
+
+impl Modifiers {
+    pub fn visibility(&self) -> Option<&Visibility> {
+        self.visibility.as_ref().map(|visibility| &visibility.node)
+    }
+
+    pub fn is_static(&self) -> bool {
+        self.static_kw_start.is_some()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.visibility.is_none() && !self.is_static()
+    }
+}
+
 /// A half-open byte range `[start, end)` into the original source string.
 ///
 /// All offsets are global and measured from byte 0 of the file.

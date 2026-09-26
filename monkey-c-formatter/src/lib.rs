@@ -6,8 +6,8 @@ use doc::{Doc, display_width, render};
 use monkey_c_parser::ast::{
     ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr, CaseLabel, CommentStmt,
     ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant,
-    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Span, Spanned,
-    Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
+    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Modifiers, Span,
+    Spanned, Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
@@ -391,11 +391,10 @@ impl Formatter {
                 Doc::Concat(parts)
             }
             Ast::Module(decl) => {
-                let header = Doc::concat(vec![
-                    Doc::text("module "),
-                    self.at(&decl.name),
-                    Doc::text(" "),
-                ]);
+                let mut header_parts = self.decl_keyword(&decl.modifiers, "module");
+                header_parts.push(self.at(&decl.name));
+                header_parts.push(Doc::text(" "));
+                let header = Doc::concat(header_parts);
                 let before_brace = self.drain_leading_doc(decl.brace_start);
                 let after_open = self.drain_after_open_brace(decl.brace_start, decl.span.end);
                 let inner = self.decls_to_doc(&decl.body, decl.span);
@@ -421,7 +420,8 @@ impl Formatter {
                 ])
             }
             Ast::Class(decl) => {
-                let mut header_parts = vec![Doc::text("class "), self.at(&decl.name)];
+                let mut header_parts = self.decl_keyword(&decl.modifiers, "class");
+                header_parts.push(self.at(&decl.name));
                 if let Some(extends) = &decl.extends {
                     header_parts.push(Doc::text(" "));
                     header_parts.push(
@@ -605,10 +605,13 @@ impl Formatter {
     }
 
     fn enum_to_doc(&self, decl: &EnumDecl) -> Doc {
-        let prefix = match &decl.name {
-            Some(name) => Doc::concat(vec![Doc::text("enum "), self.at(name), Doc::text(" ")]),
-            None => Doc::text("enum "),
-        };
+        let mut prefix_parts = self.decl_keyword(&decl.modifiers, "enum");
+        if let Some(name) = &decl.name {
+            prefix_parts.push(self.at(name));
+            prefix_parts.push(Doc::text(" "));
+        }
+
+        let prefix = Doc::concat(prefix_parts);
 
         if decl.variants.is_empty() {
             let before_brace = self.drain_leading_doc(decl.brace_start);
@@ -723,17 +726,7 @@ impl Formatter {
     }
 
     fn function_to_doc(&self, decl: &FunctionDecl) -> Doc {
-        let mut parts: Vec<Doc> = Vec::new();
-
-        if let Some(vis) = &decl.visibility {
-            parts.push(self.visibility_to_doc(vis));
-        }
-
-        if decl.is_static {
-            parts.push(Doc::text("static "));
-        }
-
-        parts.push(Doc::text("function "));
+        let mut parts = self.decl_keyword(&decl.modifiers, "function");
         parts.push(self.at(&decl.name));
 
         let items = decl
@@ -799,8 +792,7 @@ impl Formatter {
     fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
         if var_decl.bindings.len() >= 2 {
             return self.wrapped_bindings_decl(
-                var_decl.visibility.as_ref(),
-                var_decl.is_static,
+                &var_decl.modifiers,
                 "var",
                 &var_decl.bindings,
                 var_decl.semi_pos,
@@ -816,15 +808,14 @@ impl Formatter {
     fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
         if decl.bindings.len() >= 2 {
             return self.wrapped_bindings_decl(
-                decl.visibility.as_ref(),
-                decl.is_static,
+                &decl.modifiers,
                 "const",
                 &decl.bindings,
                 decl.semi_pos,
             );
         }
 
-        let mut parts = self.decl_keyword(decl.visibility.as_ref(), decl.is_static, "const");
+        let mut parts = self.decl_keyword(&decl.modifiers, "const");
         self.push_bindings(&mut parts, &decl.bindings);
         self.push_before_semi(&mut parts, decl.semi_pos);
 
@@ -832,7 +823,7 @@ impl Formatter {
     }
 
     fn var_decl_to_doc(&self, var: &VarDecl) -> Doc {
-        let mut parts = self.decl_keyword(var.visibility.as_ref(), var.is_static, "var");
+        let mut parts = self.decl_keyword(&var.modifiers, "var");
         self.push_bindings(&mut parts, &var.bindings);
 
         Doc::Concat(parts)
@@ -840,20 +831,12 @@ impl Formatter {
 
     fn wrapped_bindings_decl(
         &self,
-        visibility: Option<&Visibility>,
-        is_static: bool,
+        modifiers: &Modifiers,
         keyword: &str,
         bindings: &[Binding],
         semi_pos: usize,
     ) -> Doc {
-        let mut parts: Vec<Doc> = Vec::new();
-        if let Some(vis) = visibility {
-            parts.push(self.visibility_to_doc(vis));
-        }
-
-        if is_static {
-            parts.push(Doc::text("static "));
-        }
+        let mut parts = self.modifiers_to_doc(modifiers);
 
         let mut indented = vec![Doc::Line];
         for (i, b) in bindings.iter().enumerate() {
@@ -874,22 +857,10 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    fn decl_keyword(
-        &self,
-        visibility: Option<&Visibility>,
-        is_static: bool,
-        keyword: &str,
-    ) -> Vec<Doc> {
-        let mut parts: Vec<Doc> = Vec::new();
-        if let Some(vis) = visibility {
-            parts.push(self.visibility_to_doc(vis));
-        }
-
-        if is_static {
-            parts.push(Doc::text("static "));
-        }
-
+    fn decl_keyword(&self, modifiers: &Modifiers, keyword: &str) -> Vec<Doc> {
+        let mut parts = self.modifiers_to_doc(modifiers);
         parts.push(Doc::text(format!("{keyword} ")));
+
         parts
     }
 
@@ -926,13 +897,28 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    fn visibility_to_doc(&self, vis: &Visibility) -> Doc {
-        Doc::text(match vis {
-            Visibility::Private => "private ",
-            Visibility::Protected => "protected ",
-            Visibility::Hidden => "hidden ",
-            Visibility::Public => "public ",
-        })
+    fn modifiers_to_doc(&self, modifiers: &Modifiers) -> Vec<Doc> {
+        let mut keywords = Vec::new();
+        if let Some(visibility) = &modifiers.visibility {
+            let keyword = match visibility.node {
+                Visibility::Private => "private ",
+                Visibility::Protected => "protected ",
+                Visibility::Hidden => "hidden ",
+                Visibility::Public => "public ",
+            };
+            keywords.push((visibility.start(), keyword));
+        }
+
+        if let Some(static_kw_start) = modifiers.static_kw_start {
+            keywords.push((static_kw_start, "static "));
+        }
+
+        keywords.sort_by_key(|(position, _)| *position);
+
+        keywords
+            .into_iter()
+            .flat_map(|(position, keyword)| [self.drain_leading_doc(position), Doc::text(keyword)])
+            .collect()
     }
 
     fn type_to_doc(&self, ty: &Type) -> Doc {
