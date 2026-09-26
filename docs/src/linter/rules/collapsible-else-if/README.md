@@ -1,41 +1,44 @@
 # `collapsible-else-if`
 
-Flags an `else` whose entire body is a single `if`, which can be written as
+Flags an `else` block that only contains an `if`, which can be written as
 `else if`.
 
-## Rationale
+## Why
 
-`else { if (…) { … } }` is the same control flow as `else if (…) { … }` with an
-extra level of braces and indentation. The `else if` form is shorter and is how
-the chain is normally written.
+`else { if (…) { … } }` behaves exactly like `else if (…) { … }`, with an extra
+level of braces and indentation.
 
-## What triggers
+## What it flags
 
-The rule fires when an `else` branch is a block containing exactly one
-statement, and that statement is an `if`. The nested `if` may keep its own
-`else` chain — it is preserved as-is:
+An `else` block whose only statement is an `if`. The inner `if` keeps its own
+`else`, if it has one.
+
+## What it leaves alone
+
+- An `else` block with a comment next to the `if`, since collapsing would lose
+  the comment.
+- An `else` block with anything besides the `if`.
+
+## Example
 
 ```monkey-c
+// Before
 if (a) {
+    first();
 } else {
     if (b) {
+        second();
     } else {
+        third();
     }
 }
-```
 
-becomes
-
-```monkey-c
+// After
 if (a) {
+    first();
 } else if (b) {
+    second();
 } else {
+    third();
 }
 ```
-
-## What does not trigger
-
-- A comment in the `else` block around the nested `if`. Collapsing would discard
-  it, so the rule backs off.
-- An `else` block with more than the single nested `if`.
-- An `else if` already written as such — there is no wrapping block to remove.

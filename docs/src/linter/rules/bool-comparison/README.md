@@ -1,64 +1,47 @@
 # `bool-comparison`
 
-Flags `==` / `!=` comparisons against a boolean literal, which can be written
-as the operand itself or its negation.
+Flags a comparison with `true` or `false`, which can be written as the value
+itself or its negation.
 
-## Rationale
+## Why
 
-Comparing a boolean expression to `true` or `false` restates what the
-expression already says. `if (ready == true)` reads as "if ready is true",
-which is just "if ready"; `if (ready == false)` is "if not ready". Dropping
-the literal removes the redundant comparison and leaves the condition saying
-exactly what it means.
+`if (ready == true)` says the same thing as `if (ready)`, and
+`if (ready == false)` the same as `if (!ready)`. The comparison only adds
+something to read past.
 
-## What triggers
+## What it flags
 
-An `==` or `!=` binary expression where exactly one side is the literal `true`
-or `false`. The literal may be on either side, so `true == ready` is treated
-the same as `ready == true`.
+An `==` or `!=` where one side is `true` or `false`, on either side:
 
-| Comparison    | Rewrite |
-| ------------- | ------- |
-| `x == true`   | `x`     |
-| `x != false`  | `x`     |
-| `x == false`  | `!x`    |
-| `x != true`   | `!x`    |
+| Comparison   | Written as |
+| ------------ | ---------- |
+| `x == true`  | `x`        |
+| `x != false` | `x`        |
+| `x == false` | `!x`       |
+| `x != true`  | `!x`       |
 
-## What does not trigger
+When the fix negates a comparison or a ternary, it adds parentheses so the `!`
+applies to all of it: `a < b == false` becomes `!(a < b)`.
 
-- Both sides literal — `true == false` is a constant with no clearer form.
-- Any operator other than `==` / `!=`; `count > 0` is left alone.
-- Expressions that don't compare against a boolean literal at all.
+## What it leaves alone
+
+- A comparison between two literals, like `true == false`.
+- Other operators, like `count > 0`.
 
 ## Example
 
-Before:
-
 ```monkey-c
-function f() {
-    if (ready == true) {
-        start();
-    }
-
-    return done != false;
+// Before
+if (ready == true) {
+    start();
 }
-```
 
-After `--fix`:
+return done != false;
 
-```monkey-c
-function f() {
-    if (ready) {
-        start();
-    }
-
-    return done;
+// After
+if (ready) {
+    start();
 }
+
+return done;
 ```
-
-## Fix
-
-The fix replaces the whole comparison with the surviving operand, copied
-verbatim from the source. When the rewrite negates an operand that is itself a
-binary or ternary expression, it is wrapped in parentheses so `!` still binds
-the whole expression — `a < b == false` becomes `!(a < b)`, not `!a < b`.

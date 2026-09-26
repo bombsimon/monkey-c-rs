@@ -1,72 +1,52 @@
 # `import-order`
 
-Flags contiguous runs of `using` / `import` declarations that aren't in
-canonical order.
+Flags `using` and `import` declarations that aren't sorted and grouped.
 
-## Rationale
+## Why
 
-A consistent import order makes files easier to scan, reduces merge conflicts,
-and groups related declarations together. Sorting alphabetically eliminates
-the need for editors to argue about placement; grouping `Toybox.*` separately
-keeps SDK imports visually distinct from project ones.
+A fixed order makes the imports easy to scan and avoids merge conflicts from
+everyone adding lines in different places. Keeping `Toybox` separate makes it
+clear what comes from the SDK and what comes from the project.
 
-## What triggers
+## What it flags
 
-The rule reports a run of `using` / `import` declarations whose order doesn't
-match the canonical form. Canonical order is four groups, each sorted
-alphabetically by the dotted path, separated by a blank line:
+Imports that don't follow this order, with each group sorted alphabetically
+and separated by a blank line:
 
 1. `using Toybox.*`
 2. `import Toybox.*`
-3. `using <other>`
-4. `import <other>`
+3. Other `using`
+4. Other `import`
 
-A declaration is `Toybox.*` when its path is exactly `Toybox` or starts with
-`Toybox.`.
+Each run of imports is checked on its own, so other code between two runs keeps
+them apart, the same way [ruff] sorts imports.
 
-## What does not trigger
+## What it leaves alone
 
-Each contiguous run of `using` / `import` is treated as its own block. A
-non-import declaration between two import blocks creates a hard boundary —
-declarations in the second block aren't pulled up to join the first. This
-matches the behaviour of [Ruff][ruff]'s import sorter.
-
-When a comment interleaves the imports (e.g., a `// section` line between two
-`using` statements) the rule only enforces *order* — blank-line placement
-around the user's comments is left alone.
+When comments are mixed in with the imports, only the order is checked, and
+there's no fix since moving the lines would separate them from their comments.
 
 ## Example
 
-Before:
-
 ```monkey-c
+// Before
 import ModuleC;
 using ModuleA;
-import Toybox.D;
-using Toybox.A;
-import Toybox.C;
-using Toybox.B as D;
-```
+import Toybox.Time;
+using Toybox.Graphics;
+import Toybox.Lang;
+using Toybox.WatchUi as Ui;
 
-After `--fix`:
+// After
+using Toybox.Graphics;
+using Toybox.WatchUi as Ui;
 
-```monkey-c
-using Toybox.A;
-using Toybox.B as D;
-
-import Toybox.C;
-import Toybox.D;
+import Toybox.Lang;
+import Toybox.Time;
 
 using ModuleA;
 
 import ModuleC;
 ```
-
-## Fix
-
-The fix replaces the entire run with the canonical text. The auto-fix is
-suppressed when a comment interleaves the imports — rearranging would lose
-the user's comment placement, so the edit is left to the user. The
-diagnostic is still reported in that case.
 
 [ruff]: https://github.com/astral-sh/ruff

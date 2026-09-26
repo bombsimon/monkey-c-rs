@@ -1,9 +1,9 @@
 # Formatter
 
-The Monkey C formatter aims to be a zero-config one-size-fits-all solution to
-ensure consistent formatting of your Monkey C code. More opinionated suggestions
-for the code is implemented in the [linter][linter]. If you're coming from
-[Prettier][prettier], see [Differences from Prettier](prettier).
+`rafiki fmt` formats Monkey C code, with close to nothing to configure. Run it
+with `--check` or `--diff` to see what would change without writing anything.
+If you're coming from [Prettier][prettier], see
+[Differences from Prettier](prettier).
 
 > [!NOTE]
 > Feedback on the formatter is appreciated, whether it's a bug, an
@@ -14,14 +14,14 @@ for the code is implemented in the [linter][linter]. If you're coming from
 
 The formatter only changes whitespace and line breaks, never what the code
 says. Parentheses, number literals, types and the legacy `@` prefix are kept
-exactly as written. Rewrites like removing redundant parentheses belong to the
-[linter][linter] and its `--fix`, so they can be reviewed on their own.
+exactly as written. Changes like removing redundant parentheses are left to the
+[linter][linter], where they can be reviewed on their own.
 
 ## Wrapping long lines
 
-The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
-default width of 111 columns. 111 is chosen because 80 is too little and 222 is
-too much. Change it with `--line-width` or `line-width` in `rafiki.toml`.
+The formatter uses the [Wadler]-[Lindig] algorithm to wrap lines at a default
+width of 111 columns. 111 is chosen because 80 is too little and 222 is too
+much. The width can be changed with the [`line-width`][line-width] setting.
 
 Anything that can wrap, such as an argument list, an array or a condition, stays
 on one line if it fits together with whatever follows it on that line.
@@ -87,8 +87,8 @@ function f(
 
 The formatter pads names so that `=>` in dictionaries and `=` in enums line up
 in a column, and does the same for trailing comments on consecutive lines. The
-intent is purely visual, to make related entries easier to scan. Disable it with
-`--no-alignment` or `alignment = false` in `rafiki.toml`.
+intent is purely visual, to make related entries easier to scan. It can be
+turned off with the [`alignment`][alignment] setting.
 
 Alignment only applies to entries that are already on separate lines, so a
 dictionary needs a [magic trailing comma](#the-magic-trailing-comma) or has to
@@ -132,6 +132,8 @@ the end of a line doesn't count toward the width either, so it never forces the
 code before it to wrap.
 
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
+[alignment]: ../configuration/settings#alignment
+[line-width]: ../configuration/settings#line-width
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [linter]: ../linter

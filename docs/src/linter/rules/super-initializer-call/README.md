@@ -1,50 +1,36 @@
 # `super-initializer-call`
 
-Flags a derived class whose `initialize` doesn't call the parent's
-`initialize`.
+Flags a class whose `initialize` doesn't call the `initialize` of the class it
+extends.
 
-## Rationale
+## Why
 
-Monkey C doesn't automatically chain to the superclass constructor when a
-subclass overrides `initialize`. A derived `initialize` that omits the
-`Parent.initialize(...)` call leaves the base object in an uninitialised
-state — a common, hard-to-debug bug that surfaces only when base-class
-fields are read.
+Monkey C doesn't call the parent's `initialize` for you when a class defines its
+own. Forgetting it leaves the parent half set up, which usually only shows when
+something reads one of its fields.
 
-## What triggers
+## What it flags
 
-The rule fires when all three hold:
+A class that extends another class, defines `initialize` and never calls the
+parent's `initialize` anywhere in it. For `extends WatchUi.View`, both
+`View.initialize()` and `WatchUi.View.initialize()` count.
 
-1. The class declares `extends Base`.
-2. The class body defines its own `initialize` function.
-3. No call to `Base.initialize(...)` appears anywhere in that function
-   body, including inside `if` / `else` branches and nested blocks.
+## What it leaves alone
 
-For a dotted parent (`extends WatchUi.View`), the rule accepts a call to
-the last segment (`View.initialize(...)`) or any qualified form
-(`WatchUi.View.initialize(...)`).
-
-## What does not trigger
-
-- A class with no `extends` clause.
-- A derived class that doesn't override `initialize` — Monkey C's implicit
-  no-op constructor still chains.
+- Classes that don't extend another class.
+- Classes that don't define `initialize`, since the parent's is then used.
 
 ## Example
 
-Before:
-
 ```monkey-c
+// Before
 class MyView extends WatchUi.View {
     function initialize() {
         _state = 0;
     }
 }
-```
 
-After fixing manually:
-
-```monkey-c
+// After fixing it by hand
 class MyView extends WatchUi.View {
     function initialize() {
         View.initialize();
@@ -53,5 +39,4 @@ class MyView extends WatchUi.View {
 }
 ```
 
-No auto-fix — the rule can't know which arguments to pass to the parent
-initializer.
+There's no fix, since the rule can't know what to pass to the parent.

@@ -1,40 +1,22 @@
 # `redundant-resource-ref`
 
-Flags the legacy `@` prefix on resource references.
+Flags the legacy `@` before a resource reference.
 
-## Rationale
+## Why
 
-`@Rez.Strings.foo` and `Rez.Strings.foo` compile to the same thing — the `@`
-is a vestigial marker from older Monkey C syntax. Dropping it removes noise
-without changing behavior.
+`@Rez.Strings.AppName` and `Rez.Strings.AppName` compile to the same thing. The
+`@` is left over from older versions of Monkey C.
 
-## What triggers
+## What it flags
 
-Any expression of the form `@<resource reference>`, e.g.:
-
-```monkey-c
-dc.drawText(@Rez.Strings.AppName);
-```
+Any resource reference written with `@`.
 
 ## Example
 
-Before:
-
 ```monkey-c
-function onLayout(dc as Dc) as Void {
-    dc.drawText(@Rez.Strings.AppName);
-}
+// Before
+label.setText(@Rez.Strings.Title);
+
+// After
+label.setText(Rez.Strings.Title);
 ```
-
-After `--fix`:
-
-```monkey-c
-function onLayout(dc as Dc) as Void {
-    dc.drawText(Rez.Strings.AppName);
-}
-```
-
-## Fix
-
-The fix replaces the `@`-prefixed expression with the underlying resource
-reference, dropping the `@`.

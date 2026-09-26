@@ -1,24 +1,26 @@
-# Parser
+# Parser library
 
-The `monkey-c-parser` is the core that allows us to work with Monkey C at a
-higher level of abstraction — an [Abstract Syntax Tree][ast].
+`monkey-c-parser` turns Monkey C source into an [abstract syntax tree][ast]. The
+formatter, linter and language server are all built on it, and it can be used on
+its own to build other tools.
 
-Heavily inspired (and motivated) by the work on [astral-sh/ruff][ruff], which
-has the AST used by [RustPython] and an extremely fast formatter and linter.
+```rust,ignore
+use monkey_c_parser::parser::Parser;
 
-## Language Specification
+let output = Parser::new("function f() { return 1; }").parse()?;
 
-The [Garmin Connect IQ][connect-iq] SDK does a decent job documenting the
-[Monkey C language][monkey-c-doc] and has a [language
-specification][monkey-c-language-reference] that the parser is based on.
+// The syntax tree, and the comments kept in a separate table.
+println!("{:#?}", output.ast);
+println!("{:#?}", output.comments);
+```
 
-Although not used in the parser, they also have [API docs][api-docs] documenting
-the standard library.
+Comments aren't part of the tree itself. They're kept in their own table with
+their positions, so tools that don't care about them can ignore them, and the
+formatter can put each one back where it belongs.
 
-[RustPython]: https://github.com/RustPython/RustPython
-[api-docs]: https://developer.garmin.com/connect-iq/api-docs/
+The parser follows Garmin's [Monkey C reference][monkey-c-language-reference].
+Its design is based on the parser in [ruff].
+
 [ast]: https://en.wikipedia.org/wiki/Abstract_syntax_tree
-[connect-iq]: https://developer.garmin.com/connect-iq/overview
-[monkey-c-doc]: https://developer.garmin.com/connect-iq/monkey-c
 [monkey-c-language-reference]: https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference
 [ruff]: https://github.com/astral-sh/ruff
