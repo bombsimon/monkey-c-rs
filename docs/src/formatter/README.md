@@ -15,6 +15,22 @@ The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
 default width of 111 columns. 111 is chosen because 80 is too little and 222 is
 too much.
 
+## Method chains
+
+A chain of calls that does not fit on one line is broken before each `.call()`,
+one per indented line, the way [Prettier][prettier] lays them out:
+
+```monkey-c
+var min = timeString
+    .substring(hourpos + 1, timeString.length())
+    .toNumber();
+```
+
+A chain with a single call, such as `dateString.substring(...)`, breaks inside
+its arguments instead. When the chain starts from a module, class or `me`, like
+`View.findDrawableById("id").setText(...)`, the first call counts as part of
+the start of the chain and stays on its line as long as it fits there.
+
 ## The magic trailing comma
 
 The formatter uses the same magic trailing comma as [ruff] to determine
@@ -162,4 +178,5 @@ break the run and stay as-is.
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [linter]: ../linter
+[prettier]: https://prettier.io
 [ruff]: https://github.com/astral-sh/ruff

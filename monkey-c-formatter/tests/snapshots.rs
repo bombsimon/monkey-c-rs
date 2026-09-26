@@ -97,6 +97,60 @@ var id = 1; // id
 }
 
 #[test]
+fn member_chain_breaks_one_call_per_line() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    var min = timeString.substring(hourpos + 1, timeString.length()).toNumber();
+    days = currentmoment.subtract(matchdatemoment).value().toLong().format("%d");
+    var fits = a.b().c().d();
+}
+"#
+        .trim(),
+        60
+    ));
+}
+
+#[test]
+fn member_chain_with_one_call_breaks_its_arguments() {
+    insta::assert_snapshot!(format_width(
+        "function f() { var monthString = dateString.substring(yearpos + 1, dateString.length()); }",
+        60
+    ));
+}
+
+#[test]
+fn member_chain_keeps_first_call_on_module_head() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    View.findDrawableById("LBL_MATCH_DAY").setText(Lang.format("$1$", [year]));
+    return Toybox.ActivityMonitor.getHeartRateHistory(1, true).next().heartRate.toString();
+    me.getItems(filter).first().name.toUpperCase();
+}
+"#
+        .trim(),
+        60
+    ));
+}
+
+#[test]
+fn member_chain_with_comments_keeps_regular_layout() {
+    insta::assert_snapshot!(format_width(
+        r#"
+function f() {
+    var min = timeString.substring(
+        hourpos + 1, // start
+        timeString.length()
+    ).toNumber();
+}
+"#
+        .trim(),
+        60
+    ));
+}
+
+#[test]
 fn empty_class() {
     insta::assert_snapshot!(format("class Foo {}"));
 }

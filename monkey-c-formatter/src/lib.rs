@@ -3,10 +3,11 @@ mod operators;
 
 use doc::{Doc, display_width, render};
 use monkey_c_parser::ast::{
-    ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CaseLabel, CommentStmt, ConstDecl,
-    DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant, Expr,
-    FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Span, Spanned, Stmt,
-    SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
+    ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr, CaseLabel, CommentStmt,
+    ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant,
+    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, IndexExpr, InterfaceMember, LiteralValue,
+    MemberExpr, Span, Spanned, Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl,
+    Visibility,
 };
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
@@ -1961,40 +1962,13 @@ impl Formatter {
                 self.expr_with_leading(&e.value),
             ]),
             Expr::Call(e) => {
-                // Only capture comments between `(` and the first argument as after-open.
-                // Comments inside an argument expression (e.g. `x - /* C */ 1`) must not
-                // be stolen here — they belong to the sub-expression's drain_leading_doc.
-                let first_arg_start = e
-                    .args
-                    .first()
-                    .map(|a| a.value.span().start)
-                    .unwrap_or(e.span.end);
-                let callee = self.expr_with_leading(&e.callee);
-
-                if let Some(args) = self.hugged_sole_collection(
-                    &e.args,
-                    e.args_trailing_comma,
-                    e.args_open,
-                    e.span.end,
-                ) {
-                    return Doc::concat(vec![callee, args]);
+                if let Some(chain) = self.member_chain_to_doc(expr) {
+                    return chain;
                 }
 
-                let after_open_force_newline =
-                    self.after_open_has_line_comment(e.args_open, first_arg_start);
-                let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
-                Doc::concat(vec![
-                    callee,
-                    self.format_list(
-                        "(",
-                        ")",
-                        self.call_args_to_items(&e.args, e.span.end),
-                        &[],
-                        e.args_trailing_comma,
-                        after_open,
-                        after_open_force_newline,
-                    ),
-                ])
+                let callee = self.expr_with_leading(&e.callee);
+
+                Doc::concat(vec![callee, self.call_arguments_to_doc(e)])
             }
             Expr::Member(e) => Doc::concat(vec![
                 self.expr_with_leading(&e.object),
@@ -2154,6 +2128,113 @@ impl Formatter {
             self.expr_inner_to_doc(&argument.value),
             Doc::text(")"),
         ]))
+    }
+
+    /// Lay out a call chain such as `a.b(x).c()` with each `.name(…)` group on its own indented
+    /// line when the chain does not fit, following Prettier's member-chain rules. `None` leaves
+    /// short chains to the regular layout, which breaks inside the last call's arguments instead.
+    /// See <https://github.com/prettier/prettier/blob/main/src/language-js/print/member-chain.js>.
+    fn member_chain_to_doc(&self, expr: &Expr) -> Option<Doc> {
+        // A comment between links has no stable place once the links move between lines.
+        if self.has_comments_in(*expr.span()) {
+            return None;
+        }
+
+        let (head, links) = flatten_chain(expr);
+        let (head_links, groups) = group_chain_links(&links);
+        let first_call_stays_with_head = !groups.is_empty() && is_factory_like(head, head_links);
+
+        // A chain with a single call after its head reads fine broken inside its arguments.
+        let max_unbroken_groups = if first_call_stays_with_head { 2 } else { 1 };
+        if groups.len() <= max_unbroken_groups {
+            return None;
+        }
+
+        let mut head_parts = vec![self.expr_with_leading(head)];
+        head_parts.extend(head_links.iter().map(|link| self.chain_link_to_doc(link)));
+        let head_doc = Doc::Concat(head_parts);
+
+        let group_docs: Vec<Doc> = groups
+            .iter()
+            .map(|group| {
+                Doc::Concat(
+                    group
+                        .iter()
+                        .map(|link| self.chain_link_to_doc(link))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let one_line = Doc::Concat([vec![head_doc.clone()], group_docs.clone()].concat());
+
+        let indent_groups = |groups: &[Doc]| {
+            Doc::Indent(
+                groups
+                    .iter()
+                    .flat_map(|group| [Doc::HardLine, group.clone()])
+                    .collect(),
+            )
+        };
+
+        let expanded = if first_call_stays_with_head {
+            // Keep the first call on the head's line only when it fits there whole. Otherwise
+            // its arguments would break and leave the rest of the chain dangling after `)`.
+            let (first, rest) = group_docs.split_at(1);
+            let head_with_first_call = Doc::group(vec![Doc::flat_or_break(
+                Doc::concat(vec![head_doc.clone(), first[0].clone()]),
+                Doc::concat(vec![head_doc, indent_groups(first)]),
+            )]);
+
+            Doc::concat(vec![head_with_first_call, indent_groups(rest)])
+        } else {
+            Doc::concat(vec![head_doc, indent_groups(&group_docs)])
+        };
+
+        Some(Doc::group(vec![Doc::flat_or_break(one_line, expanded)]))
+    }
+
+    fn chain_link_to_doc(&self, link: &ChainLink) -> Doc {
+        match link {
+            ChainLink::Member(e) => Doc::text(format!(".{}", e.property)),
+            ChainLink::Call(e) => self.call_arguments_to_doc(e),
+            ChainLink::Index(e) => Doc::concat(vec![
+                Doc::text("["),
+                self.expr_with_leading(&e.index),
+                Doc::text("]"),
+            ]),
+        }
+    }
+
+    /// The `(…)` part of a call.
+    fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
+        if let Some(args) =
+            self.hugged_sole_collection(&e.args, e.args_trailing_comma, e.args_open, e.span.end)
+        {
+            return args;
+        }
+
+        // Only capture comments between `(` and the first argument as after-open.
+        // Comments inside an argument expression (e.g. `x - /* C */ 1`) must not
+        // be stolen here — they belong to the sub-expression's drain_leading_doc.
+        let first_arg_start = e
+            .args
+            .first()
+            .map(|a| a.value.span().start)
+            .unwrap_or(e.span.end);
+        let after_open_force_newline =
+            self.after_open_has_line_comment(e.args_open, first_arg_start);
+        let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
+
+        self.format_list(
+            "(",
+            ")",
+            self.call_args_to_items(&e.args, e.span.end),
+            &[],
+            e.args_trailing_comma,
+            after_open,
+            after_open_force_newline,
+        )
     }
 
     fn call_args_to_items(&self, args: &[CallArg], args_close: usize) -> Vec<ListItem> {
@@ -2686,6 +2767,103 @@ fn collect_binary_chain<'a>(
     }
 
     operands.push(expr);
+}
+
+/// One postfix step of a call chain, applied to everything before it.
+enum ChainLink<'a> {
+    Member(&'a MemberExpr),
+    Call(&'a CallExpr),
+    Index(&'a IndexExpr),
+}
+
+/// Split `expr` into the innermost expression that is not a member access, call or index, and
+/// the links applied to it in source order.
+fn flatten_chain(expr: &Expr) -> (&Expr, Vec<ChainLink<'_>>) {
+    let mut links = Vec::new();
+    let mut current = expr;
+
+    loop {
+        match current {
+            Expr::Call(e) => {
+                links.push(ChainLink::Call(e));
+                current = &e.callee;
+            }
+            Expr::Member(e) => {
+                links.push(ChainLink::Member(e));
+                current = &e.object;
+            }
+            Expr::Index(e) => {
+                links.push(ChainLink::Index(e));
+                current = &e.object;
+            }
+            _ => break,
+        }
+    }
+
+    links.reverse();
+
+    (current, links)
+}
+
+/// Split chain links into those that stay with the head and the `.name(…)` groups after it.
+///
+/// The head keeps calls and indexes applied directly to it (`f()[0]`) and the property accesses
+/// leading up to the first called member, so `Toybox.ActivityMonitor.getInfo()` keeps
+/// `Toybox.ActivityMonitor` together. After that a new group starts at every member access that
+/// follows a call.
+fn group_chain_links<'a, 'b>(
+    links: &'b [ChainLink<'a>],
+) -> (&'b [ChainLink<'a>], Vec<&'b [ChainLink<'a>]>) {
+    let is_member = |link: &ChainLink| matches!(link, ChainLink::Member(_));
+
+    let mut head_len = links.iter().take_while(|link| !is_member(link)).count();
+    while head_len + 1 < links.len()
+        && is_member(&links[head_len])
+        && is_member(&links[head_len + 1])
+    {
+        head_len += 1;
+    }
+
+    let (head_links, rest) = links.split_at(head_len);
+
+    let mut groups = Vec::new();
+    let mut group_start = 0;
+    let mut seen_call = false;
+
+    for (i, link) in rest.iter().enumerate() {
+        if seen_call && is_member(link) {
+            groups.push(&rest[group_start..i]);
+            group_start = i;
+            seen_call = false;
+        }
+
+        if matches!(link, ChainLink::Call(_)) {
+            seen_call = true;
+        }
+    }
+
+    if group_start < rest.len() {
+        groups.push(&rest[group_start..]);
+    }
+
+    (head_links, groups)
+}
+
+/// Whether the chain's head names a module, class or `me`, which reads as the subject of the
+/// chain, e.g. `View.findDrawableById("id")`. Such a head keeps its first call on its line.
+fn is_factory_like(head: &Expr, head_links: &[ChainLink]) -> bool {
+    let is_factory_name =
+        |name: &str| name.starts_with(char::is_uppercase) || name.chars().all(|c| c == '_');
+
+    match head_links.last() {
+        None => match head {
+            Expr::Me(_) | Expr::Self_(_) | Expr::Bling(_) => true,
+            Expr::Ident(e) => is_factory_name(&e.name),
+            _ => false,
+        },
+        Some(ChainLink::Member(e)) => is_factory_name(&e.property),
+        Some(_) => false,
+    }
 }
 
 fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {

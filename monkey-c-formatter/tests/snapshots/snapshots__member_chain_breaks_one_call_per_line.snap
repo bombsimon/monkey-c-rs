@@ -1,0 +1,15 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(r#\"\nfunction f() {\n    var min = timeString.substring(hourpos + 1, timeString.length()).toNumber();\n    days = currentmoment.subtract(matchdatemoment).value().toLong().format(\"%d\");\n    var fits = a.b().c().d();\n}\n\"#.trim(),\n60)"
+---
+function f() {
+    var min = timeString
+        .substring(hourpos + 1, timeString.length())
+        .toNumber();
+    days = currentmoment
+        .subtract(matchdatemoment)
+        .value()
+        .toLong()
+        .format("%d");
+    var fits = a.b().c().d();
+}

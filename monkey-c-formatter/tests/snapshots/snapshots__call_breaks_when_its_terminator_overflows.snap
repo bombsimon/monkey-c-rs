@@ -7,10 +7,9 @@ function f() {
         var monthformat = WatchUi.loadResource(
             Rez.Strings.Default_Format_Month
         );
-        var day = monthString.substring(
-            monthpos + 1,
-            monthString.length()
-        ).toNumber();
+        var day = monthString
+            .substring(monthpos + 1, monthString.length())
+            .toNumber();
         var fits = WatchUi.loadResource(Rez.Strings.Month); // trailing comments are not measured
     }
 }

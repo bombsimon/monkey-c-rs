@@ -1,0 +1,10 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"function f() { var monthString = dateString.substring(yearpos + 1, dateString.length()); }\",\n60)"
+---
+function f() {
+    var monthString = dateString.substring(
+        yearpos + 1,
+        dateString.length()
+    );
+}

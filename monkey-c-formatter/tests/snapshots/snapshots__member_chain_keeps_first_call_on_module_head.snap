@@ -1,0 +1,14 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(r#\"\nfunction f() {\n    View.findDrawableById(\"LBL_MATCH_DAY\").setText(Lang.format(\"$1$\", [year]));\n    return Toybox.ActivityMonitor.getHeartRateHistory(1, true).next().heartRate.toString();\n    me.getItems(filter).first().name.toUpperCase();\n}\n\"#.trim(),\n60)"
+---
+function f() {
+    View.findDrawableById("LBL_MATCH_DAY").setText(
+        Lang.format("$1$", [year])
+    );
+    return Toybox.ActivityMonitor
+        .getHeartRateHistory(1, true)
+        .next()
+        .heartRate.toString();
+    me.getItems(filter).first().name.toUpperCase();
+}
