@@ -1,163 +1,65 @@
-# Coverage
+# Test coverage
 
-`rafiki coverage` measures function-level test coverage for Monkey C by
-rewriting the source before compilation — Connect IQ has no native coverage
-support to hook into.
+The Connect IQ SDK can run unit tests but can't tell you what they cover.
+`rafiki coverage` adds that by recording which functions run during your tests.
 
 > [!NOTE]
-> Coverage is **function-level only**. It answers "which functions never ran
-> under the test suite", not which lines or branches did — a fully executed
-> 200-line function counts the same as a one-line one.
+> Coverage is per function. A function counts as covered as soon as it runs,
+> however much of it runs.
 
-## Usage
+## Run it
 
-`test` runs the whole pipeline — instrument, compile, run under the
-simulator, and report — in one step, using the paths `instrument` already
-decided instead of asking you to retype them:
+With the simulator running and `monkeyc` and `monkeydo` from the SDK on your
+`PATH`, run this from anywhere in the project:
 
 ```sh
-rafiki coverage test -d <device> -y key
+rafiki coverage test -d fr965 -y developer_key.der
 ```
 
-That needs `monkeyc` and `monkeydo` on `PATH`, and the simulator already
-running. `monkeyc`'s and `monkeydo`'s own output stays out of the way on a
-clean run — `test` prints the instrument summary, monkeydo's own one-line
-verdict (`PASSED (passed=1, failed=0, errors=0)`), and the coverage table,
-nothing more (`COVHIT` lines are always stripped from anything printed,
-whichever branch below it takes). The full raw output only shows up once
-something looks wrong, and what happens next depends on what "wrong" means:
+It builds the tests, runs them in the simulator and prints how many functions
+in each file ran, along with the ones that didn't:
 
-- A non-zero `monkeyc` exit, or a `monkeydo` run that produced no coverage
-  hits at all (even after a `--start-simulator` retry): `test` stops right
-  there and exits non-zero. No coverage table — the build never ran, so a
-  "0/N covered" table would misrepresent that as a real (if terrible)
-  result rather than a broken pipeline.
-- A `monkeydo` run whose verdict line reports a failed or errored test
-  (`FAILED (passed=0, failed=0, errors=1)`): `test` still exits non-zero,
-  but the coverage table is still printed afterwards, since the code did
-  run and that data is still meaningful.
+```text
+╭─────────────────────┬─────────┬──────────────────╮
+│ FILE                ┆ COVERED ┆ MISSED           │
+╞═════════════════════╪═════════╪══════════════════╡
+│ source/ClockView.mc ┆ 2/3     ┆ ClockView.onHide │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ source/Format.mc    ┆ 1/2     ┆ formatDate       │
+╰─────────────────────┴─────────┴──────────────────╯
 
-None of this reads `monkeydo`'s own exit status — it isn't a reliable
-pass/fail signal on its own (a run with a real failing test can still exit
-zero, and a fully passing one can still exit non-zero) — `test` reads the
-same verdict line and coverage hits the human-readable output already
-shows.
-
-Add `--start-simulator` to have it launch the simulator itself (via
-`connectiq`, installed alongside `monkeyc`/`monkeydo`) if the first
-`monkeydo` attempt comes back with no coverage hits, and retry once:
-
-```sh
-rafiki coverage test -d <device> -y key --start-simulator
+TOTAL 3/5 functions executed (60%)
 ```
 
-`--start-simulator` is opt-in rather than default because `connectiq` brings
-an already-running simulator's window to the front, which is only wanted
-when `monkeydo` actually needed it. Pass `--dry-run` to print the
-`monkeyc`/`monkeydo` commands `test` would run without running them.
+The command fails when the build fails or a test fails. A failing test still
+prints the table, since the code did run.
 
-### Running the steps by hand
+A few flags are useful here:
 
-`test` is a convenience wrapper; each step also works standalone, e.g. for CI
-or to debug one stage at a time:
+- `--start-simulator` starts the simulator if it isn't running.
+- `--out-format lcov --out coverage.info` writes an LCOV report for tools like
+  `genhtml`, Codecov or the VS Code Coverage Gutters extension.
+- `--dry-run` prints the `monkeyc` and `monkeydo` commands instead of running
+  them.
+- Anything after `--` is passed on to `monkeyc`, like `-- -O 3`.
+
+Run `rafiki coverage test --help` for the full list.
+
+## What's left out
+
+Functions annotated with `(:test)` or `(:release)` aren't counted, since test
+code shouldn't cover itself and tests don't run release builds. Skip more
+annotations with `--exclude-annotation`.
+
+## Run each step yourself
+
+`test` is a shortcut for three steps, which you can also run one at a time, for
+example in CI:
 
 ```sh
 rafiki coverage instrument
-monkeyc -f bin/coverage/coverage.jungle -d <device> -o bin/coverage/cov.prg -y key --unit-test
-monkeydo bin/coverage/cov.prg <device> -t | rafiki coverage report -
+monkeyc -f bin/coverage/coverage.jungle -d fr965 -o bin/coverage/cov.prg -y developer_key.der --unit-test
+monkeydo bin/coverage/cov.prg fr965 -t | rafiki coverage report -
 ```
 
-> [!NOTE]
-> The simulator needs to be running when executing `monkeydo`.
-
-To keep the raw simulator output around, capture it to a file instead of
-piping it straight into `report`:
-
-```sh
-monkeydo bin/coverage/cov.prg <device> -t | tee bin/coverage/run.log
-rafiki coverage report bin/coverage/run.log
-```
-
-## How it works
-
-1. `instrument` parses every source file, splices a probe
-   (`AutoGeneratedCov.hit(N)`) after each function's opening brace, and
-   writes the rewritten sources — byte-identical apart from the probes —
-   plus a generated `AutoGeneratedCov.mc` runtime and a
-   `coverage-manifest.tsv` into the output directory. It also copies the
-   project's jungle file to `coverage.jungle`, rewritten to build from there
-   (see below).
-2. Compiling that output directory with `monkeyc --unit-test` and running it
-   with `monkeydo -t` prints one `COVHIT <id>` line the first time each probe
-   executes.
-3. `report` joins that log against the manifest and prints per-file
-   coverage, listing every function that never ran.
-
-Declarations annotated with `(:test)` or `(:release)` are always skipped —
-test code doesn't get to count itself, and unit tests run in debug mode
-regardless of `(:release)`. `--exclude-annotation` adds more names to skip,
-e.g. ones a jungle sets via `excludeAnnotations`.
-
-Everything anchors to the project root — the nearest ancestor holding
-`manifest.xml` — so `instrument` can run from any subdirectory of the
-project and still cover the whole thing, and so files that share a name in
-different directories never collide in the output.
-
-## The generated `coverage.jungle`
-
-The copied jungle needs two edits to build correctly from its new home in
-the output directory:
-
-- `project.manifest` is repointed at the real `manifest.xml`, since it isn't
-  mirrored into the output directory the way `.mc` sources are.
-- Every `sourcePath` gains a `.` entry, if it doesn't already have one, so
-  `monkeyc` also picks up `AutoGeneratedCov.mc`, which sits directly in the
-  output directory rather than mirrored under it.
-
-`resourcePath` entries are copied as-is and not rebased, so a project with
-resources currently needs to fix those up by hand.
-
-## Flags
-
-### `instrument`
-
-| Flag                   | Default                | Meaning                                                                                      |
-| ---------------------- | ---------------------- | -------------------------------------------------------------------------------------------- |
-| `[FILES]...`           | whole project          | Files or directories to instrument.                                                          |
-| `--out`                | `{root}/bin/coverage`  | Output directory; cleared on every run.                                                      |
-| `--jungle`             | `{root}/monkey.jungle` | Jungle file to copy into `coverage.jungle`.                                                  |
-| `--exclude-annotation` | none                   | Extra annotations to skip, comma-separated or repeated. `test`/`release` are always skipped. |
-
-### `report`
-
-| Argument       | Default               | Meaning                                                                                                                          |
-| -------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `<LOG>`        | required              | Captured simulator log; `-` reads it from stdin.                                                                                 |
-| `--dir`        | `{root}/bin/coverage` | Directory holding `coverage-manifest.tsv`.                                                                                       |
-| `--out-format` | `text`                | `text` for a human-readable table, or `lcov` for an LCOV `.info` file (`genhtml`, VS Code Coverage Gutters, Codecov, Coveralls). |
-| `--out`        | stdout                | Write the report here instead of stdout.                                                                                         |
-
-The simulator may reinitialize module state between unit tests, so probe ids
-can repeat in the log; `report` deduplicates while joining. Only lines that
-are exactly `COVHIT <id>` are counted — anything else the simulator
-interleaves is ignored.
-
-### `test`
-
-Takes `instrument`'s `[FILES]...`, `--exclude-annotation` and `--jungle`
-flags, plus `report`'s `--out-format`/`--out` for the report it produces at
-the end. `--out` on `instrument` and `--instrument-out` here both mean the
-instrumentation output directory — they're just named differently since
-`test` also needs `--out` for the report path.
-
-| Flag                    | Default               | Meaning                                                                           |
-| ----------------------- | --------------------- | --------------------------------------------------------------------------------- |
-| `-d`, `--device`        | required              | Device to build and run for, e.g. `fr965`. Passed to `monkeyc -d` and `monkeydo`. |
-| `-y`, `--key`           | required              | Developer key. Passed to `monkeyc -y`.                                            |
-| `--instrument-out`      | `{root}/bin/coverage` | Instrumentation output directory (same as `instrument`'s `--out`).                |
-| `--out-format`          | `text`                | `text` for a human-readable table, or `lcov` for an LCOV `.info` file.            |
-| `--out`                 | stdout                | Write the coverage report here instead of stdout.                                 |
-| `--start-simulator`     | off                   | Launch `connectiq` and retry once if the first `monkeydo` attempt has no hits.    |
-| `--simulator-boot-time` | `5`                   | Seconds to wait after launching the simulator before retrying.                    |
-| `--dry-run`             | off                   | Print the `monkeyc`/`monkeydo` commands instead of running them.                  |
-| `-- <MONKEYC_ARGS>...`  | none                  | Extra arguments forwarded to `monkeyc` verbatim, e.g. `-- -O 3 -w`.               |
+[How it works](how-it-works) explains what each step does.

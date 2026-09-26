@@ -1,97 +1,61 @@
 # `compound-assignment`
 
-Flags `<lvalue> = <lvalue> <op> <expr>` patterns that can be written with a
-compound assignment operator or `++` / `--`.
+Flags an assignment like `x = x + n` that can use a compound operator like
+`x += n`, or `x++` and `x--`.
 
-## Rationale
+## Why
 
-A self-referential assignment carries a small amount of duplication: the
-target appears twice on the same line, and a reader has to confirm that the
-left and right occurrences are the same identifier before they can read the
-expression as "update `x`". The compound form removes that duplication and
-makes intent immediately obvious.
+In `x = x + 1` the reader has to check that both sides really are the same `x`
+before they can read it as "increase `x`". `x++` says that directly.
 
-## What triggers
+## What it flags
 
-The rule reports any assignment whose left- and right-hand sides reference
-the same writable location:
+An assignment where the right side starts with the same target as the left,
+followed by an operator that has a compound form. The target can be a variable,
+a member like `obj.x` or an index like `arr[i]`, and they can be nested.
 
-```text
-<target> = <target> <op> <expr>
-```
+| Written as      | Becomes     |
+| --------------- | ----------- |
+| `x = x + 1`     | `x++`       |
+| `x = x - 1`     | `x--`       |
+| `x = x + n`     | `x += n`    |
+| `x = x - n`     | `x -= n`    |
+| `x = x * n`     | `x *= n`    |
+| `x = x / n`     | `x /= n`    |
+| `x = x % n`     | `x %= n`    |
+| `x = x & n`     | `x &= n`    |
+| `x = x \| n`    | `x \|= n`   |
+| `x = x ^ n`     | `x ^= n`    |
+| `x = x << n`    | `x <<= n`   |
+| `x = x >> n`    | `x >>= n`   |
 
-`<target>` may be an identifier (`x`), a member access (`obj.x`), or an
-index access (`arr[i]`) — and may nest, so `obj.a.b` and `grid[row][col]`
-both qualify. The two occurrences must be structurally identical, and
-`<op>` must have a compound form:
+## What it leaves alone
 
-| Binary op | Compound | Special case for literal `1` |
-| --------- | -------- | ---------------------------- |
-| `+`       | `+=`     | `x++`                        |
-| `-`       | `-=`     | `x--`                        |
-| `*`       | `*=`     | —                            |
-| `/`       | `/=`     | —                            |
-| `%`       | `%=`     | —                            |
-| `&`       | `&=`     | —                            |
-| `\|`      | `\|=`    | —                            |
-| `^`       | `^=`     | —                            |
-| `<<`      | `<<=`    | —                            |
-| `>>`      | `>>=`    | —                            |
-
-## What does not trigger
-
-The rule skips any case where the rewrite could change observable behavior
-or where the two sides aren't actually the same location:
-
-- Targets whose receiver or index isn't side-effect-free —
-  `arr[next()] = arr[next()] + 1` would call `next()` once after the
-  rewrite instead of twice, and `arr[i++] = arr[i++] + 1` similarly
-  changes how many times `i` gets bumped.
-- Commutative variants where the target appears on the right —
-  `x = 1 + x` is semantically `x += 1`, but the binary's left operand
-  isn't `x`, so the rule leaves it alone.
-- Mismatched targets — `obj.x = obj2.x + 1` or `obj.x = obj.y + 1`.
-- Already-compound assignments — `x += 1`, `x *= n`, etc.
-- Operators without a compound form — `==`, `<`, `&&`, …
+- Targets where rewriting changes how often something runs, like
+  `arr[next()] = arr[next()] + 1`.
+- The target on the right of the operator, like `x = 1 + x`.
+- Different targets on each side, like `obj.x = obj.y + 1`.
 
 ## Example
 
-Before:
-
 ```monkey-c
-function f() {
-    x = x + 1;
-    x = x - 1;
-    x = x + 3;
-    x = x * n;
-    obj.x = obj.x + 1;
-    arr[i] = arr[i] * 2;
+// Before
+x = x + 1;
+x = x * n;
+obj.count = obj.count + 3;
+arr[i] = arr[i] * 2;
 
-    for (i = 0; i < 10; i = i + 1) {
-        doStuff();
-    }
+for (i = 0; i < 10; i = i + 1) {
+    process(i);
+}
+
+// After
+x++;
+x *= n;
+obj.count += 3;
+arr[i] *= 2;
+
+for (i = 0; i < 10; i++) {
+    process(i);
 }
 ```
-
-After `--fix`:
-
-```monkey-c
-function f() {
-    x++;
-    x--;
-    x += 3;
-    x *= n;
-    obj.x++;
-    arr[i] *= 2;
-
-    for (i = 0; i < 10; i++) {
-        doStuff();
-    }
-}
-```
-
-## Fix
-
-The fix replaces the entire assignment expression with the compound form.
-The right-hand side is copied verbatim from the source, so any inline
-comments and whitespace inside the RHS are preserved.

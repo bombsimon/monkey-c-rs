@@ -1,11 +1,8 @@
 # Configuration
 
-A project can pin its settings in a `rafiki.toml`. Both the [CLI](../cli/README.md)
-and the [language server](../lsp/README.md) read it, so a file formatted from an
-editor comes out exactly as `rafiki fmt` would write it.
-
-Every key is optional. Setting none of them is the same as having no file at all,
-and the defaults are what the tools use with no configuration anywhere.
+Settings live in a `rafiki.toml` at the root of your project. Every setting is
+optional, and a project without the file uses the defaults. The available
+settings are listed under [Settings](settings).
 
 ```toml
 [format]
@@ -13,99 +10,50 @@ line-width = 111
 alignment = true
 
 [lint]
-enable = []
 disable = ["one-class-per-file"]
 
 [files]
 exclude = ["bin/**", "vendor/**"]
-respect-gitignore = true
 ```
 
-## Discovery
+## Where it's read from
 
-The nearest `rafiki.toml` at or above the first path on the command line is used,
-so `rafiki fmt src/Foo.mc` picks up the project's settings from anywhere inside
-it. The language server walks up from the workspace root the editor reports.
+`rafiki` uses the nearest `rafiki.toml` in or above the first path you pass it,
+so it finds the project's settings from anywhere inside the project. The
+language server looks from the root of the workspace your editor opens.
 
-Two flags override discovery:
+To use a specific file, or none at all:
 
 ```sh
-rafiki fmt --config path/to/rafiki.toml   # use this file
-rafiki fmt --no-config                    # use the built-in defaults
+rafiki fmt --config path/to/rafiki.toml
+rafiki fmt --no-config
 ```
 
-## Precedence
+## What takes precedence
 
-Three layers, each overriding the one before it:
+A setting can come from three places, and each one overrides the one before it:
 
-1. The built-in defaults.
+1. The default.
 2. `rafiki.toml`.
-3. The explicit request — a CLI flag, or the language server client's
-   `initializationOptions`.
+3. A flag on the command line, or an option sent by your editor.
 
-Only keys that are actually set overlay, so `--line-width 80` changes the width
-and leaves everything else as the file had it. For lists, a flag replaces the
-file's list rather than extending it, so `--disable naming-convention` gives
-exactly that one rule and not the file's disables as well.
+Only the settings you actually pass override anything, so `--line-width 80`
+changes the width and keeps the rest of the file. A list given as a flag
+replaces the list from the file instead of adding to it, so
+`--disable naming-convention` disables exactly that one rule.
 
-## `[format]`
+## Mistakes in the file
 
-| Key          | Type    | Default | Meaning                                           |
-| ------------ | ------- | ------- | ------------------------------------------------- |
-| `line-width` | integer | `111`   | Target width before a group is broken onto lines. |
-| `alignment`  | boolean | `true`  | Column-align separators and trailing comments.    |
-
-As flags: `--line-width`/`-l`, `--alignment`/`--no-alignment`.
-
-## `[lint]`
-
-| Key       | Type              | Default | Meaning                               |
-| --------- | ----------------- | ------- | ------------------------------------- |
-| `enable`  | list of rule name | all     | When non-empty, only these rules run. |
-| `disable` | list of rule name | none    | These rules are silenced.             |
-
-A rule in both lists is silenced. Because each flag replaces only its own key,
-that also holds across layers: with `disable = ["naming-convention"]` in the
-file, `--enable naming-convention` still reports nothing, since the file's
-`disable` is untouched and wins. Pass `--no-config` to start from a clean slate.
-
-A name no rule answers to is an error rather than a no-op — a misspelling in
-`enable` would otherwise silence everything and look like a clean run.
-`rafiki lint --list-rules` prints the valid names, and they are documented under
-[Rules](../linter/rules/README.md).
-
-As flags: `--enable`, `--disable`, both comma-separated and repeatable.
-
-## `[files]`
-
-| Key                 | Type         | Default | Meaning                              |
-| ------------------- | ------------ | ------- | ------------------------------------ |
-| `exclude`           | list of glob | none    | Paths to skip, in gitignore syntax.  |
-| `respect-gitignore` | boolean      | `true`  | Skip whatever `.gitignore` excludes. |
-
-Globs are relative to the configuration file's directory. Hidden directories are
-always skipped, whatever `respect-gitignore` says: turning it off asks for
-ignored source files, not for `.git/`.
-
-Globs passed directly with `--exclude` are relative to the current working
-directory.
-
-As flags: `--exclude` (repeatable), `--respect-gitignore`/`--no-respect-gitignore`.
-
-## Errors
-
-Unknown keys are rejected rather than ignored, so a typo is reported with the
-keys that were expected:
+An unknown key is an error, so a typo doesn't silently do nothing:
 
 ```text
 rafiki: rafiki.toml: TOML parse error at line 2, column 1
   |
 2 | line_width = 40
   | ^^^^^^^^^^
-unknown field `line_width`, expected one of `line-width`, `alignment`
+unknown field `line_width`, expected `line-width` or `alignment`
 ```
 
-The CLI treats that as a fatal error (exit code `2`). The language server instead
-reports it to the editor with `window/showMessage` and carries on with the
-defaults, since a bad configuration file should not leave you without
-diagnostics.
+On the command line that stops the run with exit code `2`. The language server
+shows the error in your editor instead and carries on with the defaults, so you
+keep your diagnostics while you fix the file.

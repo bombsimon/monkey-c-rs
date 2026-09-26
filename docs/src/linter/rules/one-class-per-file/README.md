@@ -1,31 +1,22 @@
 # `one-class-per-file`
 
-Flags files that declare more than one class following Garmin's [Monkey C coding
-conventions][conventions].
+Flags a file with more than one class, following Garmin's
+[Monkey C coding conventions][conventions].
 
-## Rationale
+## Why
 
-Keeping each class in its own file makes the file name a reliable index of
-its primary type, lets readers locate code by filename alone, and keeps
-related members (fields, methods, helper functions) grouped together.
-Co-locating two classes usually means one of them is incidental and should
-move to its own file.
+With one class per file, the file name tells you where to find a class. A second
+class in the same file is usually a helper that deserves its own file.
 
-## What triggers
+## What it flags
 
-Anything after the first class declaration anywhere in the file. The rule
-counts across module boundaries, so a file with two top-level classes,
-a module containing two classes, or two nested modules each holding a
-class all trigger.
+Every class after the first in a file, including classes inside modules.
 
-## What does not trigger
+## What it leaves alone
 
-A file with exactly one class, regardless of how many functions, modules,
-typedefs, or `using` declarations sit alongside it.
+Functions, modules, typedefs and imports next to the one class.
 
 ## Example
-
-Before:
 
 ```monkey-c
 class Foo {
@@ -37,8 +28,7 @@ class Bar {
 }
 ```
 
-The rule reports `Bar` as the offending second class. There is no
-auto-fix — moving `Bar` to its own file requires choosing a file name and
-deciding what context (imports, module wrapping) to copy across.
+`Bar` is flagged. There's no fix, since moving it means picking a file name and
+deciding what to bring along.
 
 [conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/

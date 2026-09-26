@@ -1,67 +1,42 @@
 # `naming-convention`
 
-Flags identifiers that don't follow Garmin's [Monkey C coding
-conventions][conventions].
+Flags names that don't follow Garmin's
+[Monkey C coding conventions][conventions].
 
-## Rules
+## Why
 
-| Category                               | Pattern                                      | Example                   |
-| -------------------------------------- | -------------------------------------------- | ------------------------- |
-| Modules & Classes                      | `PascalCase`                                 | `MyClass`                 |
-| Functions & parameters                 | `camelCase`                                  | `myFunction(myArg)`       |
-| Public class members                   | `camelCase`                                  | `var myValue;`            |
-| Private/protected/hidden class members | `_camelCase`                                 | `private var _value;`     |
-| Module-scope variables                 | `camelCase`                                  | `var myCounter = 0;`      |
-| Local variables                        | `camelCase`                                  | `var myTotal = 0;`        |
-| Enum variants                          | `SCREAMING_SNAKE_CASE` sharing a `<PREFIX>_` | `COLOR_RED`, `COLOR_BLUE` |
+Consistent names tell you what something is at a glance, like whether
+`myThing` is a class or a function. The rules below follow Garmin's conventions.
 
-## Rationale
+## What it flags
 
-Naming conventions buy consistency at zero ongoing cost — readers don't
-have to wonder whether `myThing` is a class or a function. The rules
-above mirror Garmin's official conventions verbatim.
+| Kind                                  | Convention                        | Example                   |
+| ------------------------------------- | --------------------------------- | ------------------------- |
+| Modules and classes                   | `PascalCase`                      | `MyClass`                 |
+| Functions and parameters              | `camelCase`                       | `myFunction(myArg)`       |
+| Public class members                  | `camelCase`                       | `var myValue;`            |
+| Private, protected and hidden members | `_camelCase`                      | `private var _value;`     |
+| Variables                             | `camelCase`                       | `var myTotal = 0;`        |
+| Enum values                           | `SCREAMING_SNAKE_CASE`, one prefix | `COLOR_RED`, `COLOR_BLUE` |
 
-`const` declarations are left unchecked, not as a gap but because
-Garmin's conventions don't define a case for them — there's nothing to
-enforce. SDK code commonly uses `SCREAMING_SNAKE_CASE` for constants
-(an idiom like `example.SOME_CONST` reads better than
-`example.someConst`), but that's convention-by-example rather than a
-documented rule, so the linter leaves both module-scope and
-class-scope `const` alone regardless of visibility.
+## What it leaves alone
+
+Constants. Garmin's conventions don't say how to name them, so `const` names
+aren't checked. The SDK itself mostly uses `SCREAMING_SNAKE_CASE` for them.
 
 ## Example
-
-Before:
 
 ```monkey-c
 class example {
     var Value = 1;
-
     private var mCounter as Number = 0;
 
     function MyFn() {}
 }
-
-enum {
-    RED,
-    BLUE,
-}
 ```
 
-The rule flags each violation and suggests a conformant name via
-[`convert_case`][convert_case]:
-
-```text
-class `example` should be PascalCase, e.g. `Example`
-public class member `Value` should be camelCase, e.g. `value`
-private class member `mCounter` should be `_camelCase`, e.g. `_mCounter`
-function `MyFn` should be camelCase, e.g. `myFn`
-enum variants should share a common `<PREFIX>_` prefix
-```
-
-There is no auto-fix — renaming an identifier has to ripple through every
-call site, which the linter can't do safely with byte-level replacements
-alone.
+Each finding suggests a name that follows the convention, like `Example` for
+`example` and `_mCounter` for `mCounter`. There's no fix, since renaming
+something means changing every place it's used.
 
 [conventions]: https://developer.garmin.com/connect-iq/monkey-c/coding-conventions/
-[convert_case]: https://crates.io/crates/convert_case

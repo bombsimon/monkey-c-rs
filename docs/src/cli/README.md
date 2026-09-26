@@ -1,79 +1,70 @@
 # CLI
 
-`rafiki` is the single command for everything in this project.
+Everything runs through the `rafiki` command:
 
 | Command              | Does                                                 |
 | -------------------- | ---------------------------------------------------- |
-| `rafiki fmt`         | Format source files                                  |
-| `rafiki lint`        | Report and optionally fix lint findings              |
-| `rafiki coverage`    | Measure [test coverage](../coverage/README.md)       |
-| `rafiki server`      | Run the [language server](../lsp/README.md) on stdio |
-| `rafiki completions` | Print a shell completion script                      |
+| `rafiki fmt`         | Formats source files                                 |
+| `rafiki lint`        | Reports lint findings, and fixes them with `--fix`   |
+| `rafiki server`      | Runs the [language server](../lsp) on stdio          |
+| `rafiki coverage`    | Measures [test coverage](../coverage)                |
+| `rafiki completions` | Prints a shell completion script                     |
 
-## Installing
+Every command has `--help`. The flags for each setting are listed under
+[Settings](../configuration/settings).
 
-Prebuilt binaries are not published yet, so install from source:
+## Choosing files
 
-```sh
-cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki
-
-# or from a checkout
-cargo install --path rafiki
-```
-
-## Paths
-
-`fmt` and `lint` take any mix of files and directories, defaulting to the current
-directory:
+`rafiki fmt` and `rafiki lint` take any mix of files and directories, and use
+the current directory when given none:
 
 ```sh
-rafiki fmt                     # the whole project
-rafiki fmt src/ Tests.mc       # named paths
-rafiki lint --fix src/
+rafiki fmt
+rafiki fmt source/ tests/Tests.mc
 ```
 
-Directories are walked recursively for `.mc` files. A file named explicitly is
-used whatever its extension, so an unusual name is always reachable. Hidden
-directories are skipped, as is anything `.gitignore` excludes — pass
-`--no-respect-gitignore` to include those, or `--exclude <glob>` to skip more.
+Directories are searched for `.mc` files. A file you name directly is used
+whatever its extension. Hidden directories and anything `.gitignore` excludes
+are skipped, see [`[files]`](../configuration/settings#files) to change that.
 
-`-` reads from stdin instead, which cannot be combined with paths:
+Pass `-` to read from stdin instead:
 
 ```sh
-cat File.mc | rafiki fmt -      # formatted source on stdout
-cat File.mc | rafiki lint -     # findings on stderr
+cat Clock.mc | rafiki fmt -
+cat Clock.mc | rafiki lint -
 ```
+
+The formatted code goes to stdout and findings go to stderr. `--fix` has no
+effect on stdin.
 
 ## Checking without writing
 
-`rafiki fmt` rewrites files in place. Two flags report instead:
+`rafiki fmt` writes the formatted code back to each file. To only report what
+would change:
 
 ```sh
-rafiki fmt --check     # names files that would change
-rafiki fmt --diff      # prints a unified diff of the changes
+rafiki fmt --check
+rafiki fmt --diff
 ```
+
+`--check` lists the files that aren't formatted, and `--diff` prints the
+changes.
 
 ## Exit codes
 
-| Code | Meaning                                                                          |
-| ---- | -------------------------------------------------------------------------------- |
-| `0`  | Clean: nothing to report                                                         |
-| `1`  | The check found something — unformatted files, lint findings, a failing test     |
-| `2`  | The command could not run — bad arguments, unreadable file, broken configuration |
+| Code | Meaning                                                             |
+| ---- | ------------------------------------------------------------------- |
+| `0`  | Nothing to report.                                                  |
+| `1`  | Something was found, like an unformatted file or a lint finding.    |
+| `2`  | The command couldn't run, for example because of a bad argument.    |
 
-Separating `1` from `2` lets CI tell a failing check apart from a broken
-invocation:
+Keeping `1` and `2` apart lets CI tell failing checks from a broken setup.
 
-```sh
-rafiki fmt --check && rafiki lint
-```
+## Color
 
-## Colour
-
-Diagnostics are coloured when the stream is a terminal. `--color always|never`
-overrides that, and the `NO_COLOR`, `CLICOLOR_FORCE` and `TERM=dumb` conventions
-are honoured. stdout and stderr are decided independently, so
-`rafiki fmt --diff | less` stays plain even when diagnostics beside it are not.
+Output is colored when it goes to a terminal. `--color always` or
+`--color never` overrides that, and the `NO_COLOR`, `CLICOLOR_FORCE` and
+`TERM=dumb` environment variables are respected.
 
 ## Shell completions
 
@@ -83,11 +74,4 @@ rafiki completions bash > ~/.local/share/bash-completion/completions/rafiki
 rafiki completions fish > ~/.config/fish/completions/rafiki.fish
 ```
 
-`elvish` and `powershell` work too. The scripts are generated from the same
-definitions that parse the arguments, so they cannot describe flags that do not
-exist.
-
-## Configuration
-
-Formatter settings, rule selection and file selection can all be pinned in a
-[`rafiki.toml`](../configuration/README.md), which the language server reads too.
+`elvish` and `powershell` are supported too.

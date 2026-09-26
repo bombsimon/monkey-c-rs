@@ -1,39 +1,32 @@
 # `ifs-same-cond`
 
-Flags an `if` / `else if` chain where two arms test the same condition.
+Flags an `if` / `else if` chain where two branches have the same condition.
 
-## Rationale
+## Why
 
-A repeated condition in a chain is almost always a copy-paste error: the
-earlier arm always matches first, so the later arm with the identical
-condition is unreachable. What the author meant to write was a *different*
-condition in the second arm.
+The first branch with a condition always wins, so a later branch with the same
+condition can never run. It's almost always a copy and paste mistake where the
+second condition should have been something else.
 
-## What triggers
+## What it flags
 
-The rule fires when two arms of the same `if` / `else if` chain have
-structurally equal conditions — formatting and whitespace are ignored, so
-`a == b` matches `a==b`. The duplicate need not be adjacent —
-`if (a) … else if (b) … else if (a) …` is flagged too. Each repeated arm is
-reported once.
+Two branches in the same chain with the same condition, ignoring whitespace.
+They don't have to be next to each other.
 
-## What does not trigger
+## What it leaves alone
 
-- Two separate `if` statements that happen to share a condition. They are not
-  one chain — the first can fall through to the second, so the repetition may
-  be intentional.
-- Any condition containing a call (`foo()`) or a `new`. A call may have side
-  effects, so two textually-identical calls need not evaluate to the same
-  value on each run.
+- Separate `if` statements with the same condition, since both can run.
+- Conditions with a function call or `new`, since those can give a different
+  result each time.
 
 ## Example
 
 ```monkey-c
 if (status == OK) {
     handleOk();
-} else if (status == OK) { // can never run — likely meant `status == ERROR`
+} else if (status == OK) {
     handleError();
 }
 ```
 
-No auto-fix — the rule can't know what the second condition was meant to be.
+There's no fix, since the rule can't know what the second condition should be.

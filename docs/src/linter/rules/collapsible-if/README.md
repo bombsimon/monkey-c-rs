@@ -1,49 +1,41 @@
 # `collapsible-if`
 
-Flags an `if` whose entire body is a single nested `if`, where the two can be
-merged into one by `&&`-combining their conditions.
+Flags an `if` that only contains another `if`, where the two conditions can be
+joined with `&&`.
 
-## Rationale
+## Why
 
-Each `if` adds a level of nesting. When the inner `if` is the only thing the
-outer one does, that nesting is noise — the guard is really a single compound
-condition, and reads more clearly written as one.
+When the inner `if` is all the outer one does, the nesting doesn't add anything.
+The two checks are really one condition and read better written as one.
 
-## What triggers
+## What it flags
 
-The rule fires when all of the following hold:
+An `if` without an `else` whose only statement is another `if` without an
+`else`. With an `else` on either of them, merging would change what runs, so
+those are left alone.
 
-1. The outer `if` has no `else`.
-2. Its body is exactly one statement, and that statement is an `if`.
-3. The inner `if` has no `else`.
+A condition that binds looser than `&&`, like an `||` or a ternary, gets
+parentheses when merged: `if (a || b) { if (c) { … } }` becomes
+`if ((a || b) && c) { … }`.
 
-Either `else` would change which condition guards the fall-through, so the
-merge would not preserve behaviour — those cases are left alone.
+## What it leaves alone
 
-## What does not trigger
-
-- A comment in the outer block around the nested `if`. Collapsing would discard
-  it, so the rule backs off.
-- An outer block with more than the single nested `if`.
+- An `if` with a comment next to the inner `if`, since merging would lose the
+  comment.
+- An `if` with anything besides the inner `if`.
 
 ## Example
 
 ```monkey-c
+// Before
 if (ready) {
     if (count > 0) {
         process();
     }
 }
-```
 
-Fixed:
-
-```monkey-c
+// After
 if (ready && count > 0) {
     process();
 }
 ```
-
-A condition that binds looser than `&&` (an `||` / `or`, a ternary) is wrapped
-in parentheses when merged, so `if (a || b) { if (c) { … } }` becomes
-`if ((a || b) && c) { … }`.
