@@ -8,7 +8,6 @@ pub struct FormatSettings {
     pub line_width: usize,
     pub alignment: bool,
     pub wrap_declarations: bool,
-    pub hug_brackets: bool,
 }
 
 impl Default for FormatSettings {
@@ -17,7 +16,6 @@ impl Default for FormatSettings {
             line_width: 111,
             alignment: true,
             wrap_declarations: false,
-            hug_brackets: false,
         }
     }
 }
@@ -38,10 +36,6 @@ impl FormatSettings {
             self.wrap_declarations = wrap_declarations;
         }
 
-        if let Some(hug_brackets) = config.hug_brackets {
-            self.hug_brackets = hug_brackets;
-        }
-
         self
     }
 }
@@ -54,7 +48,6 @@ pub struct FormatConfig {
     pub line_width: Option<usize>,
     pub alignment: Option<bool>,
     pub wrap_declarations: Option<bool>,
-    pub hug_brackets: Option<bool>,
 }
 
 #[cfg(test)]
@@ -78,13 +71,11 @@ mod tests {
             line_width: Some(80),
             alignment: Some(false),
             wrap_declarations: None,
-            hug_brackets: Some(true),
         };
         let flags = FormatConfig {
             line_width: Some(100),
             alignment: None,
             wrap_declarations: Some(true),
-            hug_brackets: None,
         };
 
         let settings = FormatSettings::default()
@@ -95,6 +86,5 @@ mod tests {
         // Unset by the higher-priority layer, so the file's value survives.
         assert!(!settings.alignment);
         assert!(settings.wrap_declarations);
-        assert!(settings.hug_brackets);
     }
 }

@@ -48,9 +48,6 @@ pub struct Formatter {
     /// When `true`, multi-binding `var`/`const` declarations that exceed the
     /// line width break each binding onto its own indented line.
     wrap_multi_bindings: bool,
-    /// When `true`, an array or dict that is a call's only argument keeps its
-    /// brackets on the call's parentheses, so only the entries break.
-    hug_brackets: bool,
     /// Positional drain cursor over all source comments. Advanced forward as
     /// the formatter builds the Doc tree; each comment is emitted exactly once
     /// at the first output position that follows its source location.
@@ -67,7 +64,6 @@ impl Formatter {
             line_width: 100,
             align_pairs: false,
             wrap_multi_bindings: false,
-            hug_brackets: false,
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
     }
@@ -87,13 +83,6 @@ impl Formatter {
     /// Enable per-binding wrapping for multi-binding `var`/`const` declarations that don't fit.
     pub fn with_decl_wrap(mut self, decl_wrap: bool) -> Self {
         self.wrap_multi_bindings = decl_wrap;
-        self
-    }
-
-    /// Keep a sole array or dict argument's brackets next to the call's parentheses
-    /// (`f([` … `])`, `f({` … `})`) instead of breaking both delimiters onto their own lines.
-    pub fn with_hug_brackets(mut self, hug_brackets: bool) -> Self {
-        self.hug_brackets = hug_brackets;
         self
     }
 
@@ -2093,9 +2082,9 @@ impl Formatter {
     }
 
     /// The `(…)` of a call whose only argument is an array or dict literal, rendered as
-    /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. `None` when
-    /// hugging is off or does not apply, including when a comment sits between the parentheses
-    /// and the brackets, since hugging would have nowhere to put it.
+    /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. Hugging
+    /// saves a level of indentation for the entries. `None` when it does not apply, including when
+    /// a comment sits between the parentheses and the brackets, since it would have nowhere to go.
     fn hugged_sole_collection(
         &self,
         args: &[CallArg],
@@ -2103,7 +2092,7 @@ impl Formatter {
         args_open: usize,
         call_end: usize,
     ) -> Option<Doc> {
-        if !self.hug_brackets || args_trailing_comma {
+        if args_trailing_comma {
             return None;
         }
 

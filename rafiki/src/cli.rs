@@ -187,15 +187,6 @@ pub struct FormatArgs {
     /// Do not wrap multiple declarations.
     #[arg(long, overrides_with = "wrap_declarations")]
     pub no_wrap_declarations: bool,
-
-    /// Keep an array or dict that is a call's only argument hugging the
-    /// parentheses, as in `f([` ... `])` or `f({` ... `})`. [default: disabled]
-    #[arg(long, overrides_with = "no_hug_brackets")]
-    pub hug_brackets: bool,
-
-    /// Break a sole array or dict argument's brackets onto their own lines.
-    #[arg(long, overrides_with = "hug_brackets")]
-    pub no_hug_brackets: bool,
 }
 
 impl FormatArgs {
@@ -204,7 +195,6 @@ impl FormatArgs {
             line_width: self.line_width,
             alignment: flag_pair(self.alignment, self.no_alignment),
             wrap_declarations: flag_pair(self.wrap_declarations, self.no_wrap_declarations),
-            hug_brackets: flag_pair(self.hug_brackets, self.no_hug_brackets),
         }
     }
 }
@@ -423,19 +413,6 @@ mod tests {
             .to_config();
         assert_eq!(config.alignment, Some(false));
         assert_eq!(config.wrap_declarations, None);
-    }
-
-    #[test]
-    fn hug_brackets_flags_overlay() {
-        let config = fmt_args(&["rafiki", "fmt", "--hug-brackets"])
-            .format
-            .to_config();
-        assert_eq!(config.hug_brackets, Some(true));
-
-        let config = fmt_args(&["rafiki", "fmt", "--no-hug-brackets"])
-            .format
-            .to_config();
-        assert_eq!(config.hug_brackets, Some(false));
     }
 
     #[test]

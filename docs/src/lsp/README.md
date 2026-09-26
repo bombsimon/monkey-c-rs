@@ -50,7 +50,6 @@ through to the file and then to the default.
 | `lineWidth`        | `[format] line-width`        | integer | `111`   |
 | `alignment`        | `[format] alignment`         | boolean | `true`  |
 | `wrapDeclarations` | `[format] wrap-declarations` | boolean | `false` |
-| `hugBrackets`      | `[format] hug-brackets`      | boolean | `false` |
 
 Both sources are read at startup, so change either and restart the server
 (`:LspRestart` in Neovim) to take effect. A `rafiki.toml` that fails to parse is

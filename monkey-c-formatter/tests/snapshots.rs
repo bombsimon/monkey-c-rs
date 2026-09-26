@@ -18,8 +18,7 @@ fn format_all_enabled(src: &str) -> String {
         src,
         Formatter::new(src)
             .with_alignment(true)
-            .with_decl_wrap(true)
-            .with_hug_brackets(true),
+            .with_decl_wrap(true),
     )
 }
 
@@ -32,15 +31,6 @@ fn format_wrapped_width(src: &str, width: usize) -> String {
         src,
         Formatter::new(src)
             .with_decl_wrap(true)
-            .with_line_width(width),
-    )
-}
-
-fn format_hugged_width(src: &str, width: usize) -> String {
-    run(
-        src,
-        Formatter::new(src)
-            .with_hug_brackets(true)
             .with_line_width(width),
     )
 }
@@ -635,26 +625,18 @@ function fn() {
 "#;
 
 #[test]
-fn sole_array_argument_breaks_around_brackets_by_default() {
+fn sole_array_argument_hugs_brackets() {
     insta::assert_snapshot!(format_width(SOLE_ARRAY_ARGUMENT.trim(), 20));
 }
 
 #[test]
-fn sole_array_argument_hugs_brackets() {
-    insta::assert_snapshot!(format_hugged_width(SOLE_ARRAY_ARGUMENT.trim(), 20));
-}
-
-#[test]
 fn hugged_array_stays_flat_when_it_fits() {
-    insta::assert_snapshot!(format_hugged_width(
-        "function fn() { someFn([1, 2, 3]); }",
-        111
-    ));
+    insta::assert_snapshot!(format_width("function fn() { someFn([1, 2, 3]); }", 111));
 }
 
 #[test]
 fn sole_dict_argument_hugs_brackets() {
-    insta::assert_snapshot!(format_hugged_width(
+    insta::assert_snapshot!(format_width(
         r#"
 function fn() {
     someFn({ "foo" => "bar", "baz" => "qux" });
@@ -671,7 +653,7 @@ function fn() {
 
 #[test]
 fn hug_brackets_only_applies_to_a_sole_collection_argument() {
-    insta::assert_snapshot!(format_hugged_width(
+    insta::assert_snapshot!(format_width(
         r#"
 function fn() {
     someFn(["foo", "bar", "baz"], 1);
@@ -685,7 +667,7 @@ function fn() {
 
 #[test]
 fn hugged_array_keeps_its_own_trailing_comma_and_comments() {
-    insta::assert_snapshot!(format_hugged_width(
+    insta::assert_snapshot!(format_width(
         r#"
 function fn() {
     someFn([
@@ -701,7 +683,7 @@ function fn() {
 
 #[test]
 fn hug_brackets_yields_to_comments_around_the_array() {
-    insta::assert_snapshot!(format_hugged_width(
+    insta::assert_snapshot!(format_width(
         r#"
 function fn() {
     someFn( // leading

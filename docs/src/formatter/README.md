@@ -15,6 +15,23 @@ The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
 default width of 111 columns. 111 is chosen because 80 is too little and 222 is
 too much.
 
+## Array and dictionary arguments
+
+When an array or dictionary is the only argument of a call, its brackets stay
+next to the parentheses and only the entries break. That saves a level of
+indentation compared to breaking both:
+
+```monkey-c
+someFn([
+    "foo",
+    "bar"
+]);
+
+someFn({
+    "foo" => "bar",
+});
+```
+
 ## Method chains
 
 A chain of calls that does not fit on one line is broken before each `.call()`,
