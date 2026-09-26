@@ -12,8 +12,8 @@ Lorem ipsum dolor sit amet
     // c
     /* c1 */ class /* c2 */ Cls /* c3 */ { // c4
         /* c1 */ function /* c2 */ Fn(
-            /* c3 */ arg /* c4*/ as /* c5 */ Number /*c6 */ /* c7 */ /* c8 */ /* c9 */ // c10
-        ) as Void {
+            /* c3 */ arg /* c4*/ as /* c5 */ Number /*c6 */
+        ) /* c7 */ as /* c8 */ Void /* c9 */ { // c10
             /* c1 */ var /* c2 */ x /* c3 */ as /* c4 */ Number /* c5 */ = /* c6 */ 1 /* c7 */ ; // c8
             /* c1 */ var y = new /* c2 */ Array<Number>[/* c3 */ 3 /* c4 */ ] /* c5 */ ;         // c6
 
