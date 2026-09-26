@@ -10,6 +10,10 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/multiline_block_comment_clo
 foo();
 //*/
 
+/* foo
+              bar
+baz */
+
 class A {
     function f() {
         /* line 1

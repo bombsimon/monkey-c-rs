@@ -10,6 +10,7 @@ pub struct LineIndex {
     /// by [`Self::blank_lines_between`] so a line that contains a comment is *not* counted as
     /// blank.
     is_blank: Vec<bool>,
+    indents: Vec<u32>,
 }
 
 /// A 0-indexed line and column position.
@@ -29,6 +30,7 @@ impl LineIndex {
         }
 
         let mut is_blank = Vec::with_capacity(starts.len());
+        let mut indents = Vec::with_capacity(starts.len());
         for i in 0..starts.len() {
             let line_start = starts[i] as usize;
             let line_end = starts
@@ -37,11 +39,13 @@ impl LineIndex {
                 .unwrap_or(source.len());
             let content = source.get(line_start..line_end).unwrap_or("");
             is_blank.push(content.trim().is_empty());
+            indents.push((content.len() - content.trim_start_matches([' ', '\t']).len()) as u32);
         }
 
         Self {
             line_starts: starts,
             is_blank,
+            indents,
         }
     }
 
@@ -60,6 +64,11 @@ impl LineIndex {
     /// Return the line number (0-indexed) for a byte offset.
     pub fn line(&self, offset: u32) -> u32 {
         self.line_col(offset).line
+    }
+
+    /// Return the number of leading spaces and tabs on `line`.
+    pub fn indent(&self, line: u32) -> u32 {
+        self.indents[line as usize]
     }
 
     /// Return how many blank lines separate two offsets.

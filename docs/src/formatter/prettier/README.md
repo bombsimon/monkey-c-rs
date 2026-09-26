@@ -211,6 +211,58 @@ foo(/* c */ 1);
 var item = new MenuItem(/* c */ 1);
 ```
 
+## Multi-line block comments
+
+When a `/* … */` comment is re-indented, `rafiki` moves every line of it by the
+same amount, so the layout inside the comment stays intact. Prettier only does
+that when every line starts with `*`, like a `/** … */` doc comment. For any
+other comment it moves just the first line and leaves the rest where they were,
+which separates the comment from its opener. This matches how `rustfmt` and
+`gofmt` handle block comments.
+
+```monkey-c
+// Source
+function f() {
+  if (x) {
+/* disabled
+foo();
+    bar();
+*/
+                 /*
+                 bar
+                 */
+  }
+}
+
+// rafiki
+function f() {
+    if (x) {
+        /* disabled
+        foo();
+            bar();
+        */
+        /*
+        bar
+        */
+    }
+}
+
+// Prettier
+function f() {
+    if (x) {
+        /* disabled
+foo();
+    bar();
+*/
+        /*
+                 bar
+                 */
+    }
+}
+```
+
+Comments that are already indented correctly come out unchanged in both.
+
 ## Dictionary spacing
 
 `rafiki` writes one-line dictionaries without spaces inside the braces, the same

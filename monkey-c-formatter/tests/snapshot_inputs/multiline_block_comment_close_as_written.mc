@@ -6,6 +6,10 @@
 foo();
 //*/
 
+/* foo
+              bar
+baz */
+
 class A {
     function f() {
         /* line 1

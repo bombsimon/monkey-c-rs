@@ -57,3 +57,13 @@ fn test_empty_source() {
     let idx = LineIndex::new("");
     assert_eq!(idx.line_col(0), LineCol { line: 0, col: 0 });
 }
+
+#[test]
+fn test_indent() {
+    let idx = LineIndex::new("a\n    b\n\tc\n\n  ");
+    assert_eq!(idx.indent(0), 0);
+    assert_eq!(idx.indent(1), 4);
+    assert_eq!(idx.indent(2), 1);
+    assert_eq!(idx.indent(3), 0);
+    assert_eq!(idx.indent(4), 2);
+}

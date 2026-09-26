@@ -1,0 +1,24 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/multiline_block_comment_reindented.mc
+---
+function f() {
+    /**
+     * Doc
+     */
+    if (x) {
+        /* disabled
+        foo();
+
+            bar();
+        */
+        /*
+        bar
+        */
+        /* foo
+                  bar
+        baz */
+        y = 1; /* trailing
+                  comment */
+    }
+}
