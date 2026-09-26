@@ -195,6 +195,22 @@ only argument.
 > level of indentation for calls like `Lang.format`, but the other arguments
 > end up easy to miss at the end of a long first line.
 
+## Comments before call arguments
+
+`rafiki` keeps a comment between a function or class name and its `(` where it
+is. Prettier moves it inside the parentheses when the call has arguments, and
+only keeps it in place when they're empty.
+
+```monkey-c
+// rafiki
+foo /* c */(1);
+var item = new MenuItem /* c */(1);
+
+// Prettier
+foo(/* c */ 1);
+var item = new MenuItem(/* c */ 1);
+```
+
 ## Dictionary spacing
 
 `rafiki` writes one-line dictionaries without spaces inside the braces, the same

@@ -305,6 +305,47 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
+    /// Like [`Self::drain_after_open_brace`] but hugs a leading block comment as `(/* c */ x)`.
+    fn drain_after_open_paren(&self, paren_pos: usize, close_pos: usize) -> Doc {
+        let paren_line = self.line_index.line(paren_pos as u32);
+        let comments = self.comment_cursor.borrow_mut().drain_trailing(
+            paren_pos,
+            close_pos,
+            paren_line,
+            &self.line_index,
+        );
+        if comments.is_empty() {
+            return Doc::Empty;
+        }
+
+        let mut parts = Vec::new();
+        for (i, c) in comments.iter().enumerate() {
+            if i == 0 && c.is_block {
+                parts.push(self.block_comment_to_doc(&c.text));
+            } else {
+                parts.push(self.same_line_comment_to_doc(c));
+            }
+        }
+
+        Doc::Concat(parts)
+    }
+
+    /// Drain comments between a name and its `(`, kept in place as `foo /* c */()`. A `//` comment
+    /// ends its line, so the `(` continues indented on the next one.
+    fn drain_before_open_paren(&self, paren_pos: usize) -> Doc {
+        let comments = self.comment_cursor.borrow_mut().drain_before(paren_pos);
+        let mut parts = Vec::new();
+        for c in &comments {
+            parts.push(self.same_line_comment_to_doc(c));
+
+            if !c.is_block {
+                parts.push(Doc::Indent(vec![Doc::HardLine]));
+            }
+        }
+
+        Doc::Concat(parts)
+    }
+
     /// Effective start of `span` — the position of its first leading comment
     /// (if one exists just before the span) or `span.start` itself.
     fn effective_start(&self, span: Span) -> usize {
@@ -1963,34 +2004,43 @@ impl Formatter {
                 Doc::Concat(parts)
             }
             Expr::New(e) => {
+                // Drained here or the first argument would claim them and move them inside `(`.
+                let class = Doc::concat(vec![
+                    Doc::text("new "),
+                    Doc::Indent(vec![
+                        self.drain_leading_doc(e.class_span.start),
+                        Doc::text(&e.class),
+                    ]),
+                ]);
+
+                let Some(args_open) = e.args_open else {
+                    return Doc::concat(vec![class, Doc::text("()")]);
+                };
+
+                let before_open = self.drain_before_open_paren(args_open);
                 let first_arg_start = e
                     .args
                     .first()
                     .map(|a| a.value.span().start)
                     .unwrap_or(e.span.end);
-                let hugged = e.args_open.and_then(|args_open| {
-                    self.hugged_sole_collection(
-                        &e.args,
-                        e.args_trailing_comma,
-                        args_open,
-                        e.span.end,
-                    )
-                });
+                let hugged = self.hugged_sole_collection(
+                    &e.args,
+                    e.args_trailing_comma,
+                    args_open,
+                    e.span.end,
+                );
 
                 if let Some(args) = hugged {
-                    return Doc::concat(vec![Doc::text(format!("new {}", e.class)), args]);
+                    return Doc::concat(vec![class, before_open, args]);
                 }
 
-                let after_open_force_newline = e
-                    .args_open
-                    .is_some_and(|start| self.after_open_has_line_comment(start, first_arg_start));
-                let after_open = e
-                    .args_open
-                    .map(|start| self.drain_after_open_brace(start, first_arg_start))
-                    .unwrap_or(Doc::Empty);
+                let after_open_force_newline =
+                    self.after_open_has_line_comment(args_open, first_arg_start);
+                let after_open = self.drain_after_open_paren(args_open, first_arg_start);
 
                 Doc::concat(vec![
-                    Doc::text(format!("new {}", e.class)),
+                    class,
+                    before_open,
                     self.format_list(
                         "(",
                         ")",
@@ -2106,10 +2156,11 @@ impl Formatter {
 
     /// The `(…)` part of a call.
     fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
+        let before_open = self.drain_before_open_paren(e.args_open);
         if let Some(args) =
             self.hugged_sole_collection(&e.args, e.args_trailing_comma, e.args_open, e.span.end)
         {
-            return args;
+            return Doc::concat(vec![before_open, args]);
         }
 
         // Only capture comments between `(` and the first argument as after-open.
@@ -2122,17 +2173,20 @@ impl Formatter {
             .unwrap_or(e.span.end);
         let after_open_force_newline =
             self.after_open_has_line_comment(e.args_open, first_arg_start);
-        let after_open = self.drain_after_open_brace(e.args_open, first_arg_start);
+        let after_open = self.drain_after_open_paren(e.args_open, first_arg_start);
 
-        self.format_list(
-            "(",
-            ")",
-            self.call_args_to_items(&e.args, e.span.end),
-            &[],
-            e.args_trailing_comma,
-            after_open,
-            after_open_force_newline,
-        )
+        Doc::concat(vec![
+            before_open,
+            self.format_list(
+                "(",
+                ")",
+                self.call_args_to_items(&e.args, e.span.end),
+                &[],
+                e.args_trailing_comma,
+                after_open,
+                after_open_force_newline,
+            ),
+        ])
     }
 
     fn call_args_to_items(&self, args: &[CallArg], args_close: usize) -> Vec<ListItem> {
@@ -2335,7 +2389,9 @@ impl Formatter {
         // When there's a block comment after the opening delimiter, separate
         // it from the content with `Doc::Line` (" " flat, newline+indent
         // expanded) so flat mode gives `(/* c */ x)` not `(/* c */x)`.
-        let indent_start = if has_after_open {
+        let indent_start = if has_after_open && inner.is_empty() {
+            vec![after_open]
+        } else if has_after_open {
             vec![after_open, Doc::Line]
         } else {
             vec![Doc::SoftLine]

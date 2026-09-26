@@ -122,6 +122,7 @@ pub struct IndexExpr {
 #[derive(Debug, PartialEq)]
 pub struct NewExpr {
     pub class: Ident,
+    pub class_span: Span,
     pub args: Vec<CallArg>,
     /// See [`CallExpr::args_trailing_comma`].
     pub args_trailing_comma: bool,

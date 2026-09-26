@@ -688,10 +688,16 @@ impl Parser<'_> {
                     ));
                 }
 
+                let class_span = Span {
+                    start: class_start,
+                    end: self.prev_token_end,
+                };
+
                 // `new Foo` without a trailing `(...)` is equivalent to `new Foo()`.
                 if self.current_token != token::Type::LParen {
                     return Ok(Expr::New(NewExpr {
                         class,
+                        class_span,
                         args: Vec::new(),
                         args_open: None,
                         args_trailing_comma: false,
@@ -710,6 +716,7 @@ impl Parser<'_> {
 
                 Ok(Expr::New(NewExpr {
                     class,
+                    class_span,
                     args,
                     args_open: Some(args_open),
                     args_trailing_comma,

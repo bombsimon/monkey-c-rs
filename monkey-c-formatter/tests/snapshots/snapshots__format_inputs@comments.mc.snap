@@ -18,7 +18,7 @@ Lorem ipsum dolor sit amet
             /* c1 */ var y = new /* c2 */ Array<Number>[/* c3 */ 3 /* c4 */ ] /* c5 */ ;         // c6
 
             /* c1 */ if (/* c2 */ /* c3 */ arg /* c4 */ > 3 /* c5 */) /* c6 */ { // c7
-                /* c1 */ System.println( /* c2 */ "x" /* c3 */);
+                /* c1 */ System.println(/* c2 */ "x" /* c3 */);
                 /* c1 */
             } // c2
 
