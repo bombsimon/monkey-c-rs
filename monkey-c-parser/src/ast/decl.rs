@@ -1,5 +1,5 @@
 use crate::ast::{
-    BlockStmt, Expr, Ident, Parens, Position, Span, Spanned, Symbol, Type, Visibility,
+    BlockStmt, Expr, Ident, Modifiers, Parens, Position, Span, Spanned, Symbol, Type,
 };
 
 /// A top-level AST node.
@@ -31,9 +31,7 @@ pub struct Parameter {
     pub name: Spanned<Ident>,
     pub type_: Option<Type>,
     pub as_kw_start: Option<Position>,
-    pub visibility: Option<Visibility>,
     pub initializer: Option<Box<Expr>>,
-    pub is_static: bool,
     pub span: Span,
 }
 
@@ -56,8 +54,7 @@ pub struct Binding {
 #[derive(Debug, PartialEq)]
 pub struct VarDecl {
     pub bindings: Vec<Binding>,
-    pub visibility: Option<Visibility>,
-    pub is_static: bool,
+    pub modifiers: Modifiers,
     /// `0` when `var` appears in a `for`-init — the loop's first `;` acts as terminator.
     pub semi_pos: Position,
     pub span: Span,
@@ -116,6 +113,7 @@ pub struct ModuleDecl {
     pub name: Spanned<Ident>,
     pub body: Vec<Ast>,
     pub brace_start: Position,
+    pub modifiers: Modifiers,
     pub span: Span,
 }
 
@@ -129,6 +127,7 @@ pub struct ClassDecl {
     pub extends_kw_start: Option<Position>,
     pub body: Vec<Ast>,
     pub brace_start: Position,
+    pub modifiers: Modifiers,
     pub span: Span,
 }
 
@@ -148,6 +147,7 @@ pub struct EnumDecl {
     pub variants: Vec<EnumVariant>,
     pub trailing_comma: bool,
     pub brace_start: Position,
+    pub modifiers: Modifiers,
     pub span: Span,
 }
 
@@ -177,8 +177,7 @@ pub struct FunctionDecl {
     pub as_kw_start: Option<Position>,
     /// `None` for abstract / interface method declarations (`function f() as T;`).
     pub body: Option<BlockStmt>,
-    pub visibility: Option<Visibility>,
-    pub is_static: bool,
+    pub modifiers: Modifiers,
     pub span: Span,
 }
 
@@ -194,8 +193,7 @@ pub struct FunctionDecl {
 #[derive(Debug, PartialEq)]
 pub struct ConstDecl {
     pub bindings: Vec<Binding>,
-    pub visibility: Option<Visibility>,
-    pub is_static: bool,
+    pub modifiers: Modifiers,
     pub semi_pos: Position,
     pub span: Span,
 }

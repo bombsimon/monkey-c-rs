@@ -1,6 +1,7 @@
 use crate::ast::{
     BlockStmt, CaseLabel, CatchClause, DoWhileStmt, ElseBranch, ForHeader, ForInit, ForStmt,
-    IfStmt, Parens, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt, WhileStmt,
+    IfStmt, Modifiers, Parens, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt,
+    WhileStmt,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -104,7 +105,7 @@ impl Parser<'_> {
             token::Type::Var => {
                 let var_start = self.current_token_start;
                 self.next_token_span(); // consume `var`
-                let mut var_decl = self.parse_var_contents(None, false)?;
+                let mut var_decl = self.parse_var_contents(Modifiers::default())?;
                 let fs = self.current_token_start;
                 let semi_end = self.current_token_end;
                 self.assert_next_token(&[token::Type::Semicolon])?;
@@ -426,7 +427,7 @@ impl Parser<'_> {
     fn parse_var_stmt(&mut self) -> Result<Stmt, ParserError> {
         let start = self.current_token_start;
         self.next_token_span();
-        let mut var_decl = self.parse_var_contents(None, false)?;
+        let mut var_decl = self.parse_var_contents(Modifiers::default())?;
         let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
