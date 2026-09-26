@@ -793,7 +793,14 @@ impl Formatter {
         let items = decl
             .parameters
             .iter()
-            .map(|arg| {
+            .enumerate()
+            .map(|(i, arg)| {
+                let next_parameter_start = decl
+                    .parameters
+                    .get(i + 1)
+                    .map(|next| next.span.start)
+                    .unwrap_or(decl.parameters.close);
+
                 let mut arg_parts = Vec::new();
                 arg_parts.push(self.drain_leading_doc(arg.span.start));
                 arg_parts.push(Doc::text(&arg.name.node));
@@ -812,11 +819,11 @@ impl Formatter {
                 // correct source line.
                 let trailing_pos = arg.type_.as_ref().map_or(arg.span.end, |t| t.span.end);
                 let trailing_is_line_comment =
-                    self.has_trailing_line_comment_bounded(trailing_pos, usize::MAX);
+                    self.has_trailing_line_comment_bounded(trailing_pos, next_parameter_start);
 
                 ListItem {
                     content: Doc::Concat(arg_parts),
-                    trailing: self.drain_trailing_doc(trailing_pos),
+                    trailing: self.drain_trailing_doc_bounded(trailing_pos, next_parameter_start),
                     trailing_is_line_comment,
                 }
             })
