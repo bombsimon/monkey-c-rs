@@ -6,6 +6,7 @@
 - [Configuration](./configuration/README.md)
 - [Parser](./parser/README.md)
 - [Formatter](./formatter/README.md)
+  - [Differences from Prettier](./formatter/prettier/README.md)
 - [LSP](./lsp/README.md)
 - [Coverage](./coverage/README.md)
 - [Linter](./linter/README.md)

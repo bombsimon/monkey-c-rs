@@ -2,64 +2,31 @@
 
 The Monkey C formatter aims to be a zero-config one-size-fits-all solution to
 ensure consistent formatting of your Monkey C code. More opinionated suggestions
-for the code is implemented in the [linter][linter].
+for the code is implemented in the [linter][linter]. If you're coming from
+[Prettier][prettier], see [Differences from Prettier](prettier).
 
 > [!NOTE]
-> I'd love any input and testing on the formatter. Both help finding bugs and
-> inconsistencies but also input on the formatting algorithm. Please create an
-> [issue] for any bug or feature request.
+> Feedback on the formatter is appreciated, whether it's a bug, an
+> inconsistency or a thought on how code should be formatted. Please open an
+> [issue] on GitHub.
+
+## Layout only
+
+The formatter only changes whitespace and line breaks, never what the code
+says. Parentheses, number literals, types and the legacy `@` prefix are kept
+exactly as written. Rewrites like removing redundant parentheses belong to the
+[linter][linter] and its `--fix`, so they can be reviewed on their own.
 
 ## Wrapping long lines
 
 The formatter is using the [Wadler]-[Lindig] algorithm to wrap lines at a
 default width of 111 columns. 111 is chosen because 80 is too little and 222 is
-too much.
+too much. Change it with `--line-width` or `line-width` in `rafiki.toml`.
 
-## Declarations
-
-A `var` or `const` declaring several names stays on one line while it fits.
-Otherwise every binding goes on its own indented line:
-
-```monkey-c
-var a = 1, b = 2;
-
-var
-    firstLongBindingName = "some value",
-    secondLongBindingName = "another value";
-```
-
-## Array and dictionary arguments
-
-When an array or dictionary is the only argument of a call, its brackets stay
-next to the parentheses and only the entries break. That saves a level of
-indentation compared to breaking both:
-
-```monkey-c
-someFn([
-    "foo",
-    "bar"
-]);
-
-someFn({
-    "foo" => "bar",
-});
-```
-
-## Method chains
-
-A chain of calls that does not fit on one line is broken before each `.call()`,
-one per indented line, the way [Prettier][prettier] lays them out:
-
-```monkey-c
-var min = timeString
-    .substring(hourpos + 1, timeString.length())
-    .toNumber();
-```
-
-A chain with a single call, such as `dateString.substring(...)`, breaks inside
-its arguments instead. When the chain starts from a module, class or `me`, like
-`View.findDrawableById("id").setText(...)`, the first call counts as part of
-the start of the chain and stays on its line as long as it fits there.
+Anything that can wrap, such as an argument list, an array or a condition, stays
+on one line if it fits together with whatever follows it on that line.
+Otherwise it's broken with each part on its own line, starting from the
+outermost construct, and anything still too long is broken the same way.
 
 ## The magic trailing comma
 
@@ -68,145 +35,105 @@ if multiple items should be wrapped over multiple lines even when they would
 fit on a single line. The rule applies to arrays, dictionaries, function
 declaration parameters, and function / method call arguments.
 
-<table style="width: 980px">
-<tr>
-<th>Original</th>
-<th>Formatted</th>
-</tr>
+The formatter never adds a trailing comma itself.
 
-<tr>
-<td valign="top">
+A list without a trailing comma folds onto one line when it fits:
 
-    function SomeFunction(arg1 as String, arg2 as Number,) as Void {
-        var arr = [
-            1,
-            2,
-            3
-        ];
+```monkey-c
+// Before
+var values = [
+    1,
+    2
+];
 
-        var arr2 = [1, 2, 3,];
+// After
+var values = [1, 2];
+```
 
-        var dict = {
-            :keyOne => 1,
-            :keyNumberTwo => 2
-        };
+A trailing comma keeps it broken, one item per line, even when it would fit:
 
-        var dict2 = {:keyOne=>1, :keyNumberTwo=>2,};
+```monkey-c
+// Before
+var values = [1, 2,];
 
-        AnotherFunction(arr, arr2, dict, dict2,)
-    }
+// After
+var values = [
+    1,
+    2,
+];
+```
 
-</td>
-<td valign="top">
+The same goes for parameters and call arguments:
 
-    function SomeFunction(
-        arg1 as String,
-        arg2 as Number,
-    ) as Void {
-        var arr = [1, 2, 3];
+```monkey-c
+// Before
+function f(first, second,) {
+    call(first, second,);
+}
 
-        var arr2 = [
-            1,
-            2,
-            3,
-        ];
-
-        var dict = {:keyOne => 1, :keyNumberTwo => 2};
-
-        var dict2 = {
-            :keyOne       => 1,
-            :keyNumberTwo => 2,
-        };
-
-        AnotherFunction(
-            arr,
-            arr2,
-            dict,
-            dict2,
-        )
-    }
-
-</td>
-</tr>
-
-</table>
+// After
+function f(
+    first,
+    second,
+) {
+    call(
+        first,
+        second,
+    );
+}
+```
 
 ## Column alignment
 
-When alignment is enabled the formatter pads names so that the separator
-operators (`=>` in dictionaries, `=` in enum variants) line up in a vertical
-column. The intent is purely visual — to make related entries easier to scan.
+The formatter pads names so that `=>` in dictionaries and `=` in enums line up
+in a column, and does the same for trailing comments on consecutive lines. The
+intent is purely visual, to make related entries easier to scan. Disable it with
+`--no-alignment` or `alignment = false` in `rafiki.toml`.
 
-Trailing comments on consecutive lines are aligned into a column the same way,
-and are left where they are when alignment is disabled.
+Alignment only applies to entries that are already on separate lines, so a
+dictionary needs a [magic trailing comma](#the-magic-trailing-comma) or has to
+be too long for one line. In enums only runs of consecutive variants with an
+explicit value are aligned.
 
-Alignment only kicks in when an entry is already rendered multi-line. For
-dictionaries that follows the magic trailing comma rule above. For enums the
-formatter looks for runs of two or more consecutive variants that all have an
-explicit value, and pads the names within each run.
+```monkey-c
+// Before
+var dict = {
+    :keyOne => 1,
+    :keyNumberTwo => 2,
+};
 
-<table style="width: 980px">
-<tr>
-<th>Original</th>
-<th>Formatted</th>
-</tr>
+enum Color {
+    COLOR_RED = 1,
+    COLOR_GREEN = 2, // default
+    COLOR_BLUE_DARK = 3, // unused
+}
 
-<tr>
-<td valign="top">
+// After
+var dict = {
+    :keyOne       => 1,
+    :keyNumberTwo => 2,
+};
 
-    var dict = {
-        :keyOne => 1,
-        :keyNumberTwo => 2
-        :a => 3
-    };
+enum Color {
+    COLOR_RED       = 1,
+    COLOR_GREEN     = 2, // default
+    COLOR_BLUE_DARK = 3, // unused
+}
+```
 
-    enum Color {
-        COLOR_RED = 1,
-        COLOR_GREEN = 2,
-        COLOR_BLUE_DARK = 3,
-    }
+## Comments
 
-    enum State {
-        STATE_A,
-        STATE_B = 5,
-        STATE_C = 6,
-        STATE_D,
-    }
+Comments are kept where they are and are never dropped. If the formatter can't
+find a place for one, it warns rather than losing it.
 
-</td>
-<td valign="top">
-
-    var dict = {
-        :keyOne       => 1,
-        :keyNumberTwo => 2
-        :a            => 3
-    };
-
-    enum Color {
-        COLOR_RED       = 1,
-        COLOR_GREEN     = 2,
-        COLOR_BLUE_DARK = 3,
-    }
-
-    enum State {
-        STATE_A,
-        STATE_B = 5,
-        STATE_C = 6,
-        STATE_D,
-    }
-
-</td>
-</tr>
-
-</table>
-
-In the `State` example the run `[STATE_B = 5, STATE_C = 6]` is already aligned
-with itself and no padding is needed. The bare variants `STATE_A` and `STATE_D`
-break the run and stay as-is.
+The text of a comment is left as written apart from trailing whitespace, so a
+long comment isn't rewrapped and can go past the line width. A `//` comment at
+the end of a line doesn't count toward the width either, so it never forces the
+code before it to wrap.
 
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [linter]: ../linter
-[prettier]: https://prettier.io
+[prettier]: https://github.com/markw65/prettier-plugin-monkeyc
 [ruff]: https://github.com/astral-sh/ruff
