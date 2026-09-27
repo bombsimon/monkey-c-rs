@@ -16,6 +16,7 @@
     - [ifs-same-cond](linter/rules/ifs-same-cond/README.md)
     - [import-order](linter/rules/import-order/README.md)
     - [naming-convention](linter/rules/naming-convention/README.md)
+    - [null-union](linter/rules/null-union/README.md)
     - [one-class-per-file](linter/rules/one-class-per-file/README.md)
     - [redundant-resource-ref](linter/rules/redundant-resource-ref/README.md)
     - [super-initializer-call](linter/rules/super-initializer-call/README.md)

@@ -118,6 +118,10 @@ fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     if let Some(d) = rules::unneeded_parens::check_type(ty, ctx) {
         diags.push(d);
     }
+
+    if let Some(d) = rules::null_union::check_type(ty, ctx) {
+        diags.push(d);
+    }
 }
 
 /// Called once per [`Stmt`] visited by [`walk_stmt`]. Rules that care about

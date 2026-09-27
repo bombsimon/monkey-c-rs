@@ -19,8 +19,9 @@
 //!
 //! The Monkey C grammar only accepts parens around `Method(…)` types. The
 //! rule flags `(Method(…))` groupings except when the parens are
-//! load-bearing — `(Method(…) as Return)?`, where without the parens the
-//! trailing `?` would bind to `Return` instead of to the whole callable.
+//! load-bearing — `(Method(…) as Return)?` or `(Method(…) as Return) or T`,
+//! where without the parens the trailing `?` or `or T` would bind to `Return`
+//! instead of to the whole callable.
 use monkey_c_parser::ast::{BinaryExpr, BinaryOperator, Expr, ParenExpr, Span, Type, TypeKind};
 
 use crate::visit::{ExprPosition, LintContext, OperandSide};
@@ -182,10 +183,11 @@ pub fn check_type(ty: &Type, ctx: &LintContext) -> Option<Diagnostic> {
         return None;
     };
 
-    // Load-bearing case: a nullable Method type *with* a return. Without
-    // the parens, `Method(x) as Void?` would put `?` on `Void` rather than
-    // on the whole callable.
-    if ty.optional && returns.is_some() {
+    // Load-bearing case: a nullable or unioned Method type *with* a return.
+    // Without the parens, `Method(x) as Void?` and `Method(x) as Void or
+    // Null` would put `?` or `or Null` on `Void` rather than on the whole
+    // callable.
+    if (ty.optional || !ty.alternatives.is_empty()) && returns.is_some() {
         return None;
     }
 
@@ -409,6 +411,14 @@ function f() {
         // The one load-bearing case — `Method(x) as Void?` would put `?` on
         // `Void` rather than on the whole callable.
         let src = "var cb as (Method(value as String) as Void)?;";
+        assert!(lints(src).is_empty());
+    }
+
+    #[test]
+    fn ignores_parens_around_unioned_method_with_return() {
+        // Like `?`, a trailing `or` would bind to the return type once the
+        // parens are gone.
+        let src = "var cb as (Method(value as String) as Void) or Number;";
         assert!(lints(src).is_empty());
     }
 

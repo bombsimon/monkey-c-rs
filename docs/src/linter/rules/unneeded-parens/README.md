@@ -24,6 +24,8 @@ Places where parentheses can matter:
 - Before `.` or `[`, like `(x + 1).toString()`.
 - A nullable `Method(…)` type, like `(Method() as Boolean)?`, where removing
   them would make only the return type nullable.
+- A `Method(…)` type in a union, like `(Method() as Boolean) or Number`, where
+  removing them would make the union part of the return type.
 
 ## Example
 
