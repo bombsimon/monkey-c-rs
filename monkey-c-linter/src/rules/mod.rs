@@ -6,6 +6,7 @@ pub mod compound_assignment;
 pub mod ifs_same_cond;
 pub mod import_order;
 pub mod naming_convention;
+pub mod null_union;
 pub mod one_class_per_file;
 pub mod redundant_resource_ref;
 pub mod super_initializer_call;
@@ -64,6 +65,11 @@ pub const ALL: &[Rule] = &[
         name: naming_convention::RULE,
         summary: "Names that don't follow Garmin's coding conventions",
         fix: FixAvailability::Never,
+    },
+    Rule {
+        name: null_union::RULE,
+        summary: "`T or Null` instead of `T?`",
+        fix: FixAvailability::Always,
     },
     Rule {
         name: one_class_per_file::RULE,

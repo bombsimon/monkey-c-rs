@@ -106,7 +106,8 @@ var tiny = 3.5e-7f;
 ## Nullable types
 
 Prettier shortens `or Null` in a type to `?`. `rafiki` keeps the type as
-written.
+written and leaves it to the linter's [`null-union`][null-union] rule and its
+`--fix`.
 
 ```monkey-c
 // rafiki
@@ -373,6 +374,7 @@ like `ö` or `°`, with `�`, which loses them.
 
 [column-alignment]: ..#column-alignment
 [magic-trailing-comma]: ..#the-magic-trailing-comma
+[null-union]: ../../linter/rules/null-union
 [prettier-plugin-monkeyc]: https://github.com/markw65/prettier-plugin-monkeyc
 [redundant-resource-ref]: ../../linter/rules/redundant-resource-ref
 [unneeded-parens]: ../../linter/rules/unneeded-parens
