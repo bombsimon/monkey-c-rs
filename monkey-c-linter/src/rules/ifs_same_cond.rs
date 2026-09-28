@@ -134,7 +134,7 @@ fn type_eq(a: &Type, b: &Type) -> bool {
         && a.alternatives
             .iter()
             .zip(&b.alternatives)
-            .all(|(p, q)| type_eq(p, q))
+            .all(|(p, q)| type_eq(&p.type_, &q.type_))
 }
 
 fn type_kind_eq(a: &TypeKind, b: &TypeKind) -> bool {

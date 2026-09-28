@@ -40,7 +40,7 @@ fn test_var_declaration() {
                 digits: "5.0".into(),
                 has_dot: true,
                 leading_dot: false,
-                has_suffix: false,
+                suffix: None,
                 exponent: None,
             }),
             Type::Semicolon,
@@ -214,11 +214,12 @@ fn test_annotation_bytes_are_paren_colon_ident_paren() {
 #[test]
 fn test_hex_literal() {
     assert_eq!(
-        tokens("0xffcc00 0xFFCC00 0xFfCc00"),
+        tokens("0xffcc00 0xFFCC00 0xFfCc00 0XFF"),
         vec![
-            Type::Hex("ffcc00".into()),
-            Type::Hex("FFCC00".into()),
-            Type::Hex("FfCc00".into()),
+            Type::Hex("0xffcc00".into()),
+            Type::Hex("0xFFCC00".into()),
+            Type::Hex("0xFfCc00".into()),
+            Type::Hex("0XFF".into()),
         ]
     );
 }
@@ -226,27 +227,27 @@ fn test_hex_literal() {
 #[test]
 fn test_float_suffix() {
     assert_eq!(
-        tokens("0f 5f 0.5f"),
+        tokens("0f 5F 0.5f"),
         vec![
             Type::Float(FloatLit {
                 digits: "0".into(),
                 has_dot: false,
                 leading_dot: false,
-                has_suffix: true,
+                suffix: Some('f'),
                 exponent: None,
             }),
             Type::Float(FloatLit {
                 digits: "5".into(),
                 has_dot: false,
                 leading_dot: false,
-                has_suffix: true,
+                suffix: Some('F'),
                 exponent: None,
             }),
             Type::Float(FloatLit {
                 digits: "0.5".into(),
                 has_dot: true,
                 leading_dot: false,
-                has_suffix: true,
+                suffix: Some('f'),
                 exponent: None,
             }),
         ]
@@ -262,14 +263,14 @@ fn test_leading_dot_float() {
                 digits: ".978".into(),
                 has_dot: true,
                 leading_dot: true,
-                has_suffix: false,
+                suffix: None,
                 exponent: None,
             }),
             Type::Float(FloatLit {
                 digits: ".5".into(),
                 has_dot: true,
                 leading_dot: true,
-                has_suffix: true,
+                suffix: Some('f'),
                 exponent: None,
             }),
         ]
@@ -311,8 +312,12 @@ fn test_char_literal() {
 #[test]
 fn test_hex_long_literal() {
     assert_eq!(
-        tokens("0x800l 0xCAFEl"),
-        vec![Type::HexLong("800".into()), Type::HexLong("CAFE".into()),]
+        tokens("0x800l 0xCAFEL 0X1l"),
+        vec![
+            Type::HexLong("0x800l".into()),
+            Type::HexLong("0xCAFEL".into()),
+            Type::HexLong("0X1l".into()),
+        ]
     );
 }
 
@@ -485,7 +490,7 @@ fn test_float_literal() {
             digits: "1.5".into(),
             has_dot: true,
             leading_dot: false,
-            has_suffix: false,
+            suffix: None,
             exponent: None,
         })]
     );
@@ -500,28 +505,28 @@ fn test_exponent_notation() {
                 digits: "6371".into(),
                 has_dot: false,
                 leading_dot: false,
-                has_suffix: false,
+                suffix: None,
                 exponent: Some("e3".into()),
             }),
             Type::Float(FloatLit {
                 digits: "6371".into(),
                 has_dot: false,
                 leading_dot: false,
-                has_suffix: false,
+                suffix: None,
                 exponent: Some("E3".into()),
             }),
             Type::Float(FloatLit {
                 digits: "10".into(),
                 has_dot: false,
                 leading_dot: false,
-                has_suffix: false,
+                suffix: None,
                 exponent: Some("e-2".into()),
             }),
             Type::Float(FloatLit {
                 digits: "1.5".into(),
                 has_dot: true,
                 leading_dot: false,
-                has_suffix: false,
+                suffix: None,
                 exponent: Some("e+10".into()),
             }),
             Type::Double(DoubleLit {
@@ -529,6 +534,7 @@ fn test_exponent_notation() {
                 has_dot: false,
                 leading_dot: false,
                 exponent: Some("e3".into()),
+                suffix: 'd',
             }),
         ]
     );

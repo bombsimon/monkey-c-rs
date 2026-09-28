@@ -1,6 +1,6 @@
 use crate::ast::{
     DictTypeEntry, DictTypeKey, InterfaceMember, InterfaceMethod, InterfaceVar, Parens, Span,
-    Spanned, Type, TypeKind,
+    Spanned, Type, TypeKind, UnionAlternative, UnionSeparator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -10,12 +10,12 @@ impl Parser<'_> {
     /// variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type(true)?;
-        while matches!(
-            self.current_token,
-            token::Type::OrKeyword | token::Type::BitOr
-        ) {
-            self.next_token_span(); // consume `or` or `|`
-            ty.alternatives.push(self.parse_simple_type(true)?);
+        while let Some(separator) = self.union_separator() {
+            self.next_token_span();
+            ty.alternatives.push(UnionAlternative {
+                separator,
+                type_: self.parse_simple_type(true)?,
+            });
         }
 
         if !ty.alternatives.is_empty() {
@@ -38,12 +38,17 @@ impl Parser<'_> {
     ///   always a parenthesized bitwise-OR operand, not a parenthesized type.
     pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type(false)?;
-        while self.current_token == token::Type::OrKeyword
-            || (self.current_token == token::Type::BitOr
-                && Self::is_type_start(&self.lexer.peek_token().1))
-        {
-            self.next_token_span(); // consume `or` or `|`
-            ty.alternatives.push(self.parse_simple_type(false)?);
+        while let Some(separator) = self.union_separator() {
+            if separator == UnionSeparator::Pipe && !Self::is_type_start(&self.lexer.peek_token().1)
+            {
+                break;
+            }
+
+            self.next_token_span();
+            ty.alternatives.push(UnionAlternative {
+                separator,
+                type_: self.parse_simple_type(false)?,
+            });
         }
 
         if !ty.alternatives.is_empty() {
@@ -51,6 +56,14 @@ impl Parser<'_> {
         }
 
         Ok(ty)
+    }
+
+    fn union_separator(&self) -> Option<UnionSeparator> {
+        match self.current_token {
+            token::Type::OrKeyword => Some(UnionSeparator::Or),
+            token::Type::BitOr => Some(UnionSeparator::Pipe),
+            _ => None,
+        }
     }
 
     fn is_type_start(tok: &token::Type) -> bool {

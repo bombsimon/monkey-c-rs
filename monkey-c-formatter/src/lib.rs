@@ -552,7 +552,7 @@ impl Formatter {
                 let mut parts: Vec<Doc> = Vec::new();
                 for (i, entry) in entries.iter().enumerate() {
                     if i > 0 {
-                        parts.push(Doc::text(", "));
+                        parts.push(Doc::text(if entry.preceded_by_comma { ", " } else { " " }));
                     }
 
                     parts.push(self.drain_leading_doc(entry.span.start));
@@ -1094,9 +1094,9 @@ impl Formatter {
         }
 
         let mut parts = vec![base];
-        for alt in &ty.alternatives {
-            parts.push(Doc::text(" or "));
-            parts.push(self.type_to_doc(alt));
+        for alternative in &ty.alternatives {
+            parts.push(Doc::text(format!(" {} ", alternative.separator.as_str())));
+            parts.push(self.type_to_doc(&alternative.type_));
         }
 
         Doc::Concat(parts)
@@ -2114,10 +2114,10 @@ impl Formatter {
             Expr::Array(e) => self.format_array(e),
             Expr::Dict(e) => self.format_dict(e),
             Expr::Lit(e) => Doc::text(match &e.value {
-                LiteralValue::Number(v) => v.clone(),
-                LiteralValue::Long(v) => format!("{v}l"),
-                LiteralValue::Hex(s) => format!("0x{s}"),
-                LiteralValue::HexLong(s) => format!("0x{s}l"),
+                LiteralValue::Number(v)
+                | LiteralValue::Long(v)
+                | LiteralValue::Hex(v)
+                | LiteralValue::HexLong(v) => v.clone(),
                 LiteralValue::Float(lit) => format_float_lit(lit),
                 LiteralValue::Double(lit) => format_double_lit(lit),
                 LiteralValue::String(v) => format!("\"{v}\""),
@@ -2695,10 +2695,10 @@ fn expr_key_width(expr: &Expr) -> Option<usize> {
         Expr::Bling(_) => Some(1),
         Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + display_width(&e.property)),
         Expr::Lit(e) => Some(match &e.value {
-            LiteralValue::Number(v) => v.len(),
-            LiteralValue::Long(v) => v.to_string().len() + 1,
-            LiteralValue::Hex(s) => 2 + s.len(),
-            LiteralValue::HexLong(s) => 2 + s.len() + 1,
+            LiteralValue::Number(v)
+            | LiteralValue::Long(v)
+            | LiteralValue::Hex(v)
+            | LiteralValue::HexLong(v) => v.len(),
             LiteralValue::Float(lit) => format_float_lit(lit).len(),
             LiteralValue::Double(lit) => format_double_lit(lit).len(),
             LiteralValue::String(v) => 2 + display_width(v),
@@ -2720,10 +2720,9 @@ fn format_float_lit(lit: &FloatLit) -> String {
         lit.digits.clone()
     };
 
-    if lit.has_suffix {
-        format!("{body}f")
-    } else {
-        body
+    match lit.suffix {
+        Some(suffix) => format!("{body}{suffix}"),
+        None => body,
     }
 }
 
@@ -2735,7 +2734,7 @@ fn format_double_lit(lit: &DoubleLit) -> String {
         lit.digits.clone()
     };
 
-    format!("{body}d")
+    format!("{body}{}", lit.suffix)
 }
 
 fn collect_binary_chain<'a>(

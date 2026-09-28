@@ -17,15 +17,15 @@ pub struct FloatLit {
     pub has_dot: bool,
     /// Source omitted the leading zero (`.5`, `.5f`). Implies `has_dot`.
     pub leading_dot: bool,
-    /// Source had an explicit `f` suffix.
-    pub has_suffix: bool,
+    /// The `f` or `F` suffix as written, `None` when the source had none.
+    pub suffix: Option<char>,
     /// Exponent part from scientific notation, e.g. `"e3"`, `"E-2"`, `"e+10"`.
     /// `None` for literals without an exponent.
     pub exponent: Option<String>,
 }
 
 /// A 64-bit floating point literal. Unlike [`FloatLit`], the `d` suffix is
-/// always required in source, so there is no `has_suffix` flag.
+/// always required in source, so only its casing is optional.
 ///
 /// <https://developer.garmin.com/connect-iq/api-docs/Toybox/Lang/Double.html>
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +41,8 @@ pub struct DoubleLit {
     /// Exponent part from scientific notation, e.g. `"e3"`, `"E-2"`.
     /// `None` for literals without an exponent.
     pub exponent: Option<String>,
+    /// The `d` or `D` suffix as written.
+    pub suffix: char,
 }
 
 impl std::fmt::Display for FloatLit {
@@ -74,14 +76,14 @@ pub enum LiteralValue {
     /// verbatim so the formatter preserves the exact written form and never
     /// loses information by round-tripping through a fixed-width integer.
     Number(String),
-    /// 64-bit signed integer (`l` suffix in source). Stores the raw digits
-    /// (without the suffix) for the same reason as [`LiteralValue::Number`].
+    /// 64-bit signed integer (`l` or `L` suffix in source). Stores the raw
+    /// text including the suffix for the same reason as [`LiteralValue::Number`].
     Long(String),
-    /// A hex-formatted integer literal (`0x…`). Stores the raw digits so the
-    /// formatter can preserve the original casing.
+    /// A hex-formatted integer literal (`0x…`). Stores the raw text including
+    /// the prefix so the formatter can preserve the original casing.
     Hex(String),
-    /// A hex-formatted 64-bit integer literal (`0x…l`). Stores the raw digits
-    /// so the formatter can preserve the original casing.
+    /// A hex-formatted 64-bit integer literal (`0x…l`). Stores the raw text
+    /// including prefix and suffix so the formatter can preserve their casing.
     HexLong(String),
     /// 32-bit floating point number. Source-form flags let the formatter
     /// round-trip the exact written form (`0f`, `0.5`, `0.5f`, `.978`, `.5f`).
