@@ -126,6 +126,13 @@ impl CommentCursor {
             .any(|c| c.span.start >= start && c.span.start < end)
     }
 
+    /// True if there is any undrained line comment (`//`) with `span.start` in `[start, end)`.
+    pub fn has_line_comment_in(&self, start: usize, end: usize) -> bool {
+        self.comments[self.next..]
+            .iter()
+            .any(|c| !c.is_block && c.span.start >= start && c.span.start < end)
+    }
+
     /// True if there is an undrained line comment (`//`) on source line `line`.
     pub fn has_line_comment_on(&self, line: u32, line_index: &LineIndex) -> bool {
         self.has_line_comment_between(0, usize::MAX, line, line_index)
