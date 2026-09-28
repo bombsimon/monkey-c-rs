@@ -37,15 +37,15 @@ fn parse_function(src: &str) -> FunctionDecl {
 fn test_literals() {
     for (src, expected) in [
         ("42", LiteralValue::Number("42".to_string())),
-        ("42l", LiteralValue::Long("42".to_string())),
-        ("42L", LiteralValue::Long("42".to_string())),
+        ("42l", LiteralValue::Long("42l".to_string())),
+        ("42L", LiteralValue::Long("42L".to_string())),
         (
             "1.5",
             LiteralValue::Float(FloatLit {
                 digits: "1.5".into(),
                 has_dot: true,
                 leading_dot: false,
-                has_suffix: false,
+                suffix: None,
                 exponent: None,
             }),
         ),
@@ -56,6 +56,7 @@ fn test_literals() {
                 has_dot: true,
                 leading_dot: false,
                 exponent: None,
+                suffix: 'd',
             }),
         ),
         ("true", LiteralValue::Boolean(true)),

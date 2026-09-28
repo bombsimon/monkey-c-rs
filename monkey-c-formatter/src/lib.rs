@@ -4,10 +4,11 @@ mod operators;
 
 use doc::{Doc, display_width, render};
 use monkey_c_parser::ast::{
-    ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr, CaseLabel, CommentStmt,
-    ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch, EnumDecl, EnumVariant,
-    Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember, LiteralValue, Modifiers, Span,
-    Spanned, Stmt, SwitchStmt, TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
+    AnnotationEntry, ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr,
+    CaseLabel, CommentStmt, ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch,
+    EnumDecl, EnumVariant, Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember,
+    LiteralValue, Modifiers, Span, Spanned, Stmt, SwitchStmt, TryStmt, Type, TypeKind,
+    UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
@@ -521,65 +522,79 @@ impl Formatter {
             Ast::Enum(decl) => self.enum_to_doc(decl),
             Ast::Variable(var_stmt) => self.var_stmt_to_doc(var_stmt),
             Ast::Const(decl) => self.const_decl_to_doc(decl),
-            Ast::Annotation(entries, span) => {
-                if entries.is_empty() {
-                    let inner_start = span.start + 1;
-                    let inner_end = span.end.saturating_sub(1);
-                    if self
-                        .comment_cursor
-                        .borrow()
-                        .has_comment_in(inner_start, inner_end)
-                    {
-                        let comments = self.comment_cursor.borrow_mut().drain_before(inner_end);
-                        let mut inner = Vec::new();
-                        for (i, c) in comments.iter().enumerate() {
-                            if i > 0 {
-                                inner.push(Doc::text(" "));
-                            }
-                            inner.push(self.comment_to_doc(c));
-                        }
-
-                        return Doc::concat(vec![
-                            Doc::text("("),
-                            Doc::Concat(inner),
-                            Doc::text(")"),
-                        ]);
-                    }
-
-                    return Doc::text("()");
-                }
-
-                let mut parts: Vec<Doc> = Vec::new();
-                for (i, entry) in entries.iter().enumerate() {
-                    if i > 0 {
-                        parts.push(Doc::text(", "));
-                    }
-
-                    parts.push(self.drain_leading_doc(entry.span.start));
-                    parts.push(Doc::text(format!(":{}", entry.name)));
-                    if !entry.args.is_empty() {
-                        parts.push(Doc::text("("));
-                        for (j, arg) in entry.args.iter().enumerate() {
-                            if j > 0 {
-                                parts.push(Doc::text(", "));
-                            }
-
-                            parts.push(self.expr_with_leading(arg));
-                        }
-
-                        parts.push(Doc::text(")"));
-                    }
-
-                    // Bound to annotation's closing `)` so that trailing
-                    // comments after the annotated declaration are not captured
-                    // inside the annotation parens.
-                    parts.push(self.drain_trailing_doc_bounded(entry.span.end, span.end));
-                }
-
-                Doc::concat(vec![Doc::text("("), Doc::Concat(parts), Doc::text(")")])
-            }
+            Ast::Annotation(entries, span) => self.annotation_to_doc(entries, *span),
             Ast::Eof => Doc::Empty,
         }
+    }
+
+    /// A `//` comment runs to the end of the line, so an annotation group holding one is broken
+    /// with each entry on its own line. Otherwise the entry after it would be commented out.
+    fn annotation_to_doc(&self, entries: &[AnnotationEntry], span: Span) -> Doc {
+        let inner_start = span.start + 1;
+        let inner_end = span.end.saturating_sub(1);
+        let multiline = self
+            .comment_cursor
+            .borrow()
+            .has_line_comment_in(inner_start, inner_end);
+        let separator = if multiline {
+            Doc::HardLine
+        } else {
+            Doc::text(" ")
+        };
+
+        if entries.is_empty() {
+            let comments = self.comment_cursor.borrow_mut().drain_before(inner_end);
+            if comments.is_empty() {
+                return Doc::text("()");
+            }
+
+            let mut inner = Vec::new();
+            for (i, comment) in comments.iter().enumerate() {
+                if i > 0 {
+                    inner.push(separator.clone());
+                }
+
+                inner.push(self.comment_to_doc(comment));
+            }
+
+            return wrap_annotation(inner, multiline);
+        }
+
+        let mut inner = Vec::new();
+        for (i, entry) in entries.iter().enumerate() {
+            let next_entry = entries.get(i + 1);
+
+            if i > 0 {
+                inner.push(separator.clone());
+            }
+
+            inner.push(self.drain_leading_doc(entry.span.start));
+            inner.push(Doc::text(format!(":{}", entry.name)));
+
+            if !entry.args.is_empty() {
+                inner.push(Doc::text("("));
+                for (j, arg) in entry.args.iter().enumerate() {
+                    if j > 0 {
+                        inner.push(Doc::text(", "));
+                    }
+
+                    inner.push(self.expr_with_leading(arg));
+                }
+
+                inner.push(Doc::text(")"));
+            }
+
+            if next_entry.is_some_and(|next| next.preceded_by_comma) {
+                inner.push(Doc::text(","));
+            }
+
+            // Bounded so comments belonging to the next entry, or to the annotated declaration
+            // after the closing `)`, are not pulled in here.
+            let max_pos = next_entry.map_or(span.end, |next| next.span.start);
+            inner.push(self.drain_trailing_doc_bounded(entry.span.end, max_pos));
+        }
+
+        wrap_annotation(inner, multiline)
     }
 
     /// Drain any comments that appear between the last expression/token and
@@ -1094,9 +1109,9 @@ impl Formatter {
         }
 
         let mut parts = vec![base];
-        for alt in &ty.alternatives {
-            parts.push(Doc::text(" or "));
-            parts.push(self.type_to_doc(alt));
+        for alternative in &ty.alternatives {
+            parts.push(Doc::text(format!(" {} ", alternative.separator.as_str())));
+            parts.push(self.type_to_doc(&alternative.type_));
         }
 
         Doc::Concat(parts)
@@ -2114,10 +2129,10 @@ impl Formatter {
             Expr::Array(e) => self.format_array(e),
             Expr::Dict(e) => self.format_dict(e),
             Expr::Lit(e) => Doc::text(match &e.value {
-                LiteralValue::Number(v) => v.clone(),
-                LiteralValue::Long(v) => format!("{v}l"),
-                LiteralValue::Hex(s) => format!("0x{s}"),
-                LiteralValue::HexLong(s) => format!("0x{s}l"),
+                LiteralValue::Number(v)
+                | LiteralValue::Long(v)
+                | LiteralValue::Hex(v)
+                | LiteralValue::HexLong(v) => v.clone(),
                 LiteralValue::Float(lit) => format_float_lit(lit),
                 LiteralValue::Double(lit) => format_double_lit(lit),
                 LiteralValue::String(v) => format!("\"{v}\""),
@@ -2695,10 +2710,10 @@ fn expr_key_width(expr: &Expr) -> Option<usize> {
         Expr::Bling(_) => Some(1),
         Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + display_width(&e.property)),
         Expr::Lit(e) => Some(match &e.value {
-            LiteralValue::Number(v) => v.len(),
-            LiteralValue::Long(v) => v.to_string().len() + 1,
-            LiteralValue::Hex(s) => 2 + s.len(),
-            LiteralValue::HexLong(s) => 2 + s.len() + 1,
+            LiteralValue::Number(v)
+            | LiteralValue::Long(v)
+            | LiteralValue::Hex(v)
+            | LiteralValue::HexLong(v) => v.len(),
             LiteralValue::Float(lit) => format_float_lit(lit).len(),
             LiteralValue::Double(lit) => format_double_lit(lit).len(),
             LiteralValue::String(v) => 2 + display_width(v),
@@ -2712,6 +2727,19 @@ fn expr_key_width(expr: &Expr) -> Option<usize> {
     }
 }
 
+fn wrap_annotation(inner: Vec<Doc>, multiline: bool) -> Doc {
+    if !multiline {
+        return Doc::concat(vec![Doc::text("("), Doc::Concat(inner), Doc::text(")")]);
+    }
+
+    Doc::concat(vec![
+        Doc::text("("),
+        Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
+        Doc::HardLine,
+        Doc::text(")"),
+    ])
+}
+
 /// Re-emit a [`FloatLit`] in the exact source form recorded by the lexer.
 fn format_float_lit(lit: &FloatLit) -> String {
     let body = if let Some(exp) = &lit.exponent {
@@ -2720,10 +2748,9 @@ fn format_float_lit(lit: &FloatLit) -> String {
         lit.digits.clone()
     };
 
-    if lit.has_suffix {
-        format!("{body}f")
-    } else {
-        body
+    match lit.suffix {
+        Some(suffix) => format!("{body}{suffix}"),
+        None => body,
     }
 }
 
@@ -2735,7 +2762,7 @@ fn format_double_lit(lit: &DoubleLit) -> String {
         lit.digits.clone()
     };
 
-    format!("{body}d")
+    format!("{body}{}", lit.suffix)
 }
 
 fn collect_binary_chain<'a>(

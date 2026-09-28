@@ -61,11 +61,13 @@ pub struct VarDecl {
 }
 
 /// One entry inside an annotation group: a symbol name plus an optional argument list. `(:foo)`
-/// parses with empty `args`; `(:typecheck(false))` gets `args = [false]`.
+/// parses with empty `args`; `(:typecheck(false))` gets `args = [false]`. Entries may be separated
+/// by commas or only by whitespace, and the formatter keeps whichever was written.
 #[derive(Debug, PartialEq)]
 pub struct AnnotationEntry {
     pub name: Symbol,
     pub args: Vec<Expr>,
+    pub preceded_by_comma: bool,
     pub span: Span,
 }
 

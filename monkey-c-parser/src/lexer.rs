@@ -110,18 +110,18 @@ impl<'a> Lexer<'a> {
 
         if self.ch == b'0' && matches!(self.peek_char(), b'x' | b'X') {
             self.read_n_chars(2); // consume `0x`
-            let digits_start = self.position;
             while self.ch.is_ascii_hexdigit() {
                 self.read_char();
             }
 
-            let digits = self.input[digits_start..self.position].to_string();
             if matches!(self.ch, b'l' | b'L') {
                 self.read_char();
-                return NumberLiteral::HexLong(digits);
+                return NumberLiteral::HexLong(
+                    self.input[start_position..self.position].to_string(),
+                );
             }
 
-            return NumberLiteral::Hex(digits);
+            return NumberLiteral::Hex(self.input[start_position..self.position].to_string());
         }
 
         let mut has_dot = false;
@@ -172,24 +172,25 @@ impl<'a> Lexer<'a> {
         match self.ch {
             b'l' | b'L' => {
                 self.read_char();
-                NumberLiteral::Long(text)
+                NumberLiteral::Long(self.input[start_position..self.position].to_string())
             }
-            b'd' | b'D' => {
+            suffix @ (b'd' | b'D') => {
                 self.read_char();
                 NumberLiteral::Double(DoubleLit {
                     digits,
                     has_dot,
                     leading_dot,
                     exponent,
+                    suffix: char::from(suffix),
                 })
             }
-            b'f' | b'F' => {
+            suffix @ (b'f' | b'F') => {
                 self.read_char();
                 NumberLiteral::Float(FloatLit {
                     digits,
                     has_dot,
                     leading_dot,
-                    has_suffix: true,
+                    suffix: Some(char::from(suffix)),
                     exponent,
                 })
             }
@@ -197,7 +198,7 @@ impl<'a> Lexer<'a> {
                 digits,
                 has_dot,
                 leading_dot,
-                has_suffix: false,
+                suffix: None,
                 exponent,
             }),
             _ => NumberLiteral::Number(text),

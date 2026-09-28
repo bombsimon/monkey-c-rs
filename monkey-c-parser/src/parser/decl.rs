@@ -84,6 +84,7 @@ impl Parser<'_> {
     fn parse_annotation_decl(&mut self, start: usize) -> Result<Ast, ParserError> {
         self.assert_next_token(&[token::Type::LParen])?;
         let mut entries = Vec::new();
+        let mut preceded_by_comma = false;
 
         if self.current_token != token::Type::RParen {
             loop {
@@ -103,6 +104,7 @@ impl Parser<'_> {
                 entries.push(AnnotationEntry {
                     name,
                     args,
+                    preceded_by_comma,
                     span: Span {
                         start: entry_start,
                         end: self.prev_token_end,
@@ -112,8 +114,9 @@ impl Parser<'_> {
                 match self.current_token {
                     token::Type::Comma => {
                         self.next_token_span();
+                        preceded_by_comma = true;
                     } // comma-separated: `(:a, :b)`
-                    token::Type::Colon => {} // space-separated: `(:a :b)`
+                    token::Type::Colon => preceded_by_comma = false, // space-separated: `(:a :b)`
                     _ => break,
                 }
             }

@@ -13,12 +13,13 @@ If you're coming from [Prettier][prettier], see
 ## Layout only
 
 The formatter only changes whitespace and line breaks, never what the code
-says. Parentheses, number literals, types and the legacy `@` prefix are kept
-exactly as written. Changes like removing redundant parentheses are left to the
+says. Changes like removing redundant parentheses are left to the
 [linter][linter], where they can be reviewed on their own.
 
-The one exception is `new Foo`, which gets an empty argument list and becomes
-`new Foo()`. It doesn't change what the code does.
+There are two exceptions, neither of which changes what the code does:
+
+- `new Foo` gets an empty argument list and becomes `new Foo()`.
+- Extra semicolons are dropped, so `var x = 1;;` becomes `var x = 1;`.
 
 ## Wrapping long lines
 

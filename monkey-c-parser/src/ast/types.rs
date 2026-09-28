@@ -12,12 +12,34 @@ use crate::ast::{Ident, Parameter, Parens, Position, Span, Spanned};
 #[derive(Debug, PartialEq)]
 pub struct Type {
     pub kind: TypeKind,
-    /// `or`-joined union peers, excluding the first (which is this type
-    /// itself). Empty for non-union types.
-    pub alternatives: Vec<Type>,
+    /// Union peers, excluding the first (which is this type itself). Empty for non-union types.
+    pub alternatives: Vec<UnionAlternative>,
     /// Whether the type is nullable (`?` suffix).
     pub optional: bool,
     pub span: Span,
+}
+
+/// One peer of a union together with the separator written before it. `or` and `|` mean the
+/// same thing, but the one written is kept so the formatter never rewrites it.
+#[derive(Debug, PartialEq)]
+pub struct UnionAlternative {
+    pub separator: UnionSeparator,
+    pub type_: Type,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UnionSeparator {
+    Or,
+    Pipe,
+}
+
+impl UnionSeparator {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UnionSeparator::Or => "or",
+            UnionSeparator::Pipe => "|",
+        }
+    }
 }
 
 /// What kind of type this is, before alternatives/optional are applied.

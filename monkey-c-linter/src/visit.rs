@@ -372,8 +372,8 @@ fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
         TypeKind::Group(group) => walk_type(&group.inner, ctx, diags),
     }
 
-    for alt in &ty.alternatives {
-        walk_type(alt, ctx, diags);
+    for alternative in &ty.alternatives {
+        walk_type(&alternative.type_, ctx, diags);
     }
 }
 

@@ -9,7 +9,7 @@
 //! Only two-member unions are flagged. `String or Number or Null` has no
 //! shorthand since `?` applies to a single type, and wrapping the rest in
 //! parentheses isn't something the grammar accepts for named types.
-use monkey_c_parser::ast::{Type, TypeKind};
+use monkey_c_parser::ast::{Type, TypeKind, UnionAlternative};
 
 use crate::visit::LintContext;
 use crate::{Diagnostic, Fix};
@@ -21,11 +21,11 @@ pub fn check_type(ty: &Type, ctx: &LintContext) -> Option<Diagnostic> {
         return None;
     };
 
-    let (non_null_text, non_null_is_optional) = match (is_null(ty), is_null(alternative)) {
+    let (non_null_text, non_null_is_optional) = match (is_null(ty), is_null(&alternative.type_)) {
         (false, true) => (primary_text(ty, alternative, ctx)?, ty.optional),
         (true, false) => (
-            &ctx.source[alternative.span.start..alternative.span.end],
-            alternative.optional,
+            &ctx.source[alternative.type_.span.start..alternative.type_.span.end],
+            alternative.type_.optional,
         ),
         (true, true) | (false, false) => return None,
     };
@@ -61,9 +61,13 @@ fn is_null(ty: &Type) -> bool {
 /// The source text of the first member of a union, without the separator
 /// that joins it to `alternative`. The union's own span covers every member,
 /// so the first member ends where the separator before `alternative` starts.
-fn primary_text<'a>(ty: &Type, alternative: &Type, ctx: &LintContext<'a>) -> Option<&'a str> {
-    let text = ctx.source[ty.span.start..alternative.span.start].trim_end();
-    let text = text.strip_suffix("or").or_else(|| text.strip_suffix('|'))?;
+fn primary_text<'a>(
+    ty: &Type,
+    alternative: &UnionAlternative,
+    ctx: &LintContext<'a>,
+) -> Option<&'a str> {
+    let text = ctx.source[ty.span.start..alternative.type_.span.start].trim_end();
+    let text = text.strip_suffix(alternative.separator.as_str())?;
 
     Some(text.trim_end())
 }

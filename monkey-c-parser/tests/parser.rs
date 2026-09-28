@@ -1,6 +1,6 @@
 use monkey_c_parser::ast::{
     Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, EnumDecl, Expr, ForInit,
-    FunctionDecl, Stmt, VarDecl, Visibility,
+    FunctionDecl, Stmt, UnionSeparator, VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -99,7 +99,7 @@ fn test_var_declarations() {
     let param = &ty.generic_params()[0];
     assert_eq!(param.ident().unwrap(), "Number");
     assert_eq!(param.alternatives.len(), 1);
-    assert_eq!(param.alternatives[0].ident().unwrap(), "Float");
+    assert_eq!(param.alternatives[0].type_.ident().unwrap(), "Float");
 
     // `Dictionary<String, Number>` is two distinct generic params, comma-
     // separated. The old code conflated this with the union shape above.
@@ -522,12 +522,21 @@ fn test_enum_trailing_comma() {
 
 #[test]
 fn test_typedef() {
-    for (src, alt_count) in [
-        ("typedef Numeric as Number or Float or Long or Double;", 3),
+    for (src, separators) in [
+        (
+            "typedef Numeric as Number or Float or Long or Double;",
+            vec![UnionSeparator::Or; 3],
+        ),
         // `|` is an alias for `or` in union types.
-        ("typedef Numeric as Number | Float | Long | Double;", 3),
+        (
+            "typedef Numeric as Number | Float | Long | Double;",
+            vec![UnionSeparator::Pipe; 3],
+        ),
         // Mixed `or` and `|` in the same typedef.
-        ("typedef Numeric as Number or Float | Long;", 2),
+        (
+            "typedef Numeric as Number or Float | Long;",
+            vec![UnionSeparator::Or, UnionSeparator::Pipe],
+        ),
     ] {
         let nodes = document_nodes(src);
         let Ast::Typedef(d) = &nodes[0] else {
@@ -536,9 +545,13 @@ fn test_typedef() {
         assert_eq!(d.name.node, "Numeric");
         assert_eq!(d.type_.ident().unwrap(), "Number");
         assert_eq!(
-            d.type_.alternatives.len(),
-            alt_count,
-            "wrong alternative count in `{src}`"
+            d.type_
+                .alternatives
+                .iter()
+                .map(|alternative| alternative.separator)
+                .collect::<Vec<_>>(),
+            separators,
+            "wrong union separators in `{src}`"
         );
     }
 }

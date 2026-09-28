@@ -1,0 +1,25 @@
+(:debug // only in debug builds
+:background)
+function spaceSeparated() as Void {}
+
+(:debug, // only in debug builds
+ :background // runs in the background
+)
+function commaSeparated() as Void {}
+
+(
+    // explains the group
+    :test :debug
+)
+function leadingComment() as Void {}
+
+(:typecheck(false) // skip checks
+    :debug)
+function withArgs() as Void {}
+
+( // nothing annotated yet
+)
+function emptyGroup() as Void {}
+
+(:a /* inline */ :b)
+function blockCommentStaysInline() as Void {}
