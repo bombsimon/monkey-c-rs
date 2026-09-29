@@ -1,0 +1,30 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/comment_around_list_brackets.mc
+---
+var list = [ // comment
+    [1, 2],
+];
+
+var dict = { // comment
+    :key => 1,
+};
+
+var inline = [
+    /* comment */ 1,
+    2
+];
+
+function f(
+    first
+    // comment
+) {
+    foo(
+        first
+        // comment
+    );
+    var bar = new Bar(
+        first
+        // comment
+    );
+}

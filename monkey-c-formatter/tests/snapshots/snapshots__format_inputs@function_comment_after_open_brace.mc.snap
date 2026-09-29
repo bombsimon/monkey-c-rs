@@ -20,7 +20,7 @@ function empty() { // note
 
 function withComments(
     a, // first
-    b, /* second */
+    b /* second */,
     c
 ) { // after brace
     return;

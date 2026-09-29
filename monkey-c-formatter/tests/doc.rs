@@ -167,3 +167,16 @@ fn test_wide_characters_count_as_two_columns() {
     assert_eq!(render(&doc, 9), "f(\"上海\")");
     assert_eq!(render(&doc, 8), "f(\n    \"上海\"\n)");
 }
+
+#[test]
+fn test_concat_of_nothing_is_empty() {
+    assert!(matches!(Doc::concat(vec![]), Doc::Empty));
+    assert!(matches!(
+        Doc::concat(vec![Doc::Empty, Doc::concat(vec![Doc::Empty])]),
+        Doc::Empty
+    ));
+    assert!(matches!(
+        Doc::concat(vec![Doc::Empty, Doc::text("a")]),
+        Doc::Concat(_)
+    ));
+}

@@ -1,0 +1,16 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/comment_after_case_block_brace.mc
+---
+function f() {
+    switch (foo) {
+        case 1:
+            { // comment
+                bar();
+            }
+        case 2:
+            { /* comment */
+                bar();
+            }
+    }
+}

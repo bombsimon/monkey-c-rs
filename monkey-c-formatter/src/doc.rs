@@ -70,7 +70,13 @@ impl Doc {
         Doc::Indent(docs)
     }
 
+    /// Concatenate `docs`, or [`Doc::Empty`] when there is nothing in them, so callers can check
+    /// whether anything was produced.
     pub fn concat(docs: Vec<Doc>) -> Self {
+        if docs.iter().all(|doc| matches!(doc, Doc::Empty)) {
+            return Doc::Empty;
+        }
+
         Doc::Concat(docs)
     }
 
