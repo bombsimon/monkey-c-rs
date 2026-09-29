@@ -1,8 +1,8 @@
 use crate::ast::{
     ArrayEntry, ArrayExpr, AssignExpr, AssignOperator, BinaryExpr, BinaryOperator, CallArg,
     CallExpr, DictEntry, DictExpr, Expr, IdentExpr, IndexExpr, LitExpr, LiteralValue, MemberExpr,
-    NewArrayExpr, NewExpr, ParenExpr, Span, TernaryExpr, Type, TypeCastExpr, TypeKind, UnaryExpr,
-    UnaryOperator,
+    NewArrayExpr, NewExpr, ParenExpr, Separated, Span, TernaryExpr, Type, TypeCastExpr, TypeKind,
+    UnaryExpr, UnaryOperator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -33,6 +33,7 @@ impl Parser<'_> {
             | token::Type::RightShiftAssign => {
                 let operator_token = self.current_token.clone();
                 let start = expr.span().start;
+                let op_pos = self.current_token_start;
                 self.next_token_span();
                 let operator = match operator_token {
                     token::Type::Assign => AssignOperator::Assign,
@@ -53,6 +54,7 @@ impl Parser<'_> {
                 Ok(Expr::Assign(AssignExpr {
                     target: Box::new(expr),
                     operator,
+                    op_pos,
                     value: Box::new(value),
                     span: Span { start, end },
                 }))
@@ -70,15 +72,19 @@ impl Parser<'_> {
         }
 
         let start = cond.span().start;
+        let question_pos = self.current_token_start;
         self.next_token_span(); // consume `?`
         let then_expr = self.parse_expression()?;
+        let colon_pos = self.current_token_start;
         self.assert_next_token(&[token::Type::Colon])?;
         let else_expr = self.parse_ternary()?;
         let end = else_expr.span().end;
 
         Ok(Expr::Ternary(TernaryExpr {
             condition: Box::new(cond),
+            question_pos,
             then_expr: Box::new(then_expr),
+            colon_pos,
             else_expr: Box::new(else_expr),
             span: Span { start, end },
         }))
@@ -389,13 +395,12 @@ impl Parser<'_> {
             if self.current_token == token::Type::LParen {
                 let args_open = self.current_token_start;
                 self.next_token_span(); // consume (
-                let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
+                let args = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end; // end of )
                 expr = Expr::Call(CallExpr {
                     callee: Box::new(expr),
                     args,
                     args_open,
-                    args_trailing_comma,
                     span: Span { start, end },
                 });
                 self.assert_next_token(&[token::Type::RParen])?;
@@ -604,7 +609,7 @@ impl Parser<'_> {
             token::Type::LBracket => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume [
-                let (entries, trailing_comma) = self.parse_array_entries()?;
+                let entries = self.parse_array_entries()?;
                 let mut end = self.current_token_end; // end of ]
                 self.next_token_span(); // consume ]
 
@@ -619,7 +624,6 @@ impl Parser<'_> {
 
                 Ok(Expr::Array(ArrayExpr {
                     entries,
-                    trailing_comma,
                     is_byte_array,
                     span: Span { start, end },
                 }))
@@ -627,13 +631,12 @@ impl Parser<'_> {
             token::Type::LBrace => {
                 let start = self.current_token_start;
                 self.next_token_span(); // consume {
-                let (entries, trailing_comma) = self.parse_dict_entries()?;
+                let entries = self.parse_dict_entries()?;
                 let end = self.current_token_end; // end of }
                 self.next_token_span(); // consume }
 
                 Ok(Expr::Dict(DictExpr {
                     entries,
-                    trailing_comma,
                     span: Span { start, end },
                 }))
             }
@@ -698,9 +701,8 @@ impl Parser<'_> {
                     return Ok(Expr::New(NewExpr {
                         class,
                         class_span,
-                        args: Vec::new(),
+                        args: Separated::default(),
                         args_open: None,
-                        args_trailing_comma: false,
                         span: Span {
                             start,
                             end: self.prev_token_end,
@@ -710,7 +712,7 @@ impl Parser<'_> {
 
                 let args_open = self.current_token_start;
                 self.assert_next_token(&[token::Type::LParen])?;
-                let (args, args_trailing_comma) = self.parse_call_args(token::Type::RParen)?;
+                let args = self.parse_call_args(token::Type::RParen)?;
                 let end = self.current_token_end;
                 self.assert_next_token(&[token::Type::RParen])?;
 
@@ -719,7 +721,6 @@ impl Parser<'_> {
                     class_span,
                     args,
                     args_open: Some(args_open),
-                    args_trailing_comma,
                     span: Span { start, end },
                 }))
             }
@@ -727,33 +728,66 @@ impl Parser<'_> {
         }
     }
 
-    /// Parse a comma-separated list of call arguments, including trailing comments after each
-    /// value. Returns `(args, tail_comments)` where `tail_comments` is non-empty only when `args`
-    /// is empty. Does not consume the closing delimiter.
+    /// Parse a comma-separated list of call arguments. Does not consume the closing delimiter.
     pub(crate) fn parse_call_args(
         &mut self,
         close: token::Type,
-    ) -> Result<(Vec<CallArg>, bool), ParserError> {
-        let mut args: Vec<CallArg> = Vec::new();
-        let mut trailing_comma = false;
+    ) -> Result<Separated<CallArg>, ParserError> {
+        self.parse_separated(&close, |parser| {
+            Ok(CallArg {
+                value: parser.parse_expression()?,
+            })
+        })
+    }
 
-        loop {
-            if self.current_token == close {
-                break;
-            }
+    /// Parse the body of an array literal. The opening `[` has already been consumed; the closing
+    /// `]` is left for the caller. Comments are entirely ignored — they live in the comment table
+    /// and attach to entries (or to the array span as dangling-inside) via `attach_comments`.
+    fn parse_array_entries(&mut self) -> Result<Separated<ArrayEntry>, ParserError> {
+        self.parse_separated(&token::Type::RBracket, |parser| {
+            Ok(ArrayEntry {
+                value: parser.parse_expression()?,
+            })
+        })
+    }
 
-            let value = self.parse_expression()?;
-            args.push(CallArg { value });
+    /// Parse the body of a dict literal. The opening `{` has already been consumed; the closing `}`
+    /// is left for the caller. Comments are ignored for the same reason as in
+    /// [`parse_array_entries`](Self::parse_array_entries).
+    fn parse_dict_entries(&mut self) -> Result<Separated<DictEntry>, ParserError> {
+        self.parse_separated(&token::Type::RBrace, |parser| {
+            // Keys may be a symbol/string literal, a variable-like reference (`x`,
+            // `Module.CONST`), or an arbitrary expression (e.g. `Activity.SPORT_GENERIC * 1000 +
+            // ...`).
+            let key = parser.parse_expression()?;
+            let arrow_pos = parser.current_token_start;
+            parser.assert_next_token(&[token::Type::FatArrow])?;
+            let value = parser.parse_expression()?;
+
+            Ok(DictEntry {
+                key,
+                arrow_pos,
+                value,
+            })
+        })
+    }
+
+    /// Parse items with `parse_item` until `close`, which is left for the caller, recording where
+    /// each `,` is.
+    pub(crate) fn parse_separated<T>(
+        &mut self,
+        close: &token::Type,
+        mut parse_item: impl FnMut(&mut Self) -> Result<T, ParserError>,
+    ) -> Result<Separated<T>, ParserError> {
+        let mut separated = Separated::default();
+
+        while self.current_token != *close {
+            separated.items.push(parse_item(self)?);
 
             if self.current_token == token::Type::Comma {
+                separated.commas.push(self.current_token_start);
                 self.next_token_span();
-                if self.current_token == close {
-                    trailing_comma = true;
-                    break;
-                }
-            } else if self.current_token == close {
-                break;
-            } else {
+            } else if self.current_token != *close {
                 return Err(self.parse_error(format!(
                     "Expected ',' or '{}', got {:?}",
                     close, self.current_token
@@ -761,83 +795,7 @@ impl Parser<'_> {
             }
         }
 
-        Ok((args, trailing_comma))
-    }
-
-    /// Parse the body of an array literal. The opening `[` has already been consumed; the closing
-    /// `]` is left for the caller. Comments are entirely ignored — they live in the comment table
-    /// and attach to entries (or to the array span as dangling-inside) via `attach_comments`.
-    fn parse_array_entries(&mut self) -> Result<(Vec<ArrayEntry>, bool), ParserError> {
-        let mut entries: Vec<ArrayEntry> = Vec::new();
-        let mut trailing_comma = false;
-
-        loop {
-            if self.current_token == token::Type::RBracket {
-                break;
-            }
-
-            let value = self.parse_expression()?;
-            let entry = ArrayEntry { value };
-
-            if self.current_token == token::Type::Comma {
-                self.next_token_span();
-                entries.push(entry);
-                if self.current_token == token::Type::RBracket {
-                    trailing_comma = true;
-                    break;
-                }
-            } else if self.current_token == token::Type::RBracket {
-                entries.push(entry);
-                break;
-            } else {
-                return Err(
-                    self.parse_error(format!("Expected ',' or ']', got {:?}", self.current_token))
-                );
-            }
-        }
-
-        Ok((entries, trailing_comma))
-    }
-
-    /// Parse the body of a dict literal. The opening `{` has already been consumed; the closing `}`
-    /// is left for the caller. Comments are ignored for the same reason as in
-    /// [`parse_array_entries`](Self::parse_array_entries).
-    fn parse_dict_entries(&mut self) -> Result<(Vec<DictEntry>, bool), ParserError> {
-        let mut entries: Vec<DictEntry> = Vec::new();
-        let mut trailing_comma = false;
-
-        loop {
-            if self.current_token == token::Type::RBrace {
-                break;
-            }
-
-            // Key-value entry. Keys may be a symbol/string literal, a variable-like reference (`x`,
-            // `Module.CONST`), or an arbitrary expression (e.g. `Activity.SPORT_GENERIC * 1000 +
-            // ...`).
-            let key = self.parse_expression()?;
-            self.assert_next_token(&[token::Type::FatArrow])?;
-            let value = self.parse_expression()?;
-            let entry = DictEntry { key, value };
-
-            if self.current_token == token::Type::Comma {
-                self.next_token_span();
-                entries.push(entry);
-                if self.current_token == token::Type::RBrace {
-                    trailing_comma = true;
-                    break;
-                }
-            } else if self.current_token == token::Type::RBrace {
-                entries.push(entry);
-                break;
-            } else {
-                return Err(self.parse_error(format!(
-                    "Expected ',' or '}}', got {:?}",
-                    self.current_token
-                )));
-            }
-        }
-
-        Ok((entries, trailing_comma))
+        Ok(separated)
     }
 
     /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new` (and optional type) has

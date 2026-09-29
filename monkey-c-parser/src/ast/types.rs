@@ -1,4 +1,4 @@
-use crate::ast::{Ident, Parameter, Parens, Position, Span, Spanned};
+use crate::ast::{Ident, Parameter, Parens, Position, Separated, Span, Spanned};
 
 /// A Monkey C type annotation, optionally nullable and optionally part of
 /// an `or`-union with other peers.
@@ -53,9 +53,11 @@ pub enum TypeKind {
     },
     /// An inline dictionary type: `{ :key1 as T, "key2" as U }`. Used as a type annotation, e.g.
     /// `function f(opts as { :flag as Boolean })`.
+    ///
+    /// `body_span` covers `{` through `}`, like [`TypeKind::Interface`].
     Dict {
-        entries: Vec<DictTypeEntry>,
-        trailing_comma: bool,
+        entries: Separated<DictTypeEntry>,
+        body_span: Span,
     },
     /// An inline interface type: `interface { function foo() as X; var bar as Y; … }`. Members are
     /// function signatures and/or `var` declarations — see [`InterfaceMember`]. Used as a `typedef`

@@ -1,7 +1,7 @@
 use crate::ast::{
-    BlockStmt, CaseLabel, CatchClause, DoWhileStmt, ElseBranch, ForHeader, ForInit, ForStmt,
-    IfStmt, Modifiers, Parens, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt,
-    WhileStmt,
+    BlockStmt, CaseLabel, CatchClause, DoWhileStmt, ElseBranch, ExprStmt, ForHeader, ForInit,
+    ForStmt, IfStmt, Modifiers, Parens, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt,
+    TryStmt, WhileStmt,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -85,9 +85,19 @@ impl Parser<'_> {
 
     fn parse_expr_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.parse_expression()?;
+        let semi_pos = self.current_token_start;
+        let end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
+        let span = Span {
+            start: expr.span().start,
+            end,
+        };
 
-        Ok(Stmt::Expr(expr))
+        Ok(Stmt::Expr(ExprStmt {
+            expr,
+            semi_pos,
+            span,
+        }))
     }
 
     fn parse_for_stmt(&mut self) -> Result<Stmt, ParserError> {

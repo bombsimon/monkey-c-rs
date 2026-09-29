@@ -1,7 +1,7 @@
 use crate::ast::{
     AnnotationEntry, Ast, Binding, ClassDecl, ConstDecl, EnumDecl, EnumVariant, FunctionDecl,
-    ImportDecl, Modifiers, ModuleDecl, Parameter, Parens, Span, Spanned, TypedefDecl, UsingDecl,
-    VarDecl, Visibility,
+    ImportDecl, Modifiers, ModuleDecl, Parameter, Parens, Separated, Span, Spanned, TypedefDecl,
+    UsingDecl, VarDecl, Visibility,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -94,9 +94,9 @@ impl Parser<'_> {
 
                 let args = if self.current_token == token::Type::LParen {
                     self.next_token_span(); // consume `(`
-                    let (args, _trailing) = self.parse_call_args(token::Type::RParen)?;
+                    let args = self.parse_call_args(token::Type::RParen)?;
                     self.assert_next_token(&[token::Type::RParen])?;
-                    args.into_iter().map(|a| a.value).collect()
+                    args.items.into_iter().map(|a| a.value).collect()
                 } else {
                     Vec::new()
                 };
@@ -229,7 +229,7 @@ impl Parser<'_> {
             },
             node: name_node,
         };
-        let (args, args_trailing_comma) = self.parse_function_args()?;
+        let args = self.parse_function_args()?;
 
         let (as_kw_start, returns) = if self.current_token == token::Type::As {
             let ak = self.current_token_start;
@@ -255,7 +255,6 @@ impl Parser<'_> {
         Ok(Ast::Function(FunctionDecl {
             name,
             parameters: args,
-            parameters_trailing_comma: args_trailing_comma,
             returns,
             as_kw_start,
             body,
@@ -283,30 +282,23 @@ impl Parser<'_> {
         let brace_start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
 
-        let mut variants: Vec<EnumVariant> = Vec::new();
-        let mut trailing_comma = false;
+        let variants = self.parse_separated(&token::Type::RBrace, |parser| {
+            let name_start = parser.current_token_start;
+            let name = parser.parse_identifier()?;
+            let mut variant_end = parser.current_token_end;
+            parser.next_token_span(); // advance past identifier
 
-        loop {
-            if self.current_token == token::Type::RBrace {
-                break;
-            }
-
-            let name_start = self.current_token_start;
-            let name = self.parse_identifier()?;
-            let mut variant_end = self.current_token_end;
-            self.next_token_span(); // advance past identifier
-
-            let (assign_kw_start, value) = if self.current_token == token::Type::Assign {
-                let ak = self.current_token_start;
-                self.next_token_span(); // consume `=`
-                let v = self.parse_expression()?;
+            let (assign_kw_start, value) = if parser.current_token == token::Type::Assign {
+                let ak = parser.current_token_start;
+                parser.next_token_span(); // consume `=`
+                let v = parser.parse_expression()?;
                 variant_end = v.span().end;
                 (Some(ak), Some(v))
             } else {
                 (None, None)
             };
 
-            let variant = EnumVariant {
+            Ok(EnumVariant {
                 name,
                 value,
                 assign_kw_start,
@@ -314,25 +306,8 @@ impl Parser<'_> {
                     start: name_start,
                     end: variant_end,
                 },
-            };
-
-            if self.current_token == token::Type::Comma {
-                self.next_token_span();
-                variants.push(variant);
-                if self.current_token == token::Type::RBrace {
-                    trailing_comma = true;
-                    break;
-                }
-            } else if self.current_token == token::Type::RBrace {
-                variants.push(variant);
-                break;
-            } else {
-                return Err(self.parse_error(format!(
-                    "Expected ',' or '}}' in enum body, got {:?}",
-                    self.current_token
-                )));
-            }
-        }
+            })
+        })?;
 
         let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RBrace])?;
@@ -340,7 +315,6 @@ impl Parser<'_> {
         Ok(Ast::Enum(EnumDecl {
             name,
             variants,
-            trailing_comma,
             brace_start,
             modifiers,
             span: Span { start, end },
@@ -498,43 +472,36 @@ impl Parser<'_> {
     /// with their parens' source positions.
     pub(crate) fn parse_function_args(
         &mut self,
-    ) -> Result<(Parens<Vec<Parameter>>, bool), ParserError> {
+    ) -> Result<Parens<Separated<Parameter>>, ParserError> {
         let open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
-        let mut args: Vec<Parameter> = Vec::new();
-        let mut trailing_comma = false;
-
-        loop {
-            if self.current_token == token::Type::RParen {
-                break;
-            }
-
-            let arg_start = self.current_token_start;
-            let name_node = self.parse_identifier()?;
-            let mut arg_end = self.current_token_end;
-            self.next_token_span();
+        let args = self.parse_separated(&token::Type::RParen, |parser| {
+            let arg_start = parser.current_token_start;
+            let name_node = parser.parse_identifier()?;
+            let mut arg_end = parser.current_token_end;
+            parser.next_token_span();
             let name = Spanned {
                 span: Span {
                     start: arg_start,
-                    end: self.prev_token_end,
+                    end: parser.prev_token_end,
                 },
                 node: name_node,
             };
 
-            let (as_kw_start, type_) = if self.current_token == token::Type::As {
-                let ak = self.current_token_start;
-                self.next_token_span();
-                let t = self.parse_type()?;
+            let (as_kw_start, type_) = if parser.current_token == token::Type::As {
+                let ak = parser.current_token_start;
+                parser.next_token_span();
+                let t = parser.parse_type()?;
                 // `parse_type` advances to the token after the type, so the
                 // type ends at the previous token boundary. Track via
                 // `current_token_start` saturating back.
-                arg_end = self.current_token_start;
+                arg_end = parser.current_token_start;
                 (Some(ak), Some(t))
             } else {
                 (None, None)
             };
 
-            let arg = Parameter {
+            Ok(Parameter {
                 name,
                 type_,
                 as_kw_start,
@@ -543,38 +510,17 @@ impl Parser<'_> {
                     start: arg_start,
                     end: arg_end,
                 },
-            };
-
-            if self.current_token == token::Type::Comma {
-                self.next_token_span();
-                args.push(arg);
-
-                if self.current_token == token::Type::RParen {
-                    trailing_comma = true;
-                    break;
-                }
-            } else if self.current_token == token::Type::RParen {
-                args.push(arg);
-                break;
-            } else {
-                return Err(self.parse_error(format!(
-                    "Expected ',' or ')' in function arguments, got {:?}",
-                    self.current_token
-                )));
-            }
-        }
+            })
+        })?;
 
         let close = self.current_token_end;
         self.next_token_span(); // consume RParen
 
-        Ok((
-            Parens {
-                open,
-                inner: args,
-                close,
-            },
-            trailing_comma,
-        ))
+        Ok(Parens {
+            open,
+            inner: args,
+            close,
+        })
     }
 
     /// Parse the contents of a `var` declaration after the `var` keyword has been consumed.
@@ -596,15 +542,16 @@ impl Parser<'_> {
 
     /// Parse a comma-separated list of `name [as Type] [= init]` bindings —
     /// shared between `var` and `const` declarations.
-    fn parse_bindings(&mut self) -> Result<Vec<Binding>, ParserError> {
-        let mut bindings = Vec::new();
+    fn parse_bindings(&mut self) -> Result<Separated<Binding>, ParserError> {
+        let mut bindings = Separated::default();
         loop {
-            bindings.push(self.parse_one_binding()?);
-            if self.current_token == token::Type::Comma {
-                self.next_token_span(); // consume `,`
-            } else {
+            bindings.items.push(self.parse_one_binding()?);
+            if self.current_token != token::Type::Comma {
                 break;
             }
+
+            bindings.commas.push(self.current_token_start);
+            self.next_token_span(); // consume `,`
         }
 
         Ok(bindings)

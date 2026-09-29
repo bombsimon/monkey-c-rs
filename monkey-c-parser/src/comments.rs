@@ -119,6 +119,14 @@ impl CommentCursor {
         }
     }
 
+    /// The undrained comments with `span.start` in `[start, end)`, without consuming them.
+    pub fn peek_in(&self, start: usize, end: usize) -> impl Iterator<Item = &CommentStmt> {
+        self.comments[self.next..]
+            .iter()
+            .take_while(move |c| c.span.start < end)
+            .filter(move |c| c.span.start >= start)
+    }
+
     /// True if there is any undrained comment with `span.start` in `[start, end)`.
     pub fn has_comment_in(&self, start: usize, end: usize) -> bool {
         self.comments[self.next..]

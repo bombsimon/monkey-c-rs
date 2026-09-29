@@ -1,6 +1,6 @@
 use crate::ast::{
-    DictTypeEntry, DictTypeKey, InterfaceMember, InterfaceMethod, InterfaceVar, Parens, Span,
-    Spanned, Type, TypeKind, UnionAlternative, UnionSeparator,
+    DictTypeEntry, DictTypeKey, InterfaceMember, InterfaceMethod, InterfaceVar, Parens, Separated,
+    Span, Spanned, Type, TypeKind, UnionAlternative, UnionSeparator,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -82,11 +82,8 @@ impl Parser<'_> {
     pub(crate) fn parse_simple_type(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
         let start = self.current_token_start;
         let kind = if self.current_token == token::Type::LBrace {
-            let (entries, trailing_comma) = self.parse_inline_dict_type()?;
-            TypeKind::Dict {
-                entries,
-                trailing_comma,
-            }
+            let (entries, body_span) = self.parse_inline_dict_type()?;
+            TypeKind::Dict { entries, body_span }
         } else if self.current_token == token::Type::Interface {
             let (members, body_span) = self.parse_interface_members()?;
             TypeKind::Interface { members, body_span }
@@ -115,7 +112,7 @@ impl Parser<'_> {
                 // `Method(arg as T) as Return` — a callable / method-reference type. The `as
                 // Return` part binds to the method type, not to any outer position (the outer
                 // `parse_type` handles unions afterwards).
-                let (args, _trailing) = self.parse_function_args()?;
+                let args = self.parse_function_args()?;
                 let returns = if self.current_token == token::Type::As {
                     self.next_token_span();
                     Some(Box::new(self.parse_type()?))
@@ -125,7 +122,7 @@ impl Parser<'_> {
 
                 TypeKind::Method {
                     name: ident,
-                    args: args.inner,
+                    args: args.inner.items,
                     returns,
                 }
             } else {
@@ -228,7 +225,7 @@ impl Parser<'_> {
             },
             node: name_node,
         };
-        let (args, _trailing) = self.parse_function_args()?;
+        let args = self.parse_function_args()?;
         let (as_kw_start, returns) = if self.current_token == token::Type::As {
             let ak = self.current_token_start;
             self.next_token_span();
@@ -241,7 +238,7 @@ impl Parser<'_> {
 
         Ok(InterfaceMethod {
             name,
-            args: args.inner,
+            args: args.inner.items,
             returns,
             as_kw_start,
             span: Span { start, end },
@@ -299,55 +296,43 @@ impl Parser<'_> {
     }
 
     /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`. Consumes the
-    /// surrounding braces. Returns the entries and whether the source ended with a trailing comma.
-    fn parse_inline_dict_type(&mut self) -> Result<(Vec<DictTypeEntry>, bool), ParserError> {
+    /// surrounding braces. Returns the entries and the span from `{` through `}`.
+    fn parse_inline_dict_type(&mut self) -> Result<(Separated<DictTypeEntry>, Span), ParserError> {
+        let start = self.current_token_start;
         self.assert_next_token(&[token::Type::LBrace])?;
-        let mut entries = Vec::new();
-        let mut trailing_comma = false;
-
-        while self.current_token != token::Type::RBrace {
-            let entry_start = self.current_token_start;
-            let key = match self.current_token.clone() {
+        let entries = self.parse_separated(&token::Type::RBrace, |parser| {
+            let entry_start = parser.current_token_start;
+            let key = match parser.current_token.clone() {
                 token::Type::Colon => {
-                    self.next_token_span(); // consume `:`
-                    DictTypeKey::Symbol(self.parse_symbol_name()?)
+                    parser.next_token_span(); // consume `:`
+                    DictTypeKey::Symbol(parser.parse_symbol_name()?)
                 }
                 token::Type::String(name) => {
-                    self.next_token_span();
+                    parser.next_token_span();
                     DictTypeKey::String(name)
                 }
                 _ => {
-                    return Err(self.parse_error(format!(
+                    return Err(parser.parse_error(format!(
                         "Expected `:symbol` or string key in inline dict type, got {:?}",
-                        self.current_token
+                        parser.current_token
                     )));
                 }
             };
-            self.assert_next_token(&[token::Type::As])?;
-            let value_type = self.parse_type()?;
-            let entry_span = Span {
-                start: entry_start,
-                end: self.prev_token_end,
-            };
-            entries.push(DictTypeEntry {
+            parser.assert_next_token(&[token::Type::As])?;
+            let value_type = parser.parse_type()?;
+
+            Ok(DictTypeEntry {
                 key,
                 value_type,
-                span: entry_span,
-            });
-
-            if self.current_token == token::Type::Comma {
-                self.next_token_span();
-                if self.current_token == token::Type::RBrace {
-                    trailing_comma = true;
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
+                span: Span {
+                    start: entry_start,
+                    end: parser.prev_token_end,
+                },
+            })
+        })?;
+        let end = self.current_token_end;
         self.assert_next_token(&[token::Type::RBrace])?;
 
-        Ok((entries, trailing_comma))
+        Ok((entries, Span { start, end }))
     }
 }

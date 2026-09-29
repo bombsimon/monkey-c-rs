@@ -1,5 +1,6 @@
 use crate::ast::{
-    AssignOperator, BinaryOperator, Ident, LiteralValue, Position, Span, Type, UnaryOperator,
+    AssignOperator, BinaryOperator, Ident, LiteralValue, Position, Separated, Span, Type,
+    UnaryOperator,
 };
 
 /// An expression node.
@@ -64,7 +65,9 @@ pub struct UnaryExpr {
 #[derive(Debug, PartialEq)]
 pub struct TernaryExpr {
     pub condition: Box<Expr>,
+    pub question_pos: Position,
     pub then_expr: Box<Expr>,
+    pub colon_pos: Position,
     pub else_expr: Box<Expr>,
     pub span: Span,
 }
@@ -74,6 +77,7 @@ pub struct TernaryExpr {
 pub struct AssignExpr {
     pub target: Box<Expr>,
     pub operator: AssignOperator,
+    pub op_pos: Position,
     pub value: Box<Expr>,
     pub span: Span,
 }
@@ -82,11 +86,9 @@ pub struct AssignExpr {
 #[derive(Debug, PartialEq)]
 pub struct CallExpr {
     pub callee: Box<Expr>,
-    pub args: Vec<CallArg>,
-    /// `true` when the source had a trailing comma after the last argument.
-    /// Drives the magic trailing comma formatting rule — forces multi-line
+    /// A trailing comma drives the magic trailing comma formatting rule, forcing multi-line
     /// rendering even when the call would otherwise fit on a single line.
-    pub args_trailing_comma: bool,
+    pub args: Separated<CallArg>,
     pub args_open: Position,
     pub span: Span,
 }
@@ -123,9 +125,7 @@ pub struct IndexExpr {
 pub struct NewExpr {
     pub class: Ident,
     pub class_span: Span,
-    pub args: Vec<CallArg>,
-    /// See [`CallExpr::args_trailing_comma`].
-    pub args_trailing_comma: bool,
+    pub args: Separated<CallArg>,
     pub args_open: Option<Position>,
     pub span: Span,
 }
@@ -156,8 +156,7 @@ pub struct TypeCastExpr {
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#arrays>
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
-    pub entries: Vec<ArrayEntry>,
-    pub trailing_comma: bool,
+    pub entries: Separated<ArrayEntry>,
     /// A `]b` suffix marks the literal as a `Lang.ByteArray`. The parser
     /// recognises any `b` identifier immediately following the closing `]`.
     pub is_byte_array: bool,
@@ -175,8 +174,7 @@ pub struct ArrayEntry {
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#dictionaries>
 #[derive(Debug, PartialEq)]
 pub struct DictExpr {
-    pub entries: Vec<DictEntry>,
-    pub trailing_comma: bool,
+    pub entries: Separated<DictEntry>,
     pub span: Span,
 }
 
@@ -184,6 +182,7 @@ pub struct DictExpr {
 #[derive(Debug, PartialEq)]
 pub struct DictEntry {
     pub key: Expr,
+    pub arrow_pos: Position,
     pub value: Expr,
 }
 

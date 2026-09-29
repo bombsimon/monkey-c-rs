@@ -17,7 +17,15 @@ pub enum Stmt {
     Throw(ThrowStmt),
     Var(VarDecl),
     /// A bare expression used as a statement (e.g. an assignment or call).
-    Expr(Expr),
+    Expr(ExprStmt),
+}
+
+/// An expression followed by `;`, such as an assignment or a call.
+#[derive(Debug, PartialEq)]
+pub struct ExprStmt {
+    pub expr: Expr,
+    pub semi_pos: Position,
+    pub span: Span,
 }
 
 /// A block is code between an opening `{` and a closing `}`.
@@ -199,7 +207,7 @@ impl Stmt {
             Stmt::Throw(s) => &s.span,
             Stmt::Break(s) | Stmt::Continue(s) => s,
             Stmt::Var(s) => &s.span,
-            Stmt::Expr(e) => e.span(),
+            Stmt::Expr(s) => &s.span,
         }
     }
 }

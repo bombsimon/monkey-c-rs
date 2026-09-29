@@ -71,6 +71,14 @@ impl LineIndex {
         self.indents[line as usize]
     }
 
+    /// Whether only whitespace comes before `offset` on its line, such as for a comment written
+    /// on a line of its own.
+    pub fn starts_line(&self, offset: u32) -> bool {
+        let LineCol { line, col } = self.line_col(offset);
+
+        col == self.indent(line)
+    }
+
     /// Return how many blank lines separate two offsets.
     ///
     /// A "blank line" is a line whose body is empty or whitespace-only in the source. Lines that

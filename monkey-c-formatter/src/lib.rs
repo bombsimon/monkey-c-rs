@@ -771,7 +771,7 @@ impl Formatter {
                 parts.push(self.expr_with_leading(value));
             }
 
-            if i != last_idx || decl.trailing_comma {
+            if i != last_idx || decl.variants.has_trailing_comma() {
                 parts.push(Doc::text(","));
             }
 
@@ -849,7 +849,7 @@ impl Formatter {
             ")",
             items,
             &[],
-            decl.parameters_trailing_comma,
+            decl.parameters.has_trailing_comma(),
             Doc::Empty,
             false,
         ));
@@ -1044,10 +1044,9 @@ impl Formatter {
                     ])
                 }
             }
-            TypeKind::Dict {
-                entries,
-                trailing_comma,
-            } => self.inline_dict_type_to_doc(entries, *trailing_comma, suffix),
+            TypeKind::Dict { entries, .. } => {
+                self.inline_dict_type_to_doc(entries, entries.has_trailing_comma(), suffix)
+            }
             TypeKind::Interface { members, body_span } => {
                 self.interface_type_to_doc(members, *body_span, suffix)
             }
@@ -1901,7 +1900,7 @@ impl Formatter {
             Stmt::Switch(s) => self.switch_stmt_to_doc(s),
             Stmt::Try(s) => self.try_stmt_to_doc(s),
             Stmt::Var(var_stmt) => self.var_stmt_to_doc(var_stmt),
-            Stmt::Expr(e) => Doc::concat(vec![self.expr_inner_to_doc(e), Doc::text(";")]),
+            Stmt::Expr(s) => Doc::concat(vec![self.expr_inner_to_doc(&s.expr), Doc::text(";")]),
         }
     }
 
@@ -2074,7 +2073,7 @@ impl Formatter {
                     .unwrap_or(e.span.end);
                 let hugged = self.hugged_sole_collection(
                     &e.args,
-                    e.args_trailing_comma,
+                    e.args.has_trailing_comma(),
                     args_open,
                     e.span.end,
                 );
@@ -2095,7 +2094,7 @@ impl Formatter {
                         ")",
                         self.call_args_to_items(&e.args, e.span.end),
                         &[],
-                        e.args_trailing_comma,
+                        e.args.has_trailing_comma(),
                         after_open,
                         after_open_force_newline,
                     ),
@@ -2207,7 +2206,7 @@ impl Formatter {
     fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
         let before_open = self.drain_before_open_paren(e.args_open);
         if let Some(args) =
-            self.hugged_sole_collection(&e.args, e.args_trailing_comma, e.args_open, e.span.end)
+            self.hugged_sole_collection(&e.args, e.args.has_trailing_comma(), e.args_open, e.span.end)
         {
             return Doc::concat(vec![before_open, args]);
         }
@@ -2231,7 +2230,7 @@ impl Formatter {
                 ")",
                 self.call_args_to_items(&e.args, e.span.end),
                 &[],
-                e.args_trailing_comma,
+                e.args.has_trailing_comma(),
                 after_open,
                 after_open_force_newline,
             ),
@@ -2295,7 +2294,7 @@ impl Formatter {
             return Doc::text("[]");
         }
 
-        let must_break = e.trailing_comma || self.has_comments_in(e.span);
+        let must_break = e.entries.has_trailing_comma() || self.has_comments_in(e.span);
 
         if must_break {
             return self.format_array_multiline(e);
@@ -2327,7 +2326,7 @@ impl Formatter {
         self.format_collection_multiline(
             e.span,
             &e.entries,
-            e.trailing_comma,
+            e.entries.has_trailing_comma(),
             "[",
             "]",
             |entry| entry.value.span().start,
@@ -2481,7 +2480,7 @@ impl Formatter {
             return Doc::text("{}");
         }
 
-        let must_break = e.trailing_comma || self.has_comments_in(e.span);
+        let must_break = e.entries.has_trailing_comma() || self.has_comments_in(e.span);
 
         if must_break {
             return self.format_dict_multiline(e);
@@ -2536,7 +2535,7 @@ impl Formatter {
         self.format_collection_multiline(
             e.span,
             &e.entries,
-            e.trailing_comma,
+            e.entries.has_trailing_comma(),
             "{",
             "}",
             |entry| entry.key.span().start,
@@ -2677,7 +2676,7 @@ impl Formatter {
             })
             .collect();
 
-        self.format_list("{", "}", items, &[], e.trailing_comma, Doc::Empty, false)
+        self.format_list("{", "}", items, &[], e.entries.has_trailing_comma(), Doc::Empty, false)
     }
 
     fn gap_between_positions(&self, prev_end: usize, next_start: usize) -> Doc {

@@ -1,5 +1,5 @@
 use crate::ast::{
-    BlockStmt, Expr, Ident, Modifiers, Parens, Position, Span, Spanned, Symbol, Type,
+    BlockStmt, Expr, Ident, Modifiers, Parens, Position, Separated, Span, Spanned, Symbol, Type,
 };
 
 /// A top-level AST node.
@@ -53,7 +53,7 @@ pub struct Binding {
 /// <https://developer.garmin.com/connect-iq/monkey-c/monkey-types/>
 #[derive(Debug, PartialEq)]
 pub struct VarDecl {
-    pub bindings: Vec<Binding>,
+    pub bindings: Separated<Binding>,
     pub modifiers: Modifiers,
     /// `0` when `var` appears in a `for`-init — the loop's first `;` acts as terminator.
     pub semi_pos: Position,
@@ -146,8 +146,7 @@ pub struct ClassDecl {
 #[derive(Debug, PartialEq)]
 pub struct EnumDecl {
     pub name: Option<Spanned<Ident>>,
-    pub variants: Vec<EnumVariant>,
-    pub trailing_comma: bool,
+    pub variants: Separated<EnumVariant>,
     pub brace_start: Position,
     pub modifiers: Modifiers,
     pub span: Span,
@@ -171,9 +170,9 @@ pub struct EnumVariant {
 #[derive(Debug, PartialEq)]
 pub struct FunctionDecl {
     pub name: Spanned<Ident>,
-    pub parameters: Parens<Vec<Parameter>>,
-    /// See [`CallExpr::args_trailing_comma`](crate::ast::CallExpr::args_trailing_comma).
-    pub parameters_trailing_comma: bool,
+    /// A trailing comma drives the magic trailing comma, like
+    /// [`CallExpr::args`](crate::ast::CallExpr::args).
+    pub parameters: Parens<Separated<Parameter>>,
     /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
     pub as_kw_start: Option<Position>,
@@ -194,7 +193,7 @@ pub struct FunctionDecl {
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#constants>
 #[derive(Debug, PartialEq)]
 pub struct ConstDecl {
-    pub bindings: Vec<Binding>,
+    pub bindings: Separated<Binding>,
     pub modifiers: Modifiers,
     pub semi_pos: Position,
     pub span: Span,

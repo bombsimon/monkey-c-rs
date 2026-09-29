@@ -316,7 +316,7 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
                 }
             }
         }
-        Stmt::Expr(e) => walk_expr(e, ExprPosition::Other, ctx, diags),
+        Stmt::Expr(s) => walk_expr(&s.expr, ExprPosition::Other, ctx, diags),
         Stmt::Break(_) | Stmt::Continue(_) => {}
     }
 }
