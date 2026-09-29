@@ -221,7 +221,7 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         Stmt::DoWhile(s) => {
-            walk_expr(&s.condition, ExprPosition::Condition, ctx, diags);
+            walk_expr(&s.condition.inner, ExprPosition::Condition, ctx, diags);
             for sub in &s.body.stmts {
                 walk_stmt(sub, ctx, diags);
             }

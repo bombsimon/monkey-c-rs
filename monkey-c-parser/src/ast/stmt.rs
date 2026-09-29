@@ -80,7 +80,9 @@ pub struct WhileStmt {
 #[derive(Debug, PartialEq)]
 pub struct DoWhileStmt {
     pub body: BlockStmt,
-    pub condition: Expr,
+    pub while_kw_start: Position,
+    pub condition: Parens<Expr>,
+    pub semi_pos: Position,
     pub span: Span,
 }
 

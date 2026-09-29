@@ -1101,13 +1101,33 @@ impl Formatter {
         parts
     }
 
-    fn push_bindings(&self, parts: &mut Vec<Doc>, bindings: &[Binding]) {
-        for (i, b) in bindings.iter().enumerate() {
-            if i > 0 {
-                parts.push(Doc::text(", "));
+    fn push_bindings(&self, parts: &mut Vec<Doc>, bindings: &Separated<Binding>) {
+        for (i, binding) in bindings.iter().enumerate() {
+            let content = self.binding_to_doc(binding);
+            let next_start = bindings.get(i + 1).map(|next| next.span.start);
+
+            // The last binding leaves its comments to what follows it, such as the `;`.
+            let item = self.list_item(
+                content,
+                binding.span.end,
+                bindings.comma_after(i),
+                next_start,
+                binding.span.end,
+            );
+            parts.push(item.content);
+            parts.push(item.before_separator);
+
+            if next_start.is_none() {
+                continue;
             }
 
-            parts.push(self.binding_to_doc(b));
+            parts.push(Doc::text(","));
+            parts.push(item.trailing);
+            parts.push(if item.trailing_is_line_comment {
+                Doc::HardLine
+            } else {
+                Doc::text(" ")
+            });
         }
     }
 
@@ -1495,12 +1515,32 @@ impl Formatter {
 
             Doc::Group(group_parts)
         } else {
-            // Non-binary condition: only drain inside-paren trailing (e.g. `if (x /* INSIDE */)`).
             // Comments after `)` are handled by the body or statement-level trailing drain.
-            let cond_trailing = self.drain_trailing_doc_bounded(cond_end, paren_close);
-
-            Doc::concat(vec![opening, cond_doc, cond_trailing, Doc::text(") ")])
+            Doc::concat(vec![
+                opening,
+                cond_doc,
+                self.condition_close(cond_end, paren_close),
+                Doc::text(" "),
+            ])
         }
+    }
+
+    /// The comments between a condition ending at `cond_end` and its `)`, then the `)`. A comment
+    /// that ends the line puts the `)` on the next one.
+    fn condition_close(&self, cond_end: usize, paren_close: usize) -> Doc {
+        let breaks = self.has_trailing_line_comment_bounded(cond_end, paren_close);
+        let mut parts = vec![self.drain_trailing_doc_bounded(cond_end, paren_close)];
+        let before_close = self.drain_dangling_comments_doc(paren_close);
+        if !matches!(before_close, Doc::Empty) {
+            parts.push(Doc::Indent(vec![Doc::HardLine, before_close]));
+            parts.push(Doc::HardLine);
+        } else if breaks {
+            parts.push(Doc::HardLine);
+        }
+
+        parts.push(Doc::text(")"));
+
+        Doc::concat(parts)
     }
 
     fn if_stmt_to_doc(&self, s: &IfStmt) -> Doc {
@@ -1960,13 +2000,23 @@ impl Formatter {
                 self.paren_condition_header("while", &s.condition, s.body.span.start),
                 self.block_body_to_doc(&s.body),
             ]),
-            Stmt::DoWhile(s) => Doc::concat(vec![
-                Doc::text("do "),
-                self.block_body_to_doc(&s.body),
-                Doc::text(" while ("),
-                self.expr_with_leading(&s.condition),
-                Doc::text(");"),
-            ]),
+            Stmt::DoWhile(s) => {
+                let condition = &s.condition;
+                let mut parts = vec![
+                    Doc::text("do "),
+                    self.block_body_to_doc(&s.body),
+                    Doc::text(" "),
+                    self.drain_leading_doc(s.while_kw_start),
+                    Doc::text("while "),
+                    self.drain_leading_doc(condition.open),
+                    Doc::text("("),
+                    self.expr_with_leading_bounded(&condition.inner, condition.close),
+                    self.condition_close(condition.inner.span().end, condition.close),
+                ];
+                self.push_before_semi(&mut parts, s.semi_pos);
+
+                Doc::Concat(parts)
+            }
             Stmt::For(s) => {
                 let opening = Doc::concat(vec![
                     Doc::text("for "),
