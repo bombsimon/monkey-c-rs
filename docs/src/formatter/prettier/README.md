@@ -47,8 +47,7 @@ var settings = {
 
 Prettier rewrites parentheses: it drops the ones precedence makes redundant and
 adds some for clarity. `rafiki` never changes what the code says, so it keeps
-parentheses exactly as written. Removing them is left to the linter's
-[`unneeded-parens`][unneeded-parens] rule and its `--fix`.
+parentheses exactly as written.
 
 ```monkey-c
 // rafiki
@@ -62,18 +61,17 @@ var width = ((percent / 100f) * total).toLong();
 var scaled = 10 / (360).toFloat();
 ```
 
-> [!NOTE]
-> `unneeded-parens` only covers positions where parentheses never matter, such
-> as the right-hand side of an assignment or a `return` value. It leaves
-> parentheses around the operands of a binary operator alone, so the first
-> example above isn't rewritten by either tool.
+> [!TIP]
+> The linter's [`unneeded-parens`][unneeded-parens] rule removes redundant
+> parentheses with `--fix`. It only covers positions where parentheses never
+> matter, such as the right-hand side of an assignment or a `return` value, so
+> the first example above isn't rewritten by either tool.
 
 ## Legacy `@` resource references
 
 Prettier also drops the legacy `@` prefix from resource references. That's
 another change to what the code says rather than to its layout, so `rafiki`
-leaves it to the linter's [`redundant-resource-ref`][redundant-resource-ref]
-rule and its `--fix`.
+keeps it.
 
 ```monkey-c
 // rafiki
@@ -82,6 +80,10 @@ label.setText(@Rez.Strings.Title);
 // Prettier
 label.setText(Rez.Strings.Title);
 ```
+
+> [!TIP]
+> The linter's [`redundant-resource-ref`][redundant-resource-ref] rule removes
+> the prefix with `--fix`.
 
 ## Number literals
 
@@ -106,8 +108,7 @@ var tiny = 3.5e-7f;
 ## Nullable types
 
 Prettier shortens `or Null` and `| Null` in a type to `?`. `rafiki` keeps the
-type as written and leaves it to the linter's [`null-union`][null-union] rule
-and its `--fix`.
+type as written.
 
 ```monkey-c
 // rafiki
@@ -116,6 +117,9 @@ function f(value as Number or Null) as String | Null {
 // Prettier
 function f(value as Number?) as String? {
 ```
+
+> [!TIP]
+> The linter's [`null-union`][null-union] rule shortens it to `?` with `--fix`.
 
 ## Union types
 
@@ -265,26 +269,11 @@ only argument.
 > level of indentation for calls like `Lang.format`, but the other arguments
 > end up easy to miss at the end of a long first line.
 
-## Comments before call arguments
+## Comments
 
-`rafiki` keeps a comment between a function or class name and its `(` where it
-is. Prettier moves it inside the parentheses when the call has arguments, and
-only keeps it in place when they're empty.
-
-```monkey-c
-// rafiki
-foo /* c */(1);
-var item = new MenuItem /* c */(1);
-
-// Prettier
-foo(/* c */ 1);
-var item = new MenuItem(/* c */ 1);
-```
-
-## Comments after `{`
-
-A comment after an opening `{` stays on that line. Prettier moves it to the next
-line, above the first statement in the block.
+`rafiki` keeps [comments where they are][comments]. Prettier moves some of them,
+most visibly a comment after an opening `{`, which it puts on the next line
+above the first statement.
 
 ```monkey-c
 // rafiki
@@ -453,13 +442,8 @@ var a = 1;
 var b = 2;
 ```
 
-## Files that aren't UTF-8
-
-`rafiki` refuses to format a file that isn't valid UTF-8, such as one saved as
-Latin-1. Prettier formats it anyway and replaces every character it can't read,
-like `ö` or `°`, with `�`, which loses them.
-
 [column-alignment]: ..#column-alignment
+[comments]: ..#comments
 [magic-trailing-comma]: ..#the-magic-trailing-comma
 [null-union]: ../../linter/rules/null-union
 [prettier-plugin-monkeyc]: https://github.com/markw65/prettier-plugin-monkeyc
