@@ -495,7 +495,7 @@ fn test_enum_auto_incremented() {
     assert_eq!(e.variants.len(), 3);
     assert_eq!(e.variants[0].name, "Sunday");
     assert!(e.variants.iter().all(|v| v.value.is_none()));
-    assert!(!e.trailing_comma);
+    assert!(!e.variants.has_trailing_comma());
 }
 
 #[test]
@@ -517,7 +517,7 @@ fn test_enum_trailing_comma() {
         panic!("expected enum");
     };
     assert_eq!(e.variants.len(), 2);
-    assert!(e.trailing_comma);
+    assert!(e.variants.has_trailing_comma());
 }
 
 #[test]

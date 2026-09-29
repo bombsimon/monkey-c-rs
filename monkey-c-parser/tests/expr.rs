@@ -1,6 +1,6 @@
 use monkey_c_parser::ast::{
-    AssignOperator, Ast, BinaryOperator, DoubleLit, Expr, FloatLit, FunctionDecl, LiteralValue,
-    Stmt, UnaryOperator,
+    AssignOperator, Ast, BinaryOperator, DoubleLit, Expr, ExprStmt, FloatLit, FunctionDecl,
+    LiteralValue, Stmt, UnaryOperator,
 };
 use monkey_c_parser::parser::Parser;
 
@@ -173,7 +173,11 @@ fn test_postfix_unary_operators() {
         ("--x;", UnaryOperator::PreDec),
     ] {
         let f = parse_function(&format!("function f() {{ {src} }}"));
-        let Stmt::Expr(Expr::Unary(u)) = &f.body.as_ref().unwrap().stmts[0] else {
+        let Stmt::Expr(ExprStmt {
+            expr: Expr::Unary(u),
+            ..
+        }) = &f.body.as_ref().unwrap().stmts[0]
+        else {
             panic!("expected unary statement for `{src}`");
         };
         assert_eq!(u.operator, expected, "unary op in `{src}`");
@@ -194,7 +198,11 @@ fn test_assignment_operators() {
         ("x ^= 1;", AssignOperator::BitXorAssign),
     ] {
         let f = parse_function(&format!("function f() {{ {src} }}"));
-        let Stmt::Expr(Expr::Assign(a)) = &f.body.as_ref().unwrap().stmts[0] else {
+        let Stmt::Expr(ExprStmt {
+            expr: Expr::Assign(a),
+            ..
+        }) = &f.body.as_ref().unwrap().stmts[0]
+        else {
             panic!("expected Assign statement for `{src}`");
         };
         assert_eq!(a.operator, expected, "assign op in `{src}`");
@@ -375,13 +383,13 @@ fn test_array_literals() {
         panic!("expected Array");
     };
     assert_eq!(e.entries.len(), 3);
-    assert!(!e.trailing_comma, "no trailing comma");
+    assert!(!e.entries.has_trailing_comma(), "no trailing comma");
 
     let Expr::Array(e) = parse_expr("[1, 2, 3,]") else {
         panic!("expected Array");
     };
     assert_eq!(e.entries.len(), 3);
-    assert!(e.trailing_comma, "trailing comma");
+    assert!(e.entries.has_trailing_comma(), "trailing comma");
 
     let Expr::Array(e) = parse_expr("[]") else {
         panic!("expected Array");
@@ -395,12 +403,12 @@ fn test_dict_literals() {
         panic!("expected Dict");
     };
     assert_eq!(e.entries.len(), 1);
-    assert!(!e.trailing_comma, "no trailing comma");
+    assert!(!e.entries.has_trailing_comma(), "no trailing comma");
 
     let Expr::Dict(e) = parse_expr(r#"{"key" => "value",}"#) else {
         panic!("expected Dict");
     };
-    assert!(e.trailing_comma, "trailing comma");
+    assert!(e.entries.has_trailing_comma(), "trailing comma");
 }
 
 #[test]
@@ -521,4 +529,47 @@ fn test_ternary_no_whitespace() {
         assert!(matches!(*e.then_expr, Expr::Ident(_)));
         assert!(matches!(*e.else_expr, Expr::Ident(_)));
     }
+}
+
+#[test]
+fn test_separator_positions() {
+    // Offsets are relative to the `return ` wrapper added by `parse_expr`.
+    let offset = "function f() { return ".len();
+    let source = "foo(a , b,)";
+    let Expr::Call(call) = parse_expr(source) else {
+        panic!("expected Call");
+    };
+    assert_eq!(call.args.len(), 2);
+    assert_eq!(call.args.commas, vec![offset + 6, offset + 9]);
+    assert!(call.args.has_trailing_comma());
+
+    let Expr::Dict(dict) = parse_expr("{1 => 2, 3 => 4}") else {
+        panic!("expected Dict");
+    };
+    assert_eq!(dict.entries.commas, vec![offset + 7]);
+    assert_eq!(dict.entries[1].arrow_pos, offset + 11);
+    assert!(!dict.entries.has_trailing_comma());
+
+    let Expr::Ternary(ternary) = parse_expr("a ? b : c") else {
+        panic!("expected Ternary");
+    };
+    assert_eq!(ternary.question_pos, offset + 2);
+    assert_eq!(ternary.colon_pos, offset + 6);
+}
+
+#[test]
+fn test_expression_statement_positions() {
+    let f = parse_function("function f() { x += 1 ; }");
+    let Stmt::Expr(ExprStmt {
+        expr: Expr::Assign(assign),
+        semi_pos,
+        span,
+    }) = &f.body.as_ref().unwrap().stmts[0]
+    else {
+        panic!("expected Assign statement");
+    };
+
+    assert_eq!(assign.op_pos, 17);
+    assert_eq!(*semi_pos, 22);
+    assert_eq!(span.end, 23, "the statement includes its `;`");
 }

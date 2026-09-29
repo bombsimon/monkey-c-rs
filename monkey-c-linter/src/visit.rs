@@ -221,7 +221,7 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         Stmt::DoWhile(s) => {
-            walk_expr(&s.condition, ExprPosition::Condition, ctx, diags);
+            walk_expr(&s.condition.inner, ExprPosition::Condition, ctx, diags);
             for sub in &s.body.stmts {
                 walk_stmt(sub, ctx, diags);
             }
@@ -316,7 +316,7 @@ fn walk_stmt(stmt: &Stmt, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
                 }
             }
         }
-        Stmt::Expr(e) => walk_expr(e, ExprPosition::Other, ctx, diags),
+        Stmt::Expr(s) => walk_expr(&s.expr, ExprPosition::Other, ctx, diags),
         Stmt::Break(_) | Stmt::Continue(_) => {}
     }
 }
@@ -341,7 +341,7 @@ fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         TypeKind::Method { args, returns, .. } => {
-            for arg in args {
+            for arg in &args.inner {
                 if let Some(t) = &arg.type_ {
                     walk_type(t, ctx, diags);
                 }
@@ -355,7 +355,7 @@ fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             for m in members {
                 match m {
                     InterfaceMember::Function(f) => {
-                        for arg in &f.args {
+                        for arg in &f.args.inner {
                             if let Some(t) = &arg.type_ {
                                 walk_type(t, ctx, diags);
                             }

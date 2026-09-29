@@ -60,7 +60,7 @@ fn block_contains_super_init(body: &BlockStmt, parent: &str) -> bool {
 
 fn stmt_contains_super_init(stmt: &Stmt, parent: &str) -> bool {
     match stmt {
-        Stmt::Expr(e) => is_super_init_call(e, parent),
+        Stmt::Expr(s) => is_super_init_call(&s.expr, parent),
         Stmt::Block(b) => block_contains_super_init(b, parent),
         Stmt::If(s) => if_contains_super_init(s, parent),
         _ => false,

@@ -1,0 +1,20 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/comment_around_binary_operator.mc
+---
+function f() {
+    foo = (first) // comment
+        | (second);
+    if (first ||
+        // comment
+        second)
+    {}
+    if (first
+        // comment
+        || second)
+    {}
+    if (first || // comment
+        second)
+    {}
+    if (first /* comment */ || second) {}
+}

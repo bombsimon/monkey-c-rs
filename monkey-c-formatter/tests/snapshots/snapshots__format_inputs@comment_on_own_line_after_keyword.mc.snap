@@ -1,0 +1,33 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/comment_on_own_line_after_keyword.mc
+---
+function f() {
+    if (
+        // comment
+        foo == 1
+    ) {}
+    while ( // comment
+        running
+    ) {}
+    return
+        // comment
+        foo;
+}
+
+function g() {
+    foo =
+        // comment
+        bar;
+    var x =
+        // comment
+        bar;
+    var y = // comment
+        bar;
+    if (a) {} else
+    // comment
+    {}
+    throw
+        // comment
+        new Exception();
+}

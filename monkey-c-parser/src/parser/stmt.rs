@@ -1,7 +1,7 @@
 use crate::ast::{
-    BlockStmt, CaseLabel, CatchClause, DoWhileStmt, ElseBranch, ForHeader, ForInit, ForStmt,
-    IfStmt, Modifiers, Parens, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt, TryStmt,
-    WhileStmt,
+    BlockStmt, CaseLabel, CatchClause, DoWhileStmt, ElseBranch, ExprStmt, ForHeader, ForInit,
+    ForStmt, IfStmt, Modifiers, Parens, ReturnStmt, Span, Stmt, SwitchCase, SwitchStmt, ThrowStmt,
+    TryStmt, WhileStmt,
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
@@ -85,9 +85,19 @@ impl Parser<'_> {
 
     fn parse_expr_stmt(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.parse_expression()?;
+        let semi_pos = self.current_token_start;
+        let end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
+        let span = Span {
+            start: expr.span().start,
+            end,
+        };
 
-        Ok(Stmt::Expr(expr))
+        Ok(Stmt::Expr(ExprStmt {
+            expr,
+            semi_pos,
+            span,
+        }))
     }
 
     fn parse_for_stmt(&mut self) -> Result<Stmt, ParserError> {
@@ -474,16 +484,22 @@ impl Parser<'_> {
         self.assert_next_token(&[token::Type::LBrace])?;
         let body = self.parse_block(brace_start)?;
 
+        let while_kw_start = self.current_token_start;
         self.assert_next_token(&[token::Type::While])?;
+        let open = self.current_token_start;
         self.assert_next_token(&[token::Type::LParen])?;
-        let condition = self.parse_expression()?;
+        let inner = self.parse_expression()?;
+        let close = self.current_token_end;
         self.assert_next_token(&[token::Type::RParen])?;
+        let semi_pos = self.current_token_start;
         let semi_end = self.current_token_end;
         self.assert_next_token(&[token::Type::Semicolon])?;
 
         Ok(Stmt::DoWhile(DoWhileStmt {
             body,
-            condition,
+            while_kw_start,
+            condition: Parens { open, inner, close },
+            semi_pos,
             span: Span {
                 start,
                 end: semi_end,

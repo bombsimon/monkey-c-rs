@@ -67,3 +67,11 @@ fn test_indent() {
     assert_eq!(idx.indent(3), 0);
     assert_eq!(idx.indent(4), 2);
 }
+
+#[test]
+fn test_starts_line() {
+    let idx = LineIndex::new("a; // c\n\t  // own\n");
+    assert!(idx.starts_line(0));
+    assert!(!idx.starts_line(3), "comment after code");
+    assert!(idx.starts_line(11), "comment after indentation");
+}

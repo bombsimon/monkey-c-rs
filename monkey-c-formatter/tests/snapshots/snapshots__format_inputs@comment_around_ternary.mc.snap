@@ -1,0 +1,16 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/comment_around_ternary.mc
+---
+function f() {
+    foo = condition
+        ? firstValue /* comment */
+        : secondValueThatIsLongEnoughToBreakTheLine(argument);
+    foo = condition
+        ? firstValue // comment
+        : secondValue;
+    foo = condition // comment
+        ? firstValue
+        : secondValue;
+    foo = condition ? /* comment */ firstValue : secondValue;
+}

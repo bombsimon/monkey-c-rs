@@ -100,3 +100,55 @@ impl<T> std::ops::Deref for Parens<T> {
         &self.inner
     }
 }
+
+/// A comma-separated list that keeps the position of each `,`, so a comment can stay on the side
+/// of the separator it was written on. The comma at index `i` follows item `i`, and a comma after
+/// the last item is a trailing comma. Derefs to the items.
+#[derive(Debug, PartialEq)]
+pub struct Separated<T> {
+    pub items: Vec<T>,
+    pub commas: Vec<Position>,
+}
+
+impl<T> Separated<T> {
+    /// The position of the `,` after the item at `index`, if there is one.
+    pub fn comma_after(&self, index: usize) -> Option<Position> {
+        self.commas.get(index).copied()
+    }
+
+    pub fn has_trailing_comma(&self) -> bool {
+        !self.items.is_empty() && self.commas.len() == self.items.len()
+    }
+}
+
+impl<T> Default for Separated<T> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            commas: Vec::new(),
+        }
+    }
+}
+
+impl<T> std::ops::Deref for Separated<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.items
+    }
+}
+
+impl<T> IntoIterator for Separated<T> {
+    type Item = T;
+    type IntoIter = std::vec::IntoIter<T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Separated<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
