@@ -105,16 +105,42 @@ var tiny = 3.5e-7f;
 
 ## Nullable types
 
-Prettier shortens `or Null` in a type to `?`. `rafiki` keeps the type as
-written and leaves it to the linter's [`null-union`][null-union] rule and its
-`--fix`.
+Prettier shortens `or Null` and `| Null` in a type to `?`. `rafiki` keeps the
+type as written and leaves it to the linter's [`null-union`][null-union] rule
+and its `--fix`.
 
 ```monkey-c
 // rafiki
-function f(value as Number or Null) as Void {
+function f(value as Number or Null) as String | Null {
 
 // Prettier
-function f(value as Number?) as Void {
+function f(value as Number?) as String? {
+```
+
+## Union types
+
+Prettier writes every `|` in a union type as `or`. `rafiki` keeps whichever
+was written.
+
+```monkey-c
+// rafiki
+typedef Numeric as Number | Float;
+
+// Prettier
+typedef Numeric as Number or Float;
+```
+
+## Annotations
+
+Prettier adds a comma between annotations separated only by a space, without a
+space after it. `rafiki` keeps the group as written.
+
+```monkey-c
+// rafiki
+(:excludeFromLowMemoryDevices :excludeFromDataField)
+
+// Prettier
+(:excludeFromLowMemoryDevices,:excludeFromDataField)
 ```
 
 ## Nested generic types
@@ -133,8 +159,51 @@ var rows = [] as Array<Array<Number> >;
 ## Binary operators
 
 When an expression has to break, `rafiki` breaks before an operator and starts
-the continuation line with it. Prettier first tries breaking after `=` and
-keeping the whole expression together, and otherwise breaks after the operator.
+the continuation line with it. Prettier breaks after the operator and leaves it
+at the end of the line. This is one of the most common differences between the
+two, and applies to every binary operator, most often `+` when building strings
+and `&&` or `||` in conditions.
+
+```monkey-c
+// rafiki
+string += posnTime.hour.format("%2d")
+    + ":"
+    + posnTime.min.format("%02d")
+    + ":"
+    + posnTime.sec.format("%02d");
+
+// Prettier
+string +=
+    posnTime.hour.format("%2d") +
+    ":" +
+    posnTime.min.format("%02d") +
+    ":" +
+    posnTime.sec.format("%02d");
+```
+
+A parenthesised expression keeps its `(` next to the first operand and its `)`
+after the last one. Prettier moves the expression inside the parentheses, as it
+does for [conditions](#conditions).
+
+```monkey-c
+// rafiki
+return (coordinates[0] > buttonCoordinates[0][0]
+    && coordinates[0] < buttonCoordinates[0][1]
+    && coordinates[1] > buttonCoordinates[1][0]);
+
+// Prettier
+return (
+    coordinates[0] > buttonCoordinates[0][0] &&
+    coordinates[0] < buttonCoordinates[0][1] &&
+    coordinates[1] > buttonCoordinates[1][0]
+);
+```
+
+## Breaking after `=`
+
+Prettier first tries breaking after `=` and keeping the whole right-hand side
+together on the next line. `rafiki` keeps the start of the expression next to
+the `=` and breaks at its operators instead.
 
 ```monkey-c
 // rafiki
@@ -210,6 +279,24 @@ var item = new MenuItem /* c */(1);
 // Prettier
 foo(/* c */ 1);
 var item = new MenuItem(/* c */ 1);
+```
+
+## Comments after `{`
+
+A comment after an opening `{` stays on that line. Prettier moves it to the next
+line, above the first statement in the block.
+
+```monkey-c
+// rafiki
+if (isReady) { // wait for the first reading
+    update();
+}
+
+// Prettier
+if (isReady) {
+    // wait for the first reading
+    update();
+}
 ```
 
 ## Multi-line block comments
