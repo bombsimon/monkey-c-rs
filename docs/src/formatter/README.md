@@ -127,8 +127,10 @@ enum Color {
 
 ## Comments
 
-Comments are kept where they are and are never dropped. If the formatter can't
-find a place for one, it warns rather than losing it.
+Comments are kept where they are and are never dropped. When the usual layout
+would move a comment, the formatter leaves that code as written instead, so a
+comment stays next to the code it describes. If the formatter can't find a place
+for one, it warns rather than losing it.
 
 The text of a comment is left as written apart from trailing whitespace, so a
 long comment isn't rewrapped and can go past the line width. A `//` comment at
