@@ -122,7 +122,7 @@ impl Parser<'_> {
 
                 TypeKind::Method {
                     name: ident,
-                    args: args.inner.items,
+                    args,
                     returns,
                 }
             } else {
@@ -238,7 +238,7 @@ impl Parser<'_> {
 
         Ok(InterfaceMethod {
             name,
-            args: args.inner.items,
+            args,
             returns,
             as_kw_start,
             span: Span { start, end },

@@ -7,8 +7,8 @@ use monkey_c_parser::ast::{
     AnnotationEntry, ArrayExpr, Ast, BinaryOperator, Binding, BlockStmt, CallArg, CallExpr,
     CaseLabel, CommentStmt, ConstDecl, DictExpr, DictTypeEntry, DictTypeKey, DoubleLit, ElseBranch,
     EnumDecl, EnumVariant, Expr, FloatLit, ForInit, FunctionDecl, IfStmt, InterfaceMember,
-    LiteralValue, Modifiers, Parens, Separated, Span, Spanned, Stmt, SwitchStmt, TryStmt, Type,
-    TypeKind, UnaryOperator, VarDecl, Visibility,
+    LiteralValue, Modifiers, Parameter, Parens, Separated, Span, Spanned, Stmt, SwitchStmt,
+    TryStmt, Type, TypeKind, UnaryOperator, VarDecl, Visibility,
 };
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
@@ -942,8 +942,29 @@ impl Formatter {
         let mut parts = self.decl_keyword(&decl.modifiers, "function");
         parts.push(self.at(&decl.name));
 
-        let items = decl
-            .parameters
+        parts.push(self.parameter_list_to_doc(&decl.parameters));
+
+        if let Some(ret) = &decl.returns {
+            parts.push(Doc::text(" "));
+            parts.push(self.drain_leading_doc(decl.as_kw_start.unwrap_or(ret.span.start)));
+            parts.push(Doc::text("as "));
+            parts.push(self.type_to_doc(ret));
+        }
+
+        match &decl.body {
+            None => parts.push(Doc::text(";")),
+            Some(body) => {
+                parts.push(Doc::text(" "));
+                parts.push(self.block_body_to_doc(body));
+            }
+        }
+
+        Doc::Concat(parts)
+    }
+
+    /// The `(…)` of a function, method type or interface method.
+    fn parameter_list_to_doc(&self, parameters: &Parens<Separated<Parameter>>) -> Doc {
+        let items = parameters
             .iter()
             .enumerate()
             .map(|(i, arg)| {
@@ -968,39 +989,22 @@ impl Formatter {
                 self.list_item(
                     Doc::Concat(arg_parts),
                     parameter_end,
-                    decl.parameters.comma_after(i),
-                    decl.parameters.get(i + 1).map(|next| next.span.start),
-                    decl.parameters.close,
+                    parameters.comma_after(i),
+                    parameters.get(i + 1).map(|next| next.span.start),
+                    parameters.close,
                 )
             })
             .collect();
 
-        parts.push(self.format_list(
+        self.format_list(
             "(",
             ")",
             items,
-            self.drain_dangling_comments_doc(decl.parameters.close),
-            decl.parameters.has_trailing_comma(),
+            self.drain_dangling_comments_doc(parameters.close),
+            parameters.has_trailing_comma(),
             Doc::Empty,
             false,
-        ));
-
-        if let Some(ret) = &decl.returns {
-            parts.push(Doc::text(" "));
-            parts.push(self.drain_leading_doc(decl.as_kw_start.unwrap_or(ret.span.start)));
-            parts.push(Doc::text("as "));
-            parts.push(self.type_to_doc(ret));
-        }
-
-        match &decl.body {
-            None => parts.push(Doc::text(";")),
-            Some(body) => {
-                parts.push(Doc::text(" "));
-                parts.push(self.block_body_to_doc(body));
-            }
-        }
-
-        Doc::Concat(parts)
+        )
     }
 
     fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
@@ -1218,21 +1222,7 @@ impl Formatter {
                 args,
                 returns,
             } => {
-                let mut parts = vec![Doc::text(format!("{name}("))];
-                for (i, arg) in args.iter().enumerate() {
-                    if i > 0 {
-                        parts.push(Doc::text(", "));
-                    }
-
-                    parts.push(Doc::text(&arg.name.node));
-
-                    if let Some(t) = &arg.type_ {
-                        parts.push(Doc::text(" as "));
-                        parts.push(self.type_to_doc(t));
-                    }
-                }
-
-                parts.push(Doc::text(")"));
+                let mut parts = vec![Doc::text(name), self.parameter_list_to_doc(args)];
 
                 if let Some(ret) = returns {
                     parts.push(Doc::text(" as "));
@@ -1271,10 +1261,6 @@ impl Formatter {
         body_span: Span,
         suffix: &str,
     ) -> Doc {
-        if entries.is_empty() {
-            return Doc::text(format!("{{}}{suffix}"));
-        }
-
         let close = body_span.end - 1;
         let items = entries
             .iter()
@@ -1387,24 +1373,11 @@ impl Formatter {
 
         let body = match member {
             InterfaceMember::Function(m) => {
-                let mut parts = vec![Doc::text("function "), self.at(&m.name), Doc::text("(")];
-
-                for (i, arg) in m.args.iter().enumerate() {
-                    if i > 0 {
-                        parts.push(Doc::text(", "));
-                    }
-                    parts.push(self.drain_leading_doc(arg.span.start));
-                    parts.push(Doc::text(&arg.name.node));
-                    if let Some(ty) = &arg.type_ {
-                        parts.push(Doc::text(" "));
-                        parts
-                            .push(self.drain_leading_doc(arg.as_kw_start.unwrap_or(ty.span.start)));
-                        parts.push(Doc::text("as "));
-                        parts.push(self.type_to_doc(ty));
-                    }
-                }
-
-                parts.push(Doc::text(")"));
+                let mut parts = vec![
+                    Doc::text("function "),
+                    self.at(&m.name),
+                    self.parameter_list_to_doc(&m.args),
+                ];
                 if let Some(ret) = &m.returns {
                     parts.push(Doc::text(" "));
                     parts.push(self.drain_leading_doc(m.as_kw_start.unwrap_or(ret.span.start)));

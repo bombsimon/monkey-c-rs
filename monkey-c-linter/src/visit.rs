@@ -341,7 +341,7 @@ fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             }
         }
         TypeKind::Method { args, returns, .. } => {
-            for arg in args {
+            for arg in &args.inner {
                 if let Some(t) = &arg.type_ {
                     walk_type(t, ctx, diags);
                 }
@@ -355,7 +355,7 @@ fn walk_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
             for m in members {
                 match m {
                     InterfaceMember::Function(f) => {
-                        for arg in &f.args {
+                        for arg in &f.args.inner {
                             if let Some(t) = &arg.type_ {
                                 walk_type(t, ctx, diags);
                             }

@@ -78,7 +78,7 @@ pub enum TypeKind {
     /// types still parse. The return is optional,`Method(x as Number)` (no `as`) is allowed.
     Method {
         name: Ident,
-        args: Vec<Parameter>,
+        args: Parens<Separated<Parameter>>,
         returns: Option<Box<Type>>,
     },
     /// A parenthesised type: `(T)`. Preserved from source so the formatter can re-emit user-written
@@ -103,7 +103,7 @@ pub enum InterfaceMember {
 #[derive(Debug, PartialEq)]
 pub struct InterfaceMethod {
     pub name: Spanned<Ident>,
-    pub args: Vec<Parameter>,
+    pub args: Parens<Separated<Parameter>>,
     pub returns: Option<Type>,
     pub as_kw_start: Option<Position>,
     pub span: Span,
