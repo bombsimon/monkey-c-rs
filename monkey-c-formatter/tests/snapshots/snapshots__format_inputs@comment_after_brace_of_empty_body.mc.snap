@@ -1,0 +1,31 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+input_file: monkey-c-formatter/tests/snapshot_inputs/comment_after_brace_of_empty_body.mc
+---
+enum { // c
+}
+class A { // c
+}
+
+module M { // c
+}
+
+function f() { // c
+}
+
+function g() {
+    if (a) { // c
+    }
+    switch (a) {}
+}
+
+function h() {
+    foo( // c
+    );
+    var a = [
+        // c
+    ];
+    var d = {
+        // c
+    };
+}
