@@ -4,7 +4,7 @@
 /// AST remain raw byte offsets; this type is only needed when you want a human-readable location
 /// (error messages, blank-line logic).
 pub struct LineIndex {
-    /// Byte offset of the first character of each line (line_starts[0] == 0).
+    /// Byte offset of the first character of each line (`line_starts[0] == 0`).
     line_starts: Vec<u32>,
     /// `is_blank[i]` is `true` when line `i`'s body is empty or whitespace-only in the source. Used
     /// by [`Self::blank_lines_between`] so a line that contains a comment is *not* counted as

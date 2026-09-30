@@ -217,7 +217,7 @@ impl Formatter {
         self.drain_trailing_doc_bounded(end_pos, usize::MAX)
     }
 
-    /// Like [`drain_trailing_doc`] but only captures comments whose
+    /// Like [`Self::drain_trailing_doc`] but only captures comments whose
     /// `span.start < max_pos`. Use `max_pos = next_sibling.span.start` in
     /// binary chains and collections to prevent stealing comments that belong
     /// to a later node on the same source line.
@@ -348,20 +348,33 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    /// Whether a comment between a node ending at `node_end` and the token at `token_pos` after it
-    /// ends a line, either as a `//` comment or by sitting on a line of its own. The token then
-    /// has to start a new line.
-    fn comment_breaks_line_before(&self, node_end: usize, token_pos: usize) -> bool {
+    /// Whether the token at `token_pos`, such as `=>` or an operator, has to start a new line
+    /// because a comment between it and the node ending at `node_end` ends a line: a `//`
+    /// comment, or one on a line of its own. See [`Self::node_starts_new_line`] for the gap after
+    /// a token.
+    fn token_starts_new_line(&self, node_end: usize, token_pos: usize) -> bool {
         self.comment_cursor
             .borrow()
             .peek_in(node_end, token_pos)
             .any(|c| !c.is_block || self.line_index.starts_line(c.span.start as u32))
     }
 
+    /// Whether the node at `node_start` can't share a line with the token ending at `token_end`,
+    /// such as `return` or `=`, because a comment between them ends on an earlier line than the
+    /// node. See [`Self::token_starts_new_line`] for the gap before a token.
+    fn node_starts_new_line(&self, token_end: usize, node_start: usize) -> bool {
+        let node_line = self.line_index.line(node_start as u32);
+
+        self.comment_cursor
+            .borrow()
+            .peek_in(token_end, node_start)
+            .any(|c| self.line_index.line(c.span.end.saturating_sub(1) as u32) != node_line)
+    }
+
     /// The break in front of a token that starts a new line when its group breaks, made hard when a
     /// comment before the token ends the line anyway.
     fn line_before_token(&self, node_end: usize, token_pos: usize) -> Doc {
-        if self.comment_breaks_line_before(node_end, token_pos) {
+        if self.token_starts_new_line(node_end, token_pos) {
             Doc::HardLine
         } else {
             Doc::Line
@@ -381,17 +394,6 @@ impl Formatter {
         Doc::concat(parts)
     }
 
-    /// Whether a comment between a token ending at `token_end` and the node at `node_start` after
-    /// it ends on an earlier line than the node, so the two can't share a line.
-    fn comment_ends_line_before(&self, token_end: usize, node_start: usize) -> bool {
-        let node_line = self.line_index.line(node_start as u32);
-
-        self.comment_cursor
-            .borrow()
-            .peek_in(token_end, node_start)
-            .any(|c| self.line_index.line(c.span.end.saturating_sub(1) as u32) != node_line)
-    }
-
     /// The expression `render`s, starting at `expr_start`, after a token ending at `token_end` such
     /// as `return`, `=` or `=>`, including the space between them. When a comment ends the line in
     /// between, the expression goes on an indented line of its own instead of joining the comment.
@@ -401,7 +403,7 @@ impl Formatter {
         expr_start: usize,
         render: impl FnOnce() -> Doc,
     ) -> Doc {
-        if !self.comment_ends_line_before(token_end, expr_start) {
+        if !self.node_starts_new_line(token_end, expr_start) {
             return Doc::concat(vec![Doc::text(" "), render()]);
         }
 
@@ -414,7 +416,7 @@ impl Formatter {
     /// token they were written on. A comment that ends the line before the token moves the token
     /// to an indented line of its own.
     fn token_then_expr(&self, node_end: usize, token: &str, token_pos: usize, expr: &Expr) -> Doc {
-        let breaks = self.comment_breaks_line_before(node_end, token_pos);
+        let breaks = self.token_starts_new_line(node_end, token_pos);
         let before = self.drain_before_token(node_end, token_pos);
         let after = self.after_token(token_pos + token.len(), expr.span().start, || {
             self.expr_with_leading(expr)
@@ -453,7 +455,7 @@ impl Formatter {
             };
         };
 
-        let comma_starts_line = self.comment_breaks_line_before(item_end, comma);
+        let comma_starts_line = self.token_starts_new_line(item_end, comma);
         let mut before_separator = self.drain_before_token(item_end, comma);
         if comma_starts_line {
             before_separator = Doc::concat(vec![before_separator, Doc::HardLine]);
@@ -1449,7 +1451,7 @@ impl Formatter {
         let cond_end = cond.span().end;
 
         // A comment that ends the `(` line would otherwise pull the condition up after it.
-        if self.comment_ends_line_before(condition.open + 1, cond_start) {
+        if self.node_starts_new_line(condition.open + 1, cond_start) {
             let after_open = self.drain_trailing_doc_bounded(condition.open + 1, cond_start);
             let leading = self.drain_leading_doc(cond_start);
             let cond_doc = Doc::group(vec![self.condition_to_doc(cond)]);
@@ -1646,8 +1648,8 @@ impl Formatter {
 
                 // A comment after the operator that ends the line keeps the operator at the end of
                 // the line in front of it, as in `left || // c`, rather than moving past it.
-                let comment_after_op = self.comment_ends_line_before(op_end, next_start);
-                let breaks = self.comment_breaks_line_before(span.end, op_pos);
+                let comment_after_op = self.node_starts_new_line(op_end, next_start);
+                let breaks = self.token_starts_new_line(span.end, op_pos);
                 parts.push(self.drain_before_token(span.end, op_pos));
 
                 if comment_after_op {
@@ -2122,7 +2124,7 @@ impl Formatter {
         }
     }
 
-    /// Like [`expr_with_leading`] but caps the trailing drain of any nested
+    /// Like [`Self::expr_with_leading`] but caps the trailing drain of any nested
     /// binary chain at `outer_max_pos`. Used when the expression sits inside a
     /// delimiter (e.g. paren) whose closing token must not be swallowed by a
     /// `//` comment that belongs to an outer chain.
@@ -2727,7 +2729,7 @@ impl Formatter {
             |entry, next_entry_start| {
                 let key = self.expr_with_leading(&entry.key);
                 let key_end = entry.key.span().end;
-                let arrow_breaks = self.comment_breaks_line_before(key_end, entry.arrow_pos);
+                let arrow_breaks = self.token_starts_new_line(key_end, entry.arrow_pos);
                 let before_arrow = self.drain_before_token(key_end, entry.arrow_pos);
                 let value = self.after_token(
                     entry.arrow_pos + "=>".len(),
