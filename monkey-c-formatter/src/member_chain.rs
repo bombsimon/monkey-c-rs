@@ -39,7 +39,7 @@ impl Formatter {
             .iter()
             .zip(&group_gaps)
             .map(|(links, gap)| GroupDoc {
-                same_line_comments: self.drain_trailing_doc_bounded(gap.start, gap.end),
+                same_line_comments: self.drain_trailing_doc(gap.start, gap.end),
                 own_line_comments: self.drain_leading_doc(gap.end),
                 doc: Doc::Concat(
                     links

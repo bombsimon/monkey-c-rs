@@ -96,6 +96,23 @@ impl Doc {
         Doc::BlankLine
     }
 
+    /// A bracketed body: `open` with whatever follows it on its line, `body` indented on the lines
+    /// below and `close` on a line of its own. Without a body `open` and `close` share a line as in
+    /// `{}`, unless something after `open`, such as a `//` comment, has to end that line.
+    pub(crate) fn bracketed(open: Doc, after_open: Doc, body: Doc, close: Doc) -> Self {
+        match (&after_open, &body) {
+            (Doc::Empty, Doc::Empty) => Doc::concat(vec![open, close]),
+            (_, Doc::Empty) => Doc::concat(vec![open, after_open, Doc::HardLine, close]),
+            _ => Doc::concat(vec![
+                open,
+                after_open,
+                Doc::Indent(vec![Doc::HardLine, body]),
+                Doc::HardLine,
+                close,
+            ]),
+        }
+    }
+
     pub(crate) fn flat_or_break(flat: Doc, break_: Doc) -> Self {
         Doc::FlatOrBreak(Box::new(flat), Box::new(break_))
     }

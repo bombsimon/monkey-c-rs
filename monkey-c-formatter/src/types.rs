@@ -12,11 +12,7 @@ impl Formatter {
         let leading = self.drain_leading_doc(ty.span.start);
         let inner = self.type_inner_to_doc(ty);
 
-        if matches!(leading, Doc::Empty) {
-            inner
-        } else {
-            Doc::concat(vec![leading, inner])
-        }
+        Doc::concat(vec![leading, inner])
     }
 
     fn type_inner_to_doc(&self, ty: &Type) -> Doc {
@@ -183,33 +179,19 @@ impl Formatter {
             if let Some(pe) = prev_end {
                 inner.push(self.gap_between_positions(pe, eff_start));
             }
-            // When prev_end is None (first member) and after_open is empty, the outer
-            // Indent([HardLine, ...]) already provides the newline — no extra HardLine.
 
             inner.push(self.interface_member_to_doc(member));
             prev_end = Some(self.effective_end(member_span));
         }
 
-        // Drain trailing comments inside the interface body.
-        let remaining_start = self
-            .comment_cursor
-            .borrow()
-            .peek_before(body_span.end)
-            .map(|c| c.span.start);
-        if let Some(start) = remaining_start {
-            if let Some(pe) = prev_end {
-                inner.push(self.gap_between_positions(pe, start));
-            }
-            inner.push(self.drain_dangling_comments_doc(body_span.end));
-        }
+        inner.push(self.drain_remaining_comments(prev_end, body_span.end));
 
-        Doc::concat(vec![
+        Doc::bracketed(
             Doc::text("interface {"),
             after_open,
-            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-            Doc::HardLine,
+            Doc::concat(inner),
             Doc::text(format!("}}{suffix}")),
-        ])
+        )
     }
 
     fn interface_member_to_doc(&self, member: &InterfaceMember) -> Doc {
@@ -226,7 +208,7 @@ impl Formatter {
             InterfaceMember::Function(m) => {
                 let mut parts = vec![
                     Doc::text("function "),
-                    self.at(&m.name),
+                    self.name_to_doc(&m.name),
                     self.parameter_list_to_doc(&m.args),
                 ];
                 if let Some(ret) = &m.returns {
@@ -240,7 +222,7 @@ impl Formatter {
                 Doc::Concat(parts)
             }
             InterfaceMember::Variable(v) => {
-                let mut parts = vec![Doc::text("var "), self.at(&v.name)];
+                let mut parts = vec![Doc::text("var "), self.name_to_doc(&v.name)];
                 parts.push(Doc::text(" "));
                 parts.push(self.drain_leading_doc(v.as_kw_start));
                 parts.push(Doc::text("as "));
@@ -250,7 +232,7 @@ impl Formatter {
             }
         };
 
-        let trailing = self.drain_trailing_doc(span.end);
+        let trailing = self.drain_trailing_doc(span.end, usize::MAX);
 
         match (&leading, &trailing) {
             (Doc::Empty, Doc::Empty) => body,

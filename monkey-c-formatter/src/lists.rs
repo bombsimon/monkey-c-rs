@@ -16,10 +16,7 @@ pub(crate) struct ListItem {
     pub(crate) content: Doc,
     pub(crate) before_separator: Doc,
     pub(crate) trailing: Doc,
-    /// True when the trailing comment is a `//` line comment, which forces
-    /// the whole list to render multi-line (a line comment consumes the rest
-    /// of the source line, so args after it would be commented out in flat mode).
-    pub(crate) trailing_is_line_comment: bool,
+    pub(crate) ends_line: bool,
 }
 
 impl Formatter {
@@ -36,13 +33,13 @@ impl Formatter {
         list_end: usize,
     ) -> ListItem {
         let next_start = next_item_start.unwrap_or(list_end);
-        let trailing_is_line_comment = self.has_trailing_line_comment_bounded(item_end, next_start);
+        let ends_line = self.has_trailing_line_comment(item_end, next_start);
         let Some(comma) = comma else {
             return ListItem {
                 content,
                 before_separator: Doc::Empty,
-                trailing: self.drain_trailing_doc_bounded(item_end, next_start),
-                trailing_is_line_comment,
+                trailing: self.drain_trailing_doc(item_end, next_start),
+                ends_line,
             };
         };
 
@@ -58,14 +55,14 @@ impl Formatter {
         let trailing = if next_on_comma_line {
             Doc::Empty
         } else {
-            self.drain_trailing_doc_bounded(comma + 1, next_start)
+            self.drain_trailing_doc(comma + 1, next_start)
         };
 
         ListItem {
             content,
             before_separator,
             trailing,
-            trailing_is_line_comment: trailing_is_line_comment || comma_starts_line,
+            ends_line: ends_line || comma_starts_line,
         }
     }
 
@@ -234,29 +231,7 @@ impl Formatter {
 
     fn format_array_body(&self, e: &ArrayExpr) -> Doc {
         if e.entries.is_empty() {
-            if self
-                .comment_cursor
-                .borrow()
-                .has_comment_in(e.span.start + 1, e.span.end)
-            {
-                let comments = self.comment_cursor.borrow_mut().drain_before(e.span.end);
-                let mut inner = Vec::new();
-                for (i, c) in comments.iter().enumerate() {
-                    if i > 0 {
-                        inner.push(Doc::HardLine);
-                    }
-                    inner.push(self.comment_to_doc(c));
-                }
-
-                return Doc::concat(vec![
-                    Doc::text("["),
-                    Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-                    Doc::HardLine,
-                    Doc::text("]"),
-                ]);
-            }
-
-            return Doc::text("[]");
+            return self.empty_collection_to_doc(e.span, "[", "]");
         }
 
         let must_break = e.entries.has_trailing_comma() || self.has_comments_in(e.span);
@@ -279,8 +254,8 @@ impl Formatter {
                 ListItem {
                     content: self.expr_with_leading_bounded(&entry.value, next_start),
                     before_separator: Doc::Empty,
-                    trailing: self.drain_trailing_doc_bounded(value_span.end, next_start),
-                    trailing_is_line_comment: false,
+                    trailing: self.drain_trailing_doc(value_span.end, next_start),
+                    ends_line: false,
                 }
             })
             .collect();
@@ -316,17 +291,8 @@ impl Formatter {
         let has_after_open = !matches!(&after_open, Doc::Empty);
         let has_before_close = !matches!(&before_close, Doc::Empty);
 
-        if items.is_empty() && !has_before_close && !has_after_open {
-            return Doc::text(format!("{open}{close}"));
-        }
-
         if items.is_empty() && !has_after_open {
-            return Doc::concat(vec![
-                Doc::text(open),
-                Doc::Indent(vec![Doc::HardLine, before_close]),
-                Doc::HardLine,
-                Doc::text(close),
-            ]);
+            return Doc::bracketed(Doc::text(open), Doc::Empty, before_close, Doc::text(close));
         }
 
         // Line comments (`// …`) consume the rest of the source line, so any
@@ -336,7 +302,7 @@ impl Formatter {
         let force_multiline = trailing_comma
             || after_open_force_newline
             || has_before_close
-            || items.iter().any(|i| i.trailing_is_line_comment);
+            || items.iter().any(|i| i.ends_line);
 
         let last_idx = items.len().saturating_sub(1);
         let mut inner = Vec::new();
@@ -365,13 +331,12 @@ impl Formatter {
                 inner.push(before_close);
             }
 
-            return Doc::concat(vec![
+            return Doc::bracketed(
                 Doc::text(open),
                 after_open,
-                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-                Doc::HardLine,
+                Doc::concat(inner),
                 Doc::text(close),
-            ]);
+            );
         }
 
         // When there's a block comment after the opening delimiter, separate
@@ -395,29 +360,7 @@ impl Formatter {
 
     pub(crate) fn format_dict(&self, e: &DictExpr) -> Doc {
         if e.entries.is_empty() {
-            if self
-                .comment_cursor
-                .borrow()
-                .has_comment_in(e.span.start + 1, e.span.end)
-            {
-                let comments = self.comment_cursor.borrow_mut().drain_before(e.span.end);
-                let mut inner = Vec::new();
-                for (i, c) in comments.iter().enumerate() {
-                    if i > 0 {
-                        inner.push(Doc::HardLine);
-                    }
-                    inner.push(self.comment_to_doc(c));
-                }
-
-                return Doc::concat(vec![
-                    Doc::text("{"),
-                    Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-                    Doc::HardLine,
-                    Doc::text("}"),
-                ]);
-            }
-
-            return Doc::text("{}");
+            return self.empty_collection_to_doc(e.span, "{", "}");
         }
 
         let must_break = e.entries.has_trailing_comma() || self.has_comments_in(e.span);
@@ -603,13 +546,37 @@ impl Formatter {
             inner.push(self.drain_dangling_comments_doc(span.end));
         }
 
-        Doc::concat(vec![
-            Doc::text(open.to_string()),
+        Doc::bracketed(
+            Doc::text(open),
             after_open,
-            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-            Doc::HardLine,
-            Doc::text(close.to_string()),
-        ])
+            Doc::concat(inner),
+            Doc::text(close),
+        )
+    }
+
+    /// An empty `[]` or `{}`, with any comments written inside it on lines of their own.
+    fn empty_collection_to_doc(&self, span: Span, open: &str, close: &str) -> Doc {
+        let mut body = Vec::new();
+        if self.has_comments_in(Span {
+            start: span.start + 1,
+            end: span.end,
+        }) {
+            let comments = self.comment_cursor.borrow_mut().drain_before(span.end);
+            for (i, comment) in comments.iter().enumerate() {
+                if i > 0 {
+                    body.push(Doc::HardLine);
+                }
+
+                body.push(self.comment_to_doc(comment));
+            }
+        }
+
+        Doc::bracketed(
+            Doc::text(open),
+            Doc::Empty,
+            Doc::concat(body),
+            Doc::text(close),
+        )
     }
 
     fn push_gap(
@@ -643,7 +610,7 @@ impl Formatter {
                 ]),
                 before_separator: Doc::Empty,
                 trailing: Doc::Empty,
-                trailing_is_line_comment: false,
+                ends_line: false,
             })
             .collect();
 

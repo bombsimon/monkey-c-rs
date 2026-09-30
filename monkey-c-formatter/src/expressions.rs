@@ -60,14 +60,14 @@ impl Formatter {
                         Doc::Line
                     });
                     parts.push(Doc::text(op_text));
-                    parts.push(self.drain_trailing_doc_bounded(op_end, next_start));
+                    parts.push(self.drain_trailing_doc(op_end, next_start));
                     parts.push(Doc::HardLine);
                 } else {
                     parts.push(if breaks { Doc::HardLine } else { Doc::Line });
                     parts.push(Doc::text(format!("{op_text} ")));
                 }
             } else {
-                parts.push(self.drain_trailing_doc_bounded(span.end, outer_max_pos));
+                parts.push(self.drain_trailing_doc(span.end, outer_max_pos));
             }
         }
 
@@ -130,11 +130,7 @@ impl Formatter {
         let leading = self.drain_leading_doc(span.start);
         let inner = self.expr_inner_to_doc(expr);
 
-        if matches!(&leading, Doc::Empty) {
-            inner
-        } else {
-            Doc::concat(vec![leading, inner])
-        }
+        Doc::concat(vec![leading, inner])
     }
 
     /// Like [`Self::expr_with_leading`] but caps the trailing drain of any nested
@@ -145,11 +141,7 @@ impl Formatter {
         let leading = self.drain_leading_doc(expr.span().start);
         let inner = self.expr_inner_to_doc_ctx(expr, outer_max_pos);
 
-        if matches!(&leading, Doc::Empty) {
-            inner
-        } else {
-            Doc::concat(vec![leading, inner])
-        }
+        Doc::concat(vec![leading, inner])
     }
 
     fn expr_inner_to_doc_ctx(&self, expr: &Expr, outer_max_pos: usize) -> Doc {
@@ -171,7 +163,7 @@ impl Formatter {
                 Doc::concat(vec![
                     Doc::text("("),
                     self.expr_with_leading_bounded(&e.inner, paren_end),
-                    self.drain_trailing_doc_bounded(inner_end, paren_end),
+                    self.drain_trailing_doc(inner_end, paren_end),
                     Doc::text(")"),
                 ])
             }
@@ -368,7 +360,7 @@ impl Formatter {
                 Doc::concat(vec![
                     Doc::text("("),
                     self.expr_with_leading_bounded(&e.inner, e.span.end),
-                    self.drain_trailing_doc_bounded(inner_end, e.span.end),
+                    self.drain_trailing_doc(inner_end, e.span.end),
                     Doc::text(")"),
                 ])
             }

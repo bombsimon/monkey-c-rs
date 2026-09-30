@@ -14,24 +14,24 @@ impl Formatter {
         match ast {
             Ast::Document(nodes, span) => self.decls_to_doc(nodes, *span),
             Ast::Import(decl) => {
-                let mut parts = vec![Doc::text("import "), self.at(&decl.name)];
+                let mut parts = vec![Doc::text("import "), self.name_to_doc(&decl.name)];
                 self.push_before_semi(&mut parts, decl.span.end - 1);
                 Doc::Concat(parts)
             }
             Ast::Using(decl) => {
-                let mut parts = vec![Doc::text("using "), self.at(&decl.name)];
+                let mut parts = vec![Doc::text("using "), self.name_to_doc(&decl.name)];
                 if let Some(alias) = &decl.alias {
                     parts.push(Doc::text(" "));
                     parts.push(self.drain_leading_doc(decl.as_kw_start.unwrap_or(decl.span.end)));
                     parts.push(Doc::text("as "));
-                    parts.push(self.at(alias));
+                    parts.push(self.name_to_doc(alias));
                 }
                 self.push_before_semi(&mut parts, decl.span.end - 1);
                 Doc::Concat(parts)
             }
             Ast::Typedef(decl) => {
                 let mut parts = vec![Doc::text("typedef ")];
-                parts.push(self.at(&decl.name));
+                parts.push(self.name_to_doc(&decl.name));
                 parts.push(Doc::text(" "));
                 parts.push(self.drain_leading_doc(decl.as_kw_start));
                 parts.push(Doc::text("as "));
@@ -41,69 +41,35 @@ impl Formatter {
             }
             Ast::Module(decl) => {
                 let mut header_parts = self.decl_keyword(&decl.modifiers, "module");
-                header_parts.push(self.at(&decl.name));
+                header_parts.push(self.name_to_doc(&decl.name));
                 header_parts.push(Doc::text(" "));
-                let header = Doc::concat(header_parts);
-                let before_brace = self.drain_leading_doc(decl.brace_start);
-                let after_open = self.drain_after_open_brace(decl.brace_start, decl.span.end);
-                let inner = self.decls_to_doc(&decl.body, decl.span);
+                header_parts.push(self.declaration_block_to_doc(
+                    decl.brace_start,
+                    decl.span,
+                    &decl.body,
+                ));
 
-                if decl.body.is_empty() && matches!(inner, Doc::Empty) {
-                    return Doc::concat(vec![
-                        header,
-                        before_brace,
-                        Doc::text("{"),
-                        after_open,
-                        Doc::text("}"),
-                    ]);
-                }
-
-                Doc::concat(vec![
-                    header,
-                    before_brace,
-                    Doc::text("{"),
-                    after_open,
-                    Doc::Indent(vec![Doc::HardLine, inner]),
-                    Doc::HardLine,
-                    Doc::text("}"),
-                ])
+                Doc::concat(header_parts)
             }
             Ast::Class(decl) => {
                 let mut header_parts = self.decl_keyword(&decl.modifiers, "class");
-                header_parts.push(self.at(&decl.name));
+                header_parts.push(self.name_to_doc(&decl.name));
                 if let Some(extends) = &decl.extends {
                     header_parts.push(Doc::text(" "));
                     header_parts.push(
                         self.drain_leading_doc(decl.extends_kw_start.unwrap_or(decl.brace_start)),
                     );
                     header_parts.push(Doc::text("extends "));
-                    header_parts.push(self.at(extends));
+                    header_parts.push(self.name_to_doc(extends));
                 }
                 header_parts.push(Doc::text(" "));
-                let header = Doc::Concat(header_parts);
-                let before_brace = self.drain_leading_doc(decl.brace_start);
-                let after_open = self.drain_after_open_brace(decl.brace_start, decl.span.end);
-                let inner = self.decls_to_doc(&decl.body, decl.span);
+                header_parts.push(self.declaration_block_to_doc(
+                    decl.brace_start,
+                    decl.span,
+                    &decl.body,
+                ));
 
-                if decl.body.is_empty() && matches!(inner, Doc::Empty) {
-                    return Doc::concat(vec![
-                        header,
-                        before_brace,
-                        Doc::text("{"),
-                        after_open,
-                        Doc::text("}"),
-                    ]);
-                }
-
-                Doc::concat(vec![
-                    header,
-                    before_brace,
-                    Doc::text("{"),
-                    after_open,
-                    Doc::Indent(vec![Doc::HardLine, inner]),
-                    Doc::HardLine,
-                    Doc::text("}"),
-                ])
+                Doc::concat(header_parts)
             }
             Ast::Function(decl) => self.function_to_doc(decl),
             Ast::Enum(decl) => self.enum_to_doc(decl),
@@ -178,7 +144,7 @@ impl Formatter {
             // Bounded so comments belonging to the next entry, or to the annotated declaration
             // after the closing `)`, are not pulled in here.
             let max_pos = next_entry.map_or(span.end, |next| next.span.start);
-            inner.push(self.drain_trailing_doc_bounded(entry.span.end, max_pos));
+            inner.push(self.drain_trailing_doc(entry.span.end, max_pos));
         }
 
         wrap_annotation(inner, multiline)
@@ -228,95 +194,38 @@ impl Formatter {
 
             docs.push(self.drain_leading_doc(decl_span.start));
             docs.push(self.ast_to_doc(decl));
-            docs.push(self.drain_trailing_doc_bounded(decl_span.end, next_decl_start));
+            docs.push(self.drain_trailing_doc(decl_span.end, next_decl_start));
 
             prev_end = Some(self.effective_end(decl_span));
             prev_is_block_decl = is_block_decl;
         }
 
         // Drain any remaining comments inside the container (after last decl).
-        let remaining_start = self
-            .comment_cursor
-            .borrow()
-            .peek_before(container.end)
-            .map(|c| c.span.start);
-        if let Some(start) = remaining_start {
-            if let Some(pe) = prev_end {
-                docs.push(self.gap_between_positions(pe, start));
-            }
+        docs.push(self.drain_remaining_comments(prev_end, container.end));
 
-            docs.push(self.drain_dangling_comments_doc(container.end));
-        }
-
-        Doc::Concat(docs)
+        Doc::concat(docs)
     }
 
     fn enum_to_doc(&self, decl: &EnumDecl) -> Doc {
         let mut prefix_parts = self.decl_keyword(&decl.modifiers, "enum");
         if let Some(name) = &decl.name {
-            prefix_parts.push(self.at(name));
+            prefix_parts.push(self.name_to_doc(name));
             prefix_parts.push(Doc::text(" "));
         }
 
         let prefix = Doc::concat(prefix_parts);
-
-        if decl.variants.is_empty() {
-            let before_brace = self.drain_leading_doc(decl.brace_start);
-            let after_open = self.drain_after_open_brace(decl.brace_start, decl.span.end);
-            let remaining_start = self
-                .comment_cursor
-                .borrow()
-                .peek_before(decl.span.end)
-                .map(|c| c.span.start);
-
-            if remaining_start.is_none()
-                && matches!(before_brace, Doc::Empty)
-                && matches!(after_open, Doc::Empty)
-            {
-                return Doc::concat(vec![prefix.clone(), Doc::text("{"), Doc::text("}")]);
-            }
-
-            let mut inner = Vec::new();
-            if remaining_start.is_some() {
-                inner.push(self.drain_dangling_comments_doc(decl.span.end));
-            }
-
-            if inner.is_empty()
-                && matches!(before_brace, Doc::Empty)
-                && matches!(after_open, Doc::Empty)
-            {
-                return Doc::concat(vec![prefix.clone(), Doc::text("{"), Doc::text("}")]);
-            }
-
-            return Doc::concat(vec![
-                prefix.clone(),
-                before_brace,
-                Doc::text("{"),
-                after_open,
-                Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-                Doc::HardLine,
-                Doc::text("}"),
-            ]);
-        }
+        let before_brace = self.drain_leading_doc(decl.brace_start);
 
         // Bounded by the first variant so comments after it on a one-line enum stay with it.
-        let before_brace = self.drain_leading_doc(decl.brace_start);
-        let after_open = self.drain_after_open_brace(decl.brace_start, decl.variants[0].span.start);
-        let header = Doc::concat(vec![
-            prefix.clone(),
-            before_brace,
-            Doc::text("{"),
-            after_open,
-        ]);
+        let first_variant_start = decl
+            .variants
+            .first()
+            .map_or(decl.span.end, |v| v.span.start);
+        let after_open = self.drain_after_open_brace(decl.brace_start, first_variant_start);
 
-        let last_idx = decl.variants.len() - 1;
+        let last_idx = decl.variants.len().saturating_sub(1);
         let mut inner = Vec::new();
         let mut prev_end: Option<usize> = None;
-
-        let push_gap = |inner: &mut Vec<Doc>, prev_end: Option<usize>, next_start: usize| {
-            let Some(pe) = prev_end else { return };
-            inner.push(self.gap_between_positions(pe, next_start));
-        };
 
         let name_pads = if self.align_pairs {
             enum_variant_name_pads(&decl.variants)
@@ -325,8 +234,9 @@ impl Formatter {
         };
 
         for (i, v) in decl.variants.iter().enumerate() {
-            let eff_start = self.effective_start(v.span);
-            push_gap(&mut inner, prev_end, eff_start);
+            if let Some(prev_end) = prev_end {
+                inner.push(self.gap_between_positions(prev_end, self.effective_start(v.span)));
+            }
 
             let mut parts = Vec::new();
             parts.push(self.drain_leading_doc(v.span.start));
@@ -361,28 +271,35 @@ impl Formatter {
             prev_end = Some(self.effective_end(v.span));
         }
 
-        // Drain comments after last variant before `}`.
-        let remaining_start = self
-            .comment_cursor
-            .borrow()
-            .peek_before(decl.span.end)
-            .map(|c| c.span.start);
-        if let Some(start) = remaining_start {
-            push_gap(&mut inner, prev_end, start);
-            inner.push(self.drain_dangling_comments_doc(decl.span.end));
-        }
+        inner.push(self.drain_remaining_comments(prev_end, decl.span.end));
 
         Doc::concat(vec![
-            header,
-            Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-            Doc::HardLine,
-            Doc::text("}"),
+            prefix,
+            Doc::bracketed(
+                Doc::concat(vec![before_brace, Doc::text("{")]),
+                after_open,
+                Doc::concat(inner),
+                Doc::text("}"),
+            ),
         ])
+    }
+
+    /// The `{ … }` of a module or class, holding its declarations.
+    fn declaration_block_to_doc(&self, brace_start: usize, span: Span, body: &[Ast]) -> Doc {
+        let before_brace = self.drain_leading_doc(brace_start);
+        let after_open = self.drain_after_open_brace(brace_start, span.end);
+
+        Doc::bracketed(
+            Doc::concat(vec![before_brace, Doc::text("{")]),
+            after_open,
+            self.decls_to_doc(body, span),
+            Doc::text("}"),
+        )
     }
 
     fn function_to_doc(&self, decl: &FunctionDecl) -> Doc {
         let mut parts = self.decl_keyword(&decl.modifiers, "function");
-        parts.push(self.at(&decl.name));
+        parts.push(self.name_to_doc(&decl.name));
 
         parts.push(self.parameter_list_to_doc(&decl.parameters));
 
@@ -397,7 +314,7 @@ impl Formatter {
             None => parts.push(Doc::text(";")),
             Some(body) => {
                 parts.push(Doc::text(" "));
-                parts.push(self.block_body_to_doc(body));
+                parts.push(self.block_to_doc(body));
             }
         }
 
@@ -431,7 +348,7 @@ impl Formatter {
         }
 
         let mut parts = self.decl_keyword(&decl.modifiers, "const");
-        self.push_bindings(&mut parts, &decl.bindings);
+        parts.push(self.bindings_to_doc(&decl.bindings, Doc::text(" ")));
         self.push_before_semi(&mut parts, decl.semi_pos);
 
         Doc::Concat(parts)
@@ -439,7 +356,7 @@ impl Formatter {
 
     pub(crate) fn var_decl_to_doc(&self, var: &VarDecl) -> Doc {
         let mut parts = self.decl_keyword(&var.modifiers, "var");
-        self.push_bindings(&mut parts, &var.bindings);
+        parts.push(self.bindings_to_doc(&var.bindings, Doc::text(" ")));
 
         Doc::Concat(parts)
     }
@@ -453,34 +370,7 @@ impl Formatter {
     ) -> Doc {
         let mut parts = self.modifiers_to_doc(modifiers);
 
-        let mut indented = vec![Doc::Line];
-        for (i, binding) in bindings.iter().enumerate() {
-            let content = self.binding_to_doc(binding);
-            let next_start = bindings.get(i + 1).map(|next| next.span.start);
-            // The last binding leaves its comments to the `;`.
-            let item = self.list_item(
-                content,
-                binding.span.end,
-                bindings.comma_after(i),
-                next_start,
-                binding.span.end,
-            );
-            indented.push(item.content);
-            indented.push(item.before_separator);
-
-            if next_start.is_none() {
-                indented.push(item.trailing);
-                continue;
-            }
-
-            indented.push(Doc::text(","));
-            indented.push(item.trailing);
-            indented.push(if item.trailing_is_line_comment {
-                Doc::HardLine
-            } else {
-                Doc::Line
-            });
-        }
+        let indented = vec![Doc::Line, self.bindings_to_doc(bindings, Doc::Line)];
 
         // The `;` sits inside the group so a declaration that only overflows
         // by its terminator still breaks.
@@ -498,12 +388,14 @@ impl Formatter {
         parts
     }
 
-    fn push_bindings(&self, parts: &mut Vec<Doc>, bindings: &Separated<Binding>) {
+    /// The bindings of a `var` or `const` separated by `,` and `separator`, with comments kept on
+    /// their side of each comma. The last binding leaves its comments to what follows it, such as
+    /// the `;`.
+    fn bindings_to_doc(&self, bindings: &Separated<Binding>, separator: Doc) -> Doc {
+        let mut parts = Vec::new();
         for (i, binding) in bindings.iter().enumerate() {
             let content = self.binding_to_doc(binding);
             let next_start = bindings.get(i + 1).map(|next| next.span.start);
-
-            // The last binding leaves its comments to what follows it, such as the `;`.
             let item = self.list_item(
                 content,
                 binding.span.end,
@@ -520,12 +412,14 @@ impl Formatter {
 
             parts.push(Doc::text(","));
             parts.push(item.trailing);
-            parts.push(if item.trailing_is_line_comment {
+            parts.push(if item.ends_line {
                 Doc::HardLine
             } else {
-                Doc::text(" ")
+                separator.clone()
             });
         }
+
+        Doc::concat(parts)
     }
 
     fn binding_to_doc(&self, b: &Binding) -> Doc {
@@ -580,12 +474,12 @@ fn wrap_annotation(inner: Vec<Doc>, multiline: bool) -> Doc {
         return Doc::concat(vec![Doc::text("("), Doc::Concat(inner), Doc::text(")")]);
     }
 
-    Doc::concat(vec![
+    Doc::bracketed(
         Doc::text("("),
-        Doc::Indent(vec![Doc::HardLine, Doc::Concat(inner)]),
-        Doc::HardLine,
+        Doc::Empty,
+        Doc::concat(inner),
         Doc::text(")"),
-    ])
+    )
 }
 
 fn enum_variant_name_pads(variants: &[EnumVariant]) -> Vec<usize> {

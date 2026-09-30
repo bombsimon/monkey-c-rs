@@ -7,19 +7,16 @@ use crate::Formatter;
 use crate::doc::Doc;
 
 impl Formatter {
-    /// Drain comments with `span.start < pos` and render them as leading
-    /// content (each on its own line, or inline for a same-line block comment).
-    /// Drain any comments before the spanned node, then prepend them to its text doc.
-    pub(crate) fn at(&self, spanned: &Spanned<String>) -> Doc {
-        let doc = Doc::text(&spanned.node);
-        let leading = self.drain_leading_doc(spanned.start());
-
-        match leading {
-            Doc::Empty => doc,
-            d => Doc::Concat(vec![d, doc]),
-        }
+    /// A name such as a class or function name, with the comments written before it.
+    pub(crate) fn name_to_doc(&self, name: &Spanned<String>) -> Doc {
+        Doc::concat(vec![
+            self.drain_leading_doc(name.start()),
+            Doc::text(&name.node),
+        ])
     }
 
+    /// Drain the comments before `pos` and render them as leading content, each on its own line
+    /// or inline when a block comment shares a line with `pos`.
     pub(crate) fn drain_leading_doc(&self, pos: usize) -> Doc {
         let comments = self.comment_cursor.borrow_mut().drain_before(pos);
         if comments.is_empty() {
@@ -84,18 +81,30 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    /// Drain same-line trailing comments after a node whose last byte is at
-    /// `end_pos` (exclusive span end). Returns a doc that starts with a space
-    /// before the first comment.
-    pub(crate) fn drain_trailing_doc(&self, end_pos: usize) -> Doc {
-        self.drain_trailing_doc_bounded(end_pos, usize::MAX)
+    /// Drain the comments left before `end`, after the last item of a body, kept apart from the
+    /// item that ended at `prev_end` by the blank lines between them in the source. No newline
+    /// follows the last comment since the enclosing structure adds the one before its `}`.
+    pub(crate) fn drain_remaining_comments(&self, prev_end: Option<usize>, end: usize) -> Doc {
+        let Some(start) = self
+            .comment_cursor
+            .borrow()
+            .peek_before(end)
+            .map(|c| c.span.start)
+        else {
+            return Doc::Empty;
+        };
+
+        let gap = prev_end.map_or(Doc::Empty, |prev_end| {
+            self.gap_between_positions(prev_end, start)
+        });
+
+        Doc::concat(vec![gap, self.drain_dangling_comments_doc(end)])
     }
 
-    /// Like [`Self::drain_trailing_doc`] but only captures comments whose
-    /// `span.start < max_pos`. Use `max_pos = next_sibling.span.start` in
-    /// binary chains and collections to prevent stealing comments that belong
-    /// to a later node on the same source line.
-    pub(crate) fn drain_trailing_doc_bounded(&self, end_pos: usize, max_pos: usize) -> Doc {
+    /// Drain the comments on the line where a node ends at `end_pos`, rendered after it with a
+    /// space in front. Only comments before `max_pos` are taken, so a later node on the same line,
+    /// such as the next list entry, keeps its own.
+    pub(crate) fn drain_trailing_doc(&self, end_pos: usize, max_pos: usize) -> Doc {
         let end_line = self.line_index.line(end_pos.saturating_sub(1) as u32);
         let comments = self.comment_cursor.borrow_mut().drain_trailing(
             end_pos,
@@ -123,9 +132,8 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    /// Peek: is there a `//` line comment on the line containing `end_pos`?
-    /// Like the unbounded variant but bounded by `max_pos`.
-    pub(crate) fn has_trailing_line_comment_bounded(&self, end_pos: usize, max_pos: usize) -> bool {
+    /// Whether a `//` comment follows a node ending at `end_pos` on its line, before `max_pos`.
+    pub(crate) fn has_trailing_line_comment(&self, end_pos: usize, max_pos: usize) -> bool {
         let end_line = self.line_index.line(end_pos.saturating_sub(1) as u32);
         self.comment_cursor.borrow().has_line_comment_between(
             end_pos,
@@ -155,12 +163,8 @@ impl Formatter {
         )
     }
 
-    /// Drain and render comments that start on the same line as `brace_pos`
-    /// (the opening `{`). These are `// C` or `/* C */` immediately after `{`.
-    /// Drain same-line comments that appear immediately after an opening
-    /// delimiter at `brace_pos`. Only captures comments whose `span.start` is
-    /// in `[brace_pos, close_pos)` so that comments outside the delimited
-    /// region are not accidentally consumed.
+    /// Drain the comments on the line of the opening delimiter at `brace_pos`, such as `{ // c`.
+    /// Bounded by `close_pos` so comments outside the delimited region stay where they are.
     pub(crate) fn drain_after_open_brace(&self, brace_pos: usize, close_pos: usize) -> Doc {
         let brace_line = self.line_index.line(brace_pos as u32);
         let comments = self.comment_cursor.borrow_mut().drain_trailing(
@@ -259,7 +263,7 @@ impl Formatter {
     /// it, such as `=>`, `?` or an operator. Comments on the node's line stay after it and the
     /// rest keep a line of their own.
     pub(crate) fn drain_before_token(&self, node_end: usize, token_pos: usize) -> Doc {
-        let mut parts = vec![self.drain_trailing_doc_bounded(node_end, token_pos)];
+        let mut parts = vec![self.drain_trailing_doc(node_end, token_pos)];
         for comment in self.comment_cursor.borrow_mut().drain_before(token_pos) {
             parts.push(Doc::HardLine);
             parts.push(self.comment_to_doc(&comment));
@@ -281,7 +285,7 @@ impl Formatter {
             return Doc::concat(vec![Doc::text(" "), render()]);
         }
 
-        let same_line = self.drain_trailing_doc_bounded(token_end, expr_start);
+        let same_line = self.drain_trailing_doc(token_end, expr_start);
 
         Doc::concat(vec![same_line, Doc::Indent(vec![Doc::HardLine, render()])])
     }
