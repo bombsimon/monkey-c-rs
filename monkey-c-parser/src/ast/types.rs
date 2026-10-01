@@ -23,7 +23,7 @@ pub struct Type {
 /// same thing, but the one written is kept so the formatter never rewrites it.
 #[derive(Debug, PartialEq)]
 pub struct UnionAlternative {
-    pub separator: UnionSeparator,
+    pub separator: Spanned<UnionSeparator>,
     pub type_: Type,
 }
 

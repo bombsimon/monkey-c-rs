@@ -39,7 +39,8 @@ impl Parser<'_> {
     pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
         let mut ty = self.parse_simple_type(false)?;
         while let Some(separator) = self.union_separator() {
-            if separator == UnionSeparator::Pipe && !Self::is_type_start(&self.lexer.peek_token().1)
+            if separator.node == UnionSeparator::Pipe
+                && !Self::is_type_start(&self.lexer.peek_token().1)
             {
                 break;
             }
@@ -58,12 +59,20 @@ impl Parser<'_> {
         Ok(ty)
     }
 
-    fn union_separator(&self) -> Option<UnionSeparator> {
-        match self.current_token {
-            token::Type::OrKeyword => Some(UnionSeparator::Or),
-            token::Type::BitOr => Some(UnionSeparator::Pipe),
-            _ => None,
-        }
+    fn union_separator(&self) -> Option<Spanned<UnionSeparator>> {
+        let separator = match self.current_token {
+            token::Type::OrKeyword => UnionSeparator::Or,
+            token::Type::BitOr => UnionSeparator::Pipe,
+            _ => return None,
+        };
+
+        Some(Spanned {
+            span: Span {
+                start: self.current_token_start,
+                end: self.current_token_end,
+            },
+            node: separator,
+        })
     }
 
     fn is_type_start(tok: &token::Type) -> bool {

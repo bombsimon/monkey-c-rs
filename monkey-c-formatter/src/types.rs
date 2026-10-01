@@ -95,7 +95,10 @@ impl Formatter {
 
         let mut parts = vec![base];
         for alternative in &ty.alternatives {
-            parts.push(Doc::text(format!(" {} ", alternative.separator.as_str())));
+            parts.push(Doc::text(format!(
+                " {} ",
+                alternative.separator.node.as_str()
+            )));
             parts.push(self.type_to_doc(&alternative.type_));
         }
 

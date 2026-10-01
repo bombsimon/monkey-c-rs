@@ -548,7 +548,7 @@ fn test_typedef() {
             d.type_
                 .alternatives
                 .iter()
-                .map(|alternative| alternative.separator)
+                .map(|alternative| alternative.separator.node)
                 .collect::<Vec<_>>(),
             separators,
             "wrong union separators in `{src}`"
