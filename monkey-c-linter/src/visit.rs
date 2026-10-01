@@ -112,6 +112,10 @@ fn dispatch_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     }
 
     diags.extend(rules::naming_convention::check_ast(ast, ctx));
+
+    if let Some(d) = rules::modifier_order::check_ast(ast, ctx) {
+        diags.push(d);
+    }
 }
 
 fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {

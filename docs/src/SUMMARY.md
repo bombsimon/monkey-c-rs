@@ -15,6 +15,7 @@
     - [compound-assignment](linter/rules/compound-assignment/README.md)
     - [ifs-same-cond](linter/rules/ifs-same-cond/README.md)
     - [import-order](linter/rules/import-order/README.md)
+    - [modifier-order](linter/rules/modifier-order/README.md)
     - [naming-convention](linter/rules/naming-convention/README.md)
     - [null-union](linter/rules/null-union/README.md)
     - [one-class-per-file](linter/rules/one-class-per-file/README.md)
