@@ -252,11 +252,7 @@ impl Formatter {
                     Doc::text("["),
                     self.expr_with_leading(&e.index),
                 ];
-                let before_close = self.drain_leading_doc(e.span.end - 1);
-                if !matches!(before_close, Doc::Empty) {
-                    parts.push(Doc::text(" "));
-                    parts.push(before_close);
-                }
+                parts.push(self.drain_before_close_doc(e.span.end - 1));
                 parts.push(Doc::text("]"));
                 Doc::Concat(parts)
             }
@@ -323,11 +319,7 @@ impl Formatter {
                 parts.push(Doc::text("["));
                 parts.push(self.expr_with_leading(&e.size));
                 let close_pos = e.span.end - if e.is_byte_array { 2 } else { 1 };
-                let before_close = self.drain_leading_doc(close_pos);
-                if !matches!(before_close, Doc::Empty) {
-                    parts.push(Doc::text(" "));
-                    parts.push(before_close);
-                }
+                parts.push(self.drain_before_close_doc(close_pos));
                 parts.push(Doc::text(if e.is_byte_array { "]b" } else { "]" }));
 
                 Doc::Concat(parts)

@@ -18,6 +18,27 @@ impl Formatter {
     /// Drain the comments before `pos` and render them as leading content, each on its own line
     /// or inline when a block comment shares a line with `pos`.
     pub(crate) fn drain_leading_doc(&self, pos: usize) -> Doc {
+        self.drain_comments_doc(pos, true)
+    }
+
+    /// Drain the comments before a closing bracket or `;` at `pos`, spaced from the code before them
+    /// but hugging the token the same way a comment after an opening bracket does.
+    pub(crate) fn drain_before_close_doc(&self, pos: usize) -> Doc {
+        let comments = self.drain_hugging_doc(pos);
+        if matches!(comments, Doc::Empty) {
+            return Doc::Empty;
+        }
+
+        Doc::concat(vec![Doc::text(" "), comments])
+    }
+
+    /// Drain the comments before `pos` so they hug the token there, for when nothing precedes them
+    /// that they need to be spaced from.
+    pub(crate) fn drain_hugging_doc(&self, pos: usize) -> Doc {
+        self.drain_comments_doc(pos, false)
+    }
+
+    fn drain_comments_doc(&self, pos: usize, space_before_pos: bool) -> Doc {
         let comments = self.comment_cursor.borrow_mut().drain_before(pos);
         if comments.is_empty() {
             return Doc::Empty;
@@ -30,7 +51,10 @@ impl Formatter {
             parts.push(self.comment_to_doc(c));
 
             if c.is_block && comment_end_line == node_line {
-                parts.push(Doc::text(" "));
+                let is_last = i + 1 == comments.len();
+                if space_before_pos || !is_last {
+                    parts.push(Doc::text(" "));
+                }
             } else {
                 let next_start = comments.get(i + 1).map(|nc| nc.span.start).unwrap_or(pos);
                 let blanks = self
@@ -393,19 +417,11 @@ impl Formatter {
     }
 
     /// Drain any comments that appear between the last expression/token and
-    /// the closing `;`, then push the semicolon. Preserves block comments like
-    /// `expr /* c */ ;` while keeping the common `expr;` case minimal.
+    /// the closing `;`, then push the semicolon. Block comments hug the `;` like
+    /// they hug a closing bracket, as in `expr /* c */;`.
     pub(crate) fn push_before_semi(&self, parts: &mut Vec<Doc>, semi_pos: usize) {
-        let before = self.drain_leading_doc(semi_pos);
-
-        match before {
-            Doc::Empty => parts.push(Doc::text(";")),
-            d => {
-                parts.push(Doc::text(" "));
-                parts.push(d);
-                parts.push(Doc::text(";"));
-            }
-        }
+        parts.push(self.drain_before_close_doc(semi_pos));
+        parts.push(Doc::text(";"));
     }
 
     pub(crate) fn gap_between_positions(&self, prev_end: usize, next_start: usize) -> Doc {
