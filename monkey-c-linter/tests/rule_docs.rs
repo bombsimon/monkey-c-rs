@@ -68,7 +68,8 @@ fn rules_table() -> String {
         .map(|rule| {
             [
                 format!("[`{name}`](./{name})", name = rule.name),
-                rule.summary.to_string(),
+                // A bare `|` would end the cell, even inside backticks.
+                rule.summary.replace('|', "\\|"),
                 fix_label(rule.fix).to_string(),
             ]
         })

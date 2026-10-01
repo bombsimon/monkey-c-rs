@@ -22,7 +22,7 @@ pub fn check_type(ty: &Type, ctx: &LintContext) -> Option<Diagnostic> {
     };
 
     let (non_null_text, non_null_is_optional) = match (is_null(ty), is_null(&alternative.type_)) {
-        (false, true) => (primary_text(ty, alternative, ctx)?, ty.optional),
+        (false, true) => (primary_text(ty, alternative, ctx), ty.optional),
         (true, false) => (
             &ctx.source[alternative.type_.span.start..alternative.type_.span.end],
             alternative.type_.optional,
@@ -58,18 +58,10 @@ fn is_null(ty: &Type) -> bool {
     generic_params.is_empty() && matches!(ident.as_str(), "Null" | "Lang.Null" | "Toybox.Lang.Null")
 }
 
-/// The source text of the first member of a union, without the separator
-/// that joins it to `alternative`. The union's own span covers every member,
-/// so the first member ends where the separator before `alternative` starts.
-fn primary_text<'a>(
-    ty: &Type,
-    alternative: &UnionAlternative,
-    ctx: &LintContext<'a>,
-) -> Option<&'a str> {
-    let text = ctx.source[ty.span.start..alternative.type_.span.start].trim_end();
-    let text = text.strip_suffix(alternative.separator.as_str())?;
-
-    Some(text.trim_end())
+/// The source text of the first member of a union. The union's own span covers every member, so
+/// the first member ends where the separator before `alternative` starts.
+fn primary_text<'a>(ty: &Type, alternative: &UnionAlternative, ctx: &LintContext<'a>) -> &'a str {
+    ctx.source[ty.span.start..alternative.separator.span.start].trim_end()
 }
 
 #[cfg(test)]

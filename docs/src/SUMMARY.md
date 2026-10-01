@@ -18,6 +18,7 @@
     - [naming-convention](linter/rules/naming-convention/README.md)
     - [null-union](linter/rules/null-union/README.md)
     - [one-class-per-file](linter/rules/one-class-per-file/README.md)
+    - [pipe-union](linter/rules/pipe-union/README.md)
     - [redundant-resource-ref](linter/rules/redundant-resource-ref/README.md)
     - [super-initializer-call](linter/rules/super-initializer-call/README.md)
     - [unneeded-parens](linter/rules/unneeded-parens/README.md)

@@ -16,6 +16,7 @@ it exists. The examples show the code after `rafiki lint --fix` followed by
 | [`naming-convention`](./naming-convention)           | Names that don't follow Garmin's coding conventions   | No     |
 | [`null-union`](./null-union)                         | `T or Null` instead of `T?`                           | Yes    |
 | [`one-class-per-file`](./one-class-per-file)         | More than one class in a file                         | No     |
+| [`pipe-union`](./pipe-union)                         | `\|` instead of `or` in a union type                  | Yes    |
 | [`redundant-resource-ref`](./redundant-resource-ref) | The legacy `@` before a resource reference            | Yes    |
 | [`super-initializer-call`](./super-initializer-call) | An `initialize` that doesn't call the parent's        | No     |
 | [`unneeded-parens`](./unneeded-parens)               | Parentheses that can't change how the code is read    | Yes    |

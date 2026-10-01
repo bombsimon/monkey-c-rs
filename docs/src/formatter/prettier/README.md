@@ -134,6 +134,9 @@ typedef Numeric as Number | Float;
 typedef Numeric as Number or Float;
 ```
 
+> [!TIP]
+> The linter's [`pipe-union`][pipe-union] rule rewrites `|` to `or` with `--fix`.
+
 ## Annotations
 
 Prettier adds a comma between annotations separated only by a space, without a
@@ -446,6 +449,7 @@ var b = 2;
 [comments]: ..#comments
 [magic-trailing-comma]: ..#the-magic-trailing-comma
 [null-union]: ../../linter/rules/null-union
+[pipe-union]: ../../linter/rules/pipe-union
 [prettier-plugin-monkeyc]: https://github.com/markw65/prettier-plugin-monkeyc
 [redundant-resource-ref]: ../../linter/rules/redundant-resource-ref
 [unneeded-parens]: ../../linter/rules/unneeded-parens

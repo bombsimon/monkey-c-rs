@@ -122,6 +122,8 @@ fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     if let Some(d) = rules::null_union::check_type(ty, ctx) {
         diags.push(d);
     }
+
+    diags.extend(rules::pipe_union::check_type(ty, ctx));
 }
 
 /// Called once per [`Stmt`] visited by [`walk_stmt`]. Rules that care about

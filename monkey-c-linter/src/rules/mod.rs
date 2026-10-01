@@ -8,6 +8,7 @@ pub mod import_order;
 pub mod naming_convention;
 pub mod null_union;
 pub mod one_class_per_file;
+pub mod pipe_union;
 pub mod redundant_resource_ref;
 pub mod super_initializer_call;
 pub mod unneeded_parens;
@@ -75,6 +76,11 @@ pub const ALL: &[Rule] = &[
         name: one_class_per_file::RULE,
         summary: "More than one class in a file",
         fix: FixAvailability::Never,
+    },
+    Rule {
+        name: pipe_union::RULE,
+        summary: "`|` instead of `or` in a union type",
+        fix: FixAvailability::Always,
     },
     Rule {
         name: redundant_resource_ref::RULE,
