@@ -1,0 +1,19 @@
+var array = [/* c */ 1, 2];
+var dict = {/* c */ :a => 1};
+var call = foo(/* c */ 1, 2);
+var arrayAroundCommas = [1 /* c */, 2 /* d */];
+var dictAroundArrows = {:a /* k */ => 1, :b => /* v */ 2 /* e */};
+var arrayBeforeClose = [1, 2 /* c */
+];
+var nested = [foo(/* c */ 1), {:a => /* c */ [2]}];
+var arrayTooLong = [firstEntryThatIsQuiteLong, secondEntryThatIsQuiteLong, /* c */ thirdEntryThatIsQuiteLong];
+var dictTooLong = {:first => firstEntryThatIsQuiteLong, :secondKey => /* c */ secondEntryThatIsQuiteLong};
+var arrayOwnLine = [
+    /* c */
+    1, 2
+];
+var arrayLineComment = [1, /* c */ 2 // d
+];
+var arrayLeadingSplit = [/* first */ firstEntryThatIsQuiteLong, secondEntryThatIsQuiteLong, thirdEntryThatIsLong];
+var dictLeadingSplit = {/* first */ :first => firstEntryThatIsQuiteLong, :secondKey => secondEntryThatIsQuiteLong};
+var callLeadingSplit = foo(/* first */ firstEntryThatIsQuiteLong, secondEntryThatIsQuiteLong, thirdEntryLong);

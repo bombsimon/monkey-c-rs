@@ -2,7 +2,8 @@
 //! comma kept on the side they were written on.
 
 use monkey_c_parser::ast::{
-    ArrayExpr, CallArg, CallExpr, DictExpr, Expr, LiteralValue, Parameter, Parens, Separated, Span,
+    ArrayExpr, CallArg, CallExpr, DictEntry, DictExpr, Expr, LiteralValue, Parameter, Parens,
+    Separated, Span,
 };
 
 use crate::Formatter;
@@ -234,33 +235,31 @@ impl Formatter {
             return self.empty_collection_to_doc(e.span, "[", "]");
         }
 
-        let must_break = e.entries.has_trailing_comma() || self.has_comments_in(e.span);
-
-        if must_break {
+        if self.collection_must_break(e.span, e.entries.has_trailing_comma()) {
             return self.format_array_multiline(e);
         }
 
-        let items: Vec<ListItem> = e
-            .entries
-            .iter()
-            .enumerate()
-            .map(|(i, entry)| {
-                let value_span = *entry.value.span();
-                let next_start = e
-                    .entries
-                    .get(i + 1)
-                    .map(|ne| ne.value.span().start)
-                    .unwrap_or(e.span.end);
-                ListItem {
-                    content: self.expr_with_leading_bounded(&entry.value, next_start),
-                    before_separator: Doc::Empty,
-                    trailing: self.drain_trailing_doc(value_span.end, next_start),
-                    ends_line: false,
-                }
-            })
-            .collect();
+        self.format_collection_inline_or_break(
+            e.span,
+            &e.entries,
+            "[",
+            "]",
+            |entry| entry.value.span().start,
+            |entry| entry.value.span().end,
+            |_, entry, next_entry_start| {
+                self.expr_with_leading_bounded(&entry.value, next_entry_start)
+            },
+        )
+    }
 
-        self.format_list("[", "]", items, Doc::Empty, false, Doc::Empty, false)
+    /// A trailing comma keeps a collection one entry per line, and so does a `//` comment since it
+    /// ends its line. Block comments are left to the line width, like in a call.
+    fn collection_must_break(&self, span: Span, trailing_comma: bool) -> bool {
+        trailing_comma
+            || self
+                .comment_cursor
+                .borrow()
+                .has_line_comment_in(span.start, span.end)
     }
 
     fn format_array_multiline(&self, e: &ArrayExpr) -> Doc {
@@ -271,7 +270,7 @@ impl Formatter {
             "]",
             |entry| entry.value.span().start,
             |entry| entry.value.span().end,
-            |entry, next_entry_start| {
+            |_, entry, next_entry_start| {
                 self.expr_with_leading_bounded(&entry.value, next_entry_start)
             },
         )
@@ -339,13 +338,12 @@ impl Formatter {
             );
         }
 
-        // When there's a block comment after the opening delimiter, separate
-        // it from the content with `Doc::Line` (" " flat, newline+indent
-        // expanded) so flat mode gives `(/* c */ x)` not `(/* c */x)`.
+        // A block comment after the opening delimiter belongs to the first item, so it moves down
+        // with it when the list breaks rather than being left behind on the delimiter's line.
         let indent_start = if has_after_open && inner.is_empty() {
             vec![after_open]
         } else if has_after_open {
-            vec![after_open, Doc::Line]
+            vec![Doc::SoftLine, after_open, Doc::text(" ")]
         } else {
             vec![Doc::SoftLine]
         };
@@ -363,10 +361,12 @@ impl Formatter {
             return self.empty_collection_to_doc(e.span, "{", "}");
         }
 
-        let must_break = e.entries.has_trailing_comma() || self.has_comments_in(e.span);
-
-        if must_break {
+        if self.collection_must_break(e.span, e.entries.has_trailing_comma()) {
             return self.format_dict_multiline(e);
+        }
+
+        if self.has_comments_in(e.span) {
+            return self.format_dict_with_comments(e);
         }
 
         if self.align_pairs {
@@ -404,16 +404,7 @@ impl Formatter {
     }
 
     fn format_dict_multiline(&self, e: &DictExpr) -> Doc {
-        let aligned = self.align_pairs && !e.entries.is_empty();
-        let max_key_width = if aligned {
-            e.entries
-                .iter()
-                .filter_map(|entry| expr_key_width(&entry.key))
-                .max()
-                .unwrap_or(0)
-        } else {
-            0
-        };
+        let paddings = self.dict_key_paddings(e);
 
         self.format_collection_multiline(
             e.span,
@@ -422,42 +413,144 @@ impl Formatter {
             "}",
             |entry| entry.key.span().start,
             |entry| entry.value.span().end,
-            |entry, next_entry_start| {
-                let key = self.expr_with_leading(&entry.key);
-                let key_end = entry.key.span().end;
-                let arrow_breaks = self.token_starts_new_line(key_end, entry.arrow_pos);
-                let before_arrow = self.drain_before_token(key_end, entry.arrow_pos);
-                let value = self.after_token(
-                    entry.arrow_pos + "=>".len(),
-                    entry.value.span().start,
-                    || self.expr_with_leading_bounded(&entry.value, next_entry_start),
-                );
+            |i, entry, next_entry_start| {
+                let padding = Doc::text(&paddings[i]);
 
-                if arrow_breaks {
-                    return Doc::concat(vec![
-                        key,
-                        before_arrow,
-                        Doc::Indent(vec![Doc::HardLine, Doc::text("=>"), value]),
-                    ]);
-                }
-
-                let padding = if aligned {
-                    expr_key_width(&entry.key)
-                        .map(|w| " ".repeat(max_key_width.saturating_sub(w)))
-                        .unwrap_or_default()
-                } else {
-                    String::new()
-                };
-
-                Doc::concat(vec![
-                    key,
-                    before_arrow,
-                    Doc::Text(padding),
-                    Doc::text(" =>"),
-                    value,
-                ])
+                self.dict_entry_to_doc(entry, next_entry_start, padding)
             },
         )
+    }
+
+    /// A dict with block comments in it, kept on one line when it fits. Keys are only padded for
+    /// alignment once it breaks.
+    fn format_dict_with_comments(&self, e: &DictExpr) -> Doc {
+        let paddings = self.dict_key_paddings(e);
+
+        self.format_collection_inline_or_break(
+            e.span,
+            &e.entries,
+            "{",
+            "}",
+            |entry| entry.key.span().start,
+            |entry| entry.value.span().end,
+            |i, entry, next_entry_start| {
+                let padding = Doc::flat_or_break(Doc::Empty, Doc::text(&paddings[i]));
+
+                self.dict_entry_to_doc(entry, next_entry_start, padding)
+            },
+        )
+    }
+
+    /// The spaces after each key that line up the `=>` of a broken dict, none unless pairs are
+    /// aligned. Measured before any comment is drained, since the first entry's leading comment
+    /// may be taken along with the opening brace.
+    fn dict_key_paddings(&self, e: &DictExpr) -> Vec<String> {
+        if !self.align_pairs {
+            return vec![String::new(); e.entries.len()];
+        }
+
+        let widths: Vec<Option<usize>> = (0..e.entries.len())
+            .map(|i| self.dict_key_column_width(e, i))
+            .collect();
+        let max_width = widths.iter().flatten().copied().max().unwrap_or(0);
+
+        widths
+            .iter()
+            .map(|width| {
+                width
+                    .map(|width| " ".repeat(max_width - width))
+                    .unwrap_or_default()
+            })
+            .collect()
+    }
+
+    /// The width of everything in front of the `=>` of the entry at `index`, block comments on the
+    /// key's line included. `None` when it can't be lined up, such as a key that isn't a simple
+    /// name or a comment spanning lines.
+    fn dict_key_column_width(&self, e: &DictExpr, index: usize) -> Option<usize> {
+        let entry = &e.entries[index];
+        let key_span = *entry.key.span();
+        let key_line = self.line_index.line(key_span.start as u32);
+        let entry_start = match index {
+            0 => e.span.start + 1,
+            _ => e.entries.comma_after(index - 1)? + 1,
+        };
+
+        let cursor = self.comment_cursor.borrow();
+        let leading = cursor
+            .peek_in(entry_start, key_span.start)
+            .filter(|comment| self.line_index.line(comment.span.start as u32) == key_line);
+        let before_arrow = cursor.peek_in(key_span.end, entry.arrow_pos);
+
+        let mut width = expr_key_width(&entry.key)?;
+        for comment in leading.chain(before_arrow) {
+            if !comment.is_block || comment.text.contains('\n') {
+                return None;
+            }
+
+            width += display_width(&format!("/*{}*/ ", comment.text));
+        }
+
+        Some(width)
+    }
+
+    /// A `key => value` pair with the comments around it, `padding` going between the key and
+    /// `=>`.
+    fn dict_entry_to_doc(&self, entry: &DictEntry, next_entry_start: usize, padding: Doc) -> Doc {
+        let key = self.expr_with_leading(&entry.key);
+        let key_end = entry.key.span().end;
+        let arrow_breaks = self.token_starts_new_line(key_end, entry.arrow_pos);
+        let before_arrow = self.drain_before_token(key_end, entry.arrow_pos);
+        let value = self.after_token(
+            entry.arrow_pos + "=>".len(),
+            entry.value.span().start,
+            || self.expr_with_leading_bounded(&entry.value, next_entry_start),
+        );
+
+        if arrow_breaks {
+            return Doc::concat(vec![
+                key,
+                before_arrow,
+                Doc::Indent(vec![Doc::HardLine, Doc::text("=>"), value]),
+            ]);
+        }
+
+        Doc::concat(vec![key, before_arrow, padding, Doc::text(" =>"), value])
+    }
+
+    /// Render `entries` on one line when they fit and one per line otherwise, with the comments
+    /// around them placed like in a call. `content_of` is as for the multi-line form.
+    #[allow(clippy::too_many_arguments)]
+    fn format_collection_inline_or_break<E>(
+        &self,
+        span: Span,
+        entries: &Separated<E>,
+        open: &str,
+        close: &str,
+        start_of: impl Fn(&E) -> usize,
+        end_of: impl Fn(&E) -> usize,
+        content_of: impl Fn(usize, &E, usize) -> Doc,
+    ) -> Doc {
+        let first_start = entries.first().map(&start_of).unwrap_or(span.end);
+        let after_open = self.drain_after_open_paren(span.start, first_start);
+        let items = entries
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let next_entry_start = entries.get(i + 1).map(&start_of);
+
+                self.list_item(
+                    content_of(i, entry, next_entry_start.unwrap_or(span.end)),
+                    end_of(entry),
+                    entries.comma_after(i),
+                    next_entry_start,
+                    span.end,
+                )
+            })
+            .collect();
+        let before_close = self.drain_dangling_comments_doc(span.end);
+
+        self.format_list(open, close, items, before_close, false, after_open, false)
     }
 
     /// Render `entries` one per line. `content_of` renders an entry given where the next one
@@ -471,7 +564,7 @@ impl Formatter {
         close: &str,
         start_of: impl Fn(&E) -> usize,
         end_of: impl Fn(&E) -> usize,
-        content_of: impl Fn(&E, usize) -> Doc,
+        content_of: impl Fn(usize, &E, usize) -> Doc,
     ) -> Doc {
         let trailing_comma = entries.has_trailing_comma();
         let last_idx = entries.len().saturating_sub(1);
@@ -515,7 +608,7 @@ impl Formatter {
             // the collection close). This prevents stealing a comment from a
             // later entry or from outside the collection.
             let next_entry_start = entries.get(i + 1).map(&start_of);
-            let content = content_of(entry, next_entry_start.unwrap_or(span.end));
+            let content = content_of(i, entry, next_entry_start.unwrap_or(span.end));
             let entry_end = end_of(entry);
             let item = self.list_item(
                 content,

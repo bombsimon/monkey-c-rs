@@ -1,0 +1,9 @@
+var leading = {/* first */ :first => 1, :secondKey => 2,};
+var leadingSplit = {/* first */ :first => firstEntryThatIsQuiteLong, :secondKey => secondEntryThatIsQuiteLong};
+var beforeArrow = {:a /* k */ => 1, :secondKey => 2,};
+var middle = {:a => 1, /* x */ /* y */ :b => 2, :longestKey => 3,};
+var spansLines = {
+    :a => 1,
+    :bb /* multi
+    line */ => 2,
+};

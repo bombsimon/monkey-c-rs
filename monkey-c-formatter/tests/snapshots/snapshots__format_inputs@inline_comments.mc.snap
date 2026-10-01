@@ -42,9 +42,9 @@ class Comments {
         ];
 
         var dict = {
-            :foo => /* INFO */ 1,
+            :foo            => /* INFO */ 1,
             /* INFO */ :bar => 2,
-            :baz => 3,
+            :baz            => 3,
         };
     }
 }
