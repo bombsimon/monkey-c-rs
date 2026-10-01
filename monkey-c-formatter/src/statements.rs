@@ -449,14 +449,15 @@ impl Formatter {
                 let mut parts = vec![opening, init_doc];
                 self.push_before_semi(&mut parts, s.header.inner.first_semi);
 
-                parts.push(Doc::text(" "));
                 if let Some(condition) = &s.header.inner.condition {
+                    parts.push(Doc::text(" "));
                     parts.push(self.expr_with_leading_bounded(condition, s.header.close));
                 }
 
                 self.push_before_semi(&mut parts, s.header.inner.second_semi);
-                parts.push(Doc::text(" "));
+
                 if let Some(update) = &s.header.inner.update {
+                    parts.push(Doc::text(" "));
                     parts.push(self.expr_list_to_doc(update));
                 }
 
