@@ -37,8 +37,8 @@ function f() {
         ,
         second
     );
-    foo = 1 /* comment */ ;
+    foo = 1 /* comment */;
     foo = 1 // comment
     ;
-    for (var i = 0 /* comment */ ; i < 10 /* comment */ ; i++) {}
+    for (var i = 0 /* comment */; i < 10 /* comment */; i++) {}
 }

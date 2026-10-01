@@ -447,7 +447,13 @@ impl Formatter {
 
                 // Built in source order, so each `;` takes the comments written before it.
                 let mut parts = vec![opening, init_doc];
-                self.push_before_semi(&mut parts, s.header.inner.first_semi);
+                if s.header.inner.init.is_some() {
+                    self.push_before_semi(&mut parts, s.header.inner.first_semi);
+                } else {
+                    // Nothing precedes the first `;`, so its comments hug the `(`.
+                    parts.push(self.drain_hugging_doc(s.header.inner.first_semi));
+                    parts.push(Doc::text(";"));
+                }
 
                 if let Some(condition) = &s.header.inner.condition {
                     parts.push(Doc::text(" "));
@@ -461,11 +467,7 @@ impl Formatter {
                     parts.push(self.expr_list_to_doc(update));
                 }
 
-                let before_close = self.drain_leading_doc(s.header.close);
-                if !matches!(before_close, Doc::Empty) {
-                    parts.push(Doc::text(" "));
-                    parts.push(before_close);
-                }
+                parts.push(self.drain_before_close_doc(s.header.close));
                 parts.push(Doc::text(") "));
                 parts.push(self.block_to_doc(&s.body));
 

@@ -4,7 +4,7 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/comment_in_conditions_and_f
 ---
 function f() {
     do {} while /* c */ (x);
-    do {} /* a */ while (x /* b */) /* c */ ;
+    do {} /* a */ while (x /* b */) /* c */;
     do {} while (x // c
     );
     if (x
