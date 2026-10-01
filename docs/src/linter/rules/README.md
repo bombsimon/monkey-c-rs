@@ -13,6 +13,7 @@ it exists. The examples show the code after `rafiki lint --fix` followed by
 | [`compound-assignment`](./compound-assignment)       | `x = x + n` instead of `x += n`                       | Yes    |
 | [`ifs-same-cond`](./ifs-same-cond)                   | Two branches of an `if` chain with the same condition | No     |
 | [`import-order`](./import-order)                     | Imports that aren't sorted and grouped                | Mostly |
+| [`modifier-order`](./modifier-order)                 | `static` written before the visibility                | Mostly |
 | [`naming-convention`](./naming-convention)           | Names that don't follow Garmin's coding conventions   | No     |
 | [`null-union`](./null-union)                         | `T or Null` instead of `T?`                           | Yes    |
 | [`one-class-per-file`](./one-class-per-file)         | More than one class in a file                         | No     |

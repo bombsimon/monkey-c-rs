@@ -5,6 +5,7 @@ pub mod collapsible_if;
 pub mod compound_assignment;
 pub mod ifs_same_cond;
 pub mod import_order;
+pub mod modifier_order;
 pub mod naming_convention;
 pub mod null_union;
 pub mod one_class_per_file;
@@ -59,6 +60,11 @@ pub const ALL: &[Rule] = &[
     Rule {
         name: import_order::RULE,
         summary: "Imports that aren't sorted and grouped",
+        fix: FixAvailability::Sometimes,
+    },
+    Rule {
+        name: modifier_order::RULE,
+        summary: "`static` written before the visibility",
         fix: FixAvailability::Sometimes,
     },
     Rule {
