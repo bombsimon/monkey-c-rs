@@ -1,5 +1,6 @@
 //! Individual lint rules. Each rule walks the AST and pushes any findings
 //! into a `Vec<Diagnostic>` provided by the top-level [`crate::lint`] driver.
+pub mod annotation_comma;
 pub mod bool_comparison;
 pub mod collapsible_if;
 pub mod compound_assignment;
@@ -33,6 +34,11 @@ pub enum FixAvailability {
 /// Every rule, in alphabetical order. The single source of truth for the
 /// `--enable`/`--disable` flags, their help listing and the rules table in the docs.
 pub const ALL: &[Rule] = &[
+    Rule {
+        name: annotation_comma::RULE,
+        summary: "A comma between annotations",
+        fix: FixAvailability::Always,
+    },
     Rule {
         name: bool_comparison::RULE,
         summary: "Comparing with `true` or `false`",
