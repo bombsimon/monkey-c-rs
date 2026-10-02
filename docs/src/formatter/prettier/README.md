@@ -272,6 +272,21 @@ only argument.
 > level of indentation for calls like `Lang.format`, but the other arguments
 > end up easy to miss at the end of a long first line.
 
+## Multiple bindings
+
+A `var` or `const` declaring several names stays on one line in `rafiki` when
+it fits. Prettier puts every name on its own line as soon as one of them has a
+value, even when the declaration would fit.
+
+```monkey-c
+// rafiki
+var x = 1, y = 2;
+
+// Prettier
+var x = 1,
+    y = 2;
+```
+
 ## Comments
 
 `rafiki` keeps [comments where they are][comments]. Prettier moves some of them,

@@ -15,8 +15,7 @@ enum {
 } // comment
 
 function f() {
-    var
-        a = 1, // comment
+    var a = 1, // comment
         b = 2;
     var c = 1, /* comment */ d = 2;
 }

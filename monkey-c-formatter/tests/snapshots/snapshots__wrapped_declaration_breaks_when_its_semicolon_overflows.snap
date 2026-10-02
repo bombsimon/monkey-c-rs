@@ -1,7 +1,6 @@
 ---
 source: monkey-c-formatter/tests/snapshots.rs
-expression: "format_wrapped_width(\"var a = 1, b = 2;\", 16)"
+expression: "format_width(\"var a = 1, b = 2;\", 16)"
 ---
-var
-    a = 1,
+var a = 1,
     b = 2;
