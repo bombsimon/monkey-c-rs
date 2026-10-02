@@ -7,6 +7,7 @@ it exists. The examples show the code after `rafiki lint --fix` followed by
 <!-- begin rules -->
 | Rule                                                 | Flags                                                 | Fix    |
 | ---------------------------------------------------- | ----------------------------------------------------- | ------ |
+| [`annotation-comma`](./annotation-comma)             | A comma between annotations                           | Yes    |
 | [`bool-comparison`](./bool-comparison)               | Comparing with `true` or `false`                      | Yes    |
 | [`collapsible-else-if`](./collapsible-else-if)       | An `else` block that only contains an `if`            | Yes    |
 | [`collapsible-if`](./collapsible-if)                 | An `if` that only contains another `if`               | Yes    |

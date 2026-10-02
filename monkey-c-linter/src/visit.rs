@@ -116,6 +116,10 @@ fn dispatch_ast(ast: &Ast, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {
     if let Some(d) = rules::modifier_order::check_ast(ast, ctx) {
         diags.push(d);
     }
+
+    if let Ast::Annotation(entries, _) = ast {
+        diags.extend(rules::annotation_comma::check_annotation(entries, ctx));
+    }
 }
 
 fn dispatch_type(ty: &Type, ctx: &LintContext, diags: &mut Vec<Diagnostic>) {

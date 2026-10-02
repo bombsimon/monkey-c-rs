@@ -9,6 +9,7 @@
   - [Differences from Prettier](formatter/prettier/README.md)
 - [Linter](linter/README.md)
   - [Rules](linter/rules/README.md)
+    - [annotation-comma](linter/rules/annotation-comma/README.md)
     - [bool-comparison](linter/rules/bool-comparison/README.md)
     - [collapsible-else-if](linter/rules/collapsible-else-if/README.md)
     - [collapsible-if](linter/rules/collapsible-if/README.md)

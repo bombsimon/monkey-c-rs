@@ -137,7 +137,7 @@ impl Formatter {
                 inner.push(Doc::text(")"));
             }
 
-            if next_entry.is_some_and(|next| next.preceded_by_comma) {
+            if next_entry.is_some_and(|next| next.preceding_comma_pos.is_some()) {
                 inner.push(Doc::text(","));
             }
 

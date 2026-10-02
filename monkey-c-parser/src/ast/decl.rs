@@ -67,7 +67,7 @@ pub struct VarDecl {
 pub struct AnnotationEntry {
     pub name: Symbol,
     pub args: Vec<Expr>,
-    pub preceded_by_comma: bool,
+    pub preceding_comma_pos: Option<Position>,
     pub span: Span,
 }
 

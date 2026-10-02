@@ -1102,3 +1102,14 @@ fn test_for_loop_multi_init() {
         );
     }
 }
+
+#[test]
+fn test_annotation_records_preceding_comma() {
+    let nodes = document_nodes("(:first, :second :third)\nfunction foo() {}");
+    let Ast::Annotation(entries, _) = &nodes[0] else {
+        panic!("expected annotation");
+    };
+    assert_eq!(entries[0].preceding_comma_pos, None);
+    assert_eq!(entries[1].preceding_comma_pos, Some(7));
+    assert_eq!(entries[2].preceding_comma_pos, None);
+}
