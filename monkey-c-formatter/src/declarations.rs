@@ -370,7 +370,7 @@ impl Formatter {
     ) -> Doc {
         let mut parts = self.modifiers_to_doc(modifiers);
 
-        let indented = vec![Doc::Line, self.bindings_to_doc(bindings, Doc::Line)];
+        let indented = vec![Doc::text(" "), self.bindings_to_doc(bindings, Doc::Line)];
 
         // The `;` sits inside the group so a declaration that only overflows
         // by its terminator still breaks.

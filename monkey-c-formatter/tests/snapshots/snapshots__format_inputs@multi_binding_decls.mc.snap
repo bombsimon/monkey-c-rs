@@ -8,6 +8,10 @@ const a, b, c = 1;
 
 var a, b, c = 1 as Number;
 
+var thisIsReallyLongSoEventuallyThisWouldWrap,
+    thisOneIsAlsoVeryLongSoAtTheEndWeWouldWrap,
+    andEvenTheThirdOneIsLong = 1 as Number;
+
 var a = 1, b = 2;
 
 var a = 1 as Number, b = 2 as Number;
@@ -24,7 +28,14 @@ class Foo {
     }
 }
 
-var
-    firstLongBindingName = "some value",
+var firstLongBindingName = "some value",
+    secondLongBindingName = "another value",
+    thirdLongBindingName = 3;
+
+private var firstLongBindingName = "some value",
+    secondLongBindingName = "another value",
+    thirdLongBindingName = 3;
+
+protected static var firstLongBindingName = "some value",
     secondLongBindingName = "another value",
     thirdLongBindingName = 3;
