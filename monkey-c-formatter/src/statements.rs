@@ -1,8 +1,8 @@
 //! Statements, blocks and the `keyword (condition)` headers of `if`, `while` and `switch`.
 
 use monkey_c_parser::ast::{
-    BlockStmt, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, Parens, Span, Stmt, SwitchStmt,
-    TryStmt,
+    BlockStmt, CaseLabel, CommentStmt, ElseBranch, Expr, ForInit, IfStmt, Parens, Span, Stmt,
+    SwitchStmt, TryStmt,
 };
 
 use crate::Formatter;
@@ -213,9 +213,19 @@ impl Formatter {
             body.push(before_first);
         }
 
+        let mut previous_case_end: Option<usize> = None;
+
         for (i, case) in s.cases.iter().enumerate() {
-            if i > 0 {
-                body.push(Doc::HardLine);
+            if let Some(prev_end) = previous_case_end {
+                let blanks = self
+                    .line_index
+                    .blank_lines_between(prev_end as u32, case.span.start as u32);
+
+                if blanks > 0 {
+                    body.push(Doc::BlankLine);
+                } else {
+                    body.push(Doc::HardLine);
+                }
             }
 
             body.push(self.drain_leading_doc(case.span.start));
@@ -238,9 +248,18 @@ impl Formatter {
             }
 
             header.push(Doc::text(":"));
+            let stmts_end = case
+                .stmts
+                .last()
+                .map_or(case.label_span.end, |s| s.span().end);
+            // Comments after the last statement stay in this case's body, except for the ones
+            // directly above the next label which describe that label instead.
+            let body_end = s.cases.get(i + 1).map_or(s.span.end, |next| {
+                self.case_body_end(stmts_end, next.span.start)
+            });
             let body_span = Span {
                 start: case.label_span.end,
-                end: case.span.end,
+                end: body_end,
             };
             // A statement on the label's line, such as a block's `{`, keeps the comments after it.
             let label_line = self.line_index.line(case.label_span.end as u32 - 1);
@@ -254,26 +273,12 @@ impl Formatter {
             body.push(Doc::Concat(header));
 
             let case_inner = self.stmts_to_doc(&case.stmts, body_span);
-            // For fall-through cases (empty stmts), span.end points to the
-            // start of the next `case` keyword. Anchor trailing drain at the
-            // label's `:` so we don't steal comments from the following case.
-            let trailing_anchor = case
-                .stmts
-                .last()
-                .map(|s| s.span().end)
-                .unwrap_or(case.label_span.end);
-            // Several labels can share a line, e.g. `case 1: case 2: // c`, so a comment after a
-            // later label belongs to that label and not this one.
-            let next_case_start = s
-                .cases
-                .get(i + 1)
-                .map(|next| next.span.start)
-                .unwrap_or(usize::MAX);
-            let case_trailing = self.drain_trailing_doc(trailing_anchor, next_case_start);
-            let has_content = !case.stmts.is_empty() || !matches!(case_inner, Doc::Empty);
-            if has_content || !matches!(case_trailing, Doc::Empty) {
-                body.push(Doc::Indent(vec![Doc::HardLine, case_inner, case_trailing]));
+            if !matches!(case_inner, Doc::Empty) {
+                body.push(Doc::Indent(vec![Doc::HardLine, case_inner]));
             }
+
+            let comments_end = self.comment_cursor.borrow().last_end();
+            previous_case_end = Some(stmts_end.max(comments_end));
         }
 
         // Drain any comments after the last case.
@@ -358,6 +363,34 @@ impl Formatter {
         };
 
         Doc::concat(vec![separator, self.block_to_doc(block)])
+    }
+
+    /// Where a case body ends when the next label starts at `next_case_start`: before the run of
+    /// own-line comments directly above that label, with no blank line in between.
+    fn case_body_end(&self, stmts_end: usize, next_case_start: usize) -> usize {
+        let stmts_end_line = self.line_index.line(stmts_end.saturating_sub(1) as u32);
+        let comments: Vec<CommentStmt> = self
+            .comment_cursor
+            .borrow()
+            .peek_in(stmts_end, next_case_start)
+            .cloned()
+            .collect();
+
+        let mut body_end = next_case_start;
+        for comment in comments.iter().rev() {
+            let starts_on_stmts_line =
+                self.line_index.line(comment.span.start as u32) == stmts_end_line;
+            let blanks = self
+                .line_index
+                .blank_lines_between(comment.span.end as u32, body_end as u32);
+            if starts_on_stmts_line || blanks > 0 {
+                break;
+            }
+
+            body_end = comment.span.start;
+        }
+
+        body_end
     }
 
     fn stmts_to_doc(&self, stmts: &[Stmt], container: Span) -> Doc {
