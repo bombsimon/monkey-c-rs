@@ -125,6 +125,32 @@ enum Color {
 }
 ```
 
+## Filling short arrays
+
+An array that has to wrap usually gets one item per line. When every item is
+short, it fills each line instead and lines the items up in columns, so byte
+arrays and lookup tables don't run for pages. Numbers line up by their last
+digit and everything else by its first character. Here at a line width of 80
+and 30:
+
+```monkey-c
+var parameters = [
+    0x56, 0x34, 0x12, 0x63, 0x96, 0x47, 0x71, 0x73, 0x4f, 0xbd, 0x76, 0xe3,
+    0xb4, 0x05, 0x19, 0xd1, 0xd9, 0x4a, 0x48
+]b;
+
+var offsets = [
+       0, 12, 250, -3, 1024,
+    -512, 16,  88,  7,   42
+];
+```
+
+An item counts as short when it's at most 8 columns wide, which can be changed
+with the [`short-array-element-width`][short-array-element-width] setting. A
+[magic trailing comma](#the-magic-trailing-comma) still breaks the array, and
+the items are filled inside it. An array with a comment or a blank line between
+its items keeps one item per line, since those usually group the items by hand.
+
 ## Comments
 
 Comments are kept where they are and are never dropped. When the usual layout
@@ -140,6 +166,7 @@ code before it to wrap.
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [alignment]: ../configuration/settings#alignment
 [line-width]: ../configuration/settings#line-width
+[short-array-element-width]: ../configuration/settings#short-array-element-width
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [linter]: ../linter

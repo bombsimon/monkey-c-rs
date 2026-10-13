@@ -1,0 +1,13 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(r#\"\nclass A {\n    function f() {\n        var bytes = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a];\n    }\n}\n\"#.trim(),\n40)"
+---
+class A {
+    function f() {
+        var bytes = [
+            0x01, 0x02, 0x03, 0x04,
+            0x05, 0x06, 0x07, 0x08,
+            0x09, 0x0a
+        ];
+    }
+}

@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"var mixed = [1, :two, 300, :four, 5, :six, 7000, :eight, 9, :ten, 11];\",\n40)"
+---
+var mixed = [
+    1,    :two,   300, :four, 5, :six,
+    7000, :eight, 9,   :ten,  11
+];

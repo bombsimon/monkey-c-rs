@@ -39,6 +39,9 @@ pub enum Doc {
     /// Try to render all children on one line. If they overflow `width`,
     /// switch to break mode and expand `Line`/`SoftLine` nodes.
     Group(Vec<Doc>),
+    /// Cells kept on one line when they fit, otherwise packed into as many aligned columns as
+    /// the width allows, so long lists of short items don't take a line each.
+    Fill(Vec<Doc>, Alignment),
     /// Concatenate documents with no additional spacing logic.
     Concat(Vec<Doc>),
     /// Empty document — renders to nothing.
@@ -118,6 +121,14 @@ impl Doc {
     }
 }
 
+/// Which edge the cells of a [`Doc::Fill`] line up on. Right alignment lines up the last
+/// character before a trailing comma, so numbers line up by their last digit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Alignment {
+    Left,
+    Right,
+}
+
 /// Whether a [`Doc::Group`] is being rendered flat (single line) or broken (multi-line).
 #[derive(Clone, Copy, PartialEq)]
 enum Mode {
@@ -139,11 +150,19 @@ struct Command<'a> {
 /// can see what follows it. A group only fits if everything up to the next line break does, so
 /// a call's arguments break when the `);` after them would overflow.
 pub fn render(doc: &Doc, width: usize) -> String {
+    render_in(doc, width, Mode::Break)
+}
+
+pub(crate) fn render_flat(doc: &Doc) -> String {
+    render_in(doc, usize::MAX, Mode::Flat)
+}
+
+fn render_in(doc: &Doc, width: usize, mode: Mode) -> String {
     let mut out = String::new();
     let mut col = 0usize;
     let mut stack = vec![Command {
         indent: 0,
-        mode: Mode::Break,
+        mode,
         doc,
     }];
 
@@ -174,6 +193,19 @@ pub fn render(doc: &Doc, width: usize) -> String {
                 let child_mode = if fits { Mode::Flat } else { Mode::Break };
 
                 push_all(&mut stack, docs, indent, child_mode);
+            }
+            Doc::Fill(cells, alignment) => {
+                let rendered: Vec<String> = cells.iter().map(render_flat).collect();
+
+                if mode == Mode::Flat {
+                    let line = rendered.join(" ");
+                    out.push_str(&line);
+                    col += display_width(&line);
+                } else {
+                    let available = width.saturating_sub(indent);
+
+                    write_fill_rows(&mut out, &mut col, &rendered, *alignment, indent, available);
+                }
             }
             Doc::Concat(docs) => push_all(&mut stack, docs, indent, mode),
             Doc::BlankLine => {
@@ -232,6 +264,16 @@ fn fits(group: &[Doc], rest: &[Command], mut remaining: usize) -> bool {
 
         match doc {
             Doc::Empty | Doc::LineComment(_) => {}
+            Doc::Fill(cells, _) => {
+                // A flat fill puts a space between its cells, just like a flat `Line`.
+                for (index, cell) in cells.iter().enumerate().rev() {
+                    pending.push((mode, cell));
+
+                    if index > 0 {
+                        pending.push((mode, &Doc::Line));
+                    }
+                }
+            }
             Doc::Text(s) => match remaining.checked_sub(display_width(s)) {
                 Some(left) => remaining = left,
                 None => return false,
@@ -260,5 +302,151 @@ fn fits(group: &[Doc], rest: &[Command], mut remaining: usize) -> bool {
                 pending.push((mode, child));
             }
         }
+    }
+}
+
+/// Write `cells` in as many aligned columns as fit in `available`, or one per line when not even
+/// two do.
+fn write_fill_rows(
+    out: &mut String,
+    col: &mut usize,
+    cells: &[String],
+    alignment: Alignment,
+    indent: usize,
+    available: usize,
+) {
+    let cell_widths: Vec<usize> = cells
+        .iter()
+        .map(|cell| {
+            let width = display_width(cell);
+
+            // Counting the missing comma lines the last number up with the digits above it.
+            if alignment == Alignment::Right && !cell.ends_with(',') {
+                return width + 1;
+            }
+
+            width
+        })
+        .collect();
+    let columns = fill_columns(&cell_widths, available).unwrap_or(1);
+    let column_widths = column_widths(&cell_widths, columns);
+
+    for (index, cell) in cells.iter().enumerate() {
+        if index > 0 && index % columns == 0 {
+            newline(out, col, indent);
+        } else if index > 0 {
+            out.push(' ');
+            *col += 1;
+        }
+
+        let ends_row = (index + 1) % columns == 0 || index + 1 == cells.len();
+        // Left-aligned padding at the end of a row would only be trailing whitespace.
+        let padding = if columns > 1 && (alignment == Alignment::Right || !ends_row) {
+            " ".repeat(column_widths[index % columns] - cell_widths[index])
+        } else {
+            String::new()
+        };
+
+        match alignment {
+            Alignment::Left => {
+                out.push_str(cell);
+                out.push_str(&padding);
+            }
+            Alignment::Right => {
+                out.push_str(&padding);
+                out.push_str(cell);
+            }
+        }
+
+        *col += padding.len() + display_width(cell);
+    }
+}
+
+/// The most columns, at least two, whose padded rows fit in `available_width`.
+fn fill_columns(cell_widths: &[usize], available_width: usize) -> Option<usize> {
+    let narrowest = cell_widths.iter().min()?;
+    // Every cell is at least as wide as the narrowest one, with a space between cells.
+    let max_columns = ((available_width + 1) / (narrowest + 1)).min(cell_widths.len());
+
+    // Not monotonic: long cells can share a column at `c` but not at `c - 1`.
+    (2..=max_columns)
+        .rev()
+        .find(|&columns| padded_row_width(cell_widths, columns) <= available_width)
+}
+
+fn padded_row_width(cell_widths: &[usize], columns: usize) -> usize {
+    let spaces = columns - 1;
+
+    column_widths(cell_widths, columns).iter().sum::<usize>() + spaces
+}
+
+/// The widest cell in each column when `cell_widths` are laid out in rows of `columns`.
+fn column_widths(cell_widths: &[usize], columns: usize) -> Vec<usize> {
+    let mut widths = vec![0; columns];
+
+    for (index, cell_width) in cell_widths.iter().enumerate() {
+        let width = &mut widths[index % columns];
+        *width = (*width).max(*cell_width);
+    }
+
+    widths
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Cell widths include the comma, so `:a,` is 3 and the last cell without one is 2.
+
+    #[test]
+    fn column_widths_are_the_widest_cell_in_each_column() {
+        assert_eq!(column_widths(&[3, 7, 2, 5, 1], 2), vec![3, 7]);
+        assert_eq!(column_widths(&[3, 7, 2, 5, 1], 3), vec![5, 7, 2]);
+    }
+
+    #[test]
+    fn padded_row_width_sums_the_widest_cell_of_each_column() {
+        assert_eq!(padded_row_width(&[10, 3, 3, 3, 10, 3, 3, 3], 3), 25);
+    }
+
+    #[test]
+    fn padded_row_width_of_a_single_column_is_the_widest_cell() {
+        assert_eq!(padded_row_width(&[3, 7, 2], 1), 7);
+    }
+
+    #[test]
+    fn long_items_sharing_a_column_allow_more_columns() {
+        assert_eq!(fill_columns(&[10, 3, 3, 3, 10, 3, 3, 3], 24), Some(4));
+    }
+
+    #[test]
+    fn never_uses_more_columns_than_items() {
+        assert_eq!(fill_columns(&[2, 2, 1], 111), Some(3));
+    }
+
+    #[test]
+    fn fills_a_row_to_exactly_the_available_width() {
+        assert_eq!(fill_columns(&[2, 2, 2, 2, 2, 2], 8), Some(3));
+    }
+
+    #[test]
+    fn one_column_too_many_does_not_fit() {
+        assert_eq!(fill_columns(&[2, 2, 2, 2, 2, 2], 10), Some(3));
+        assert_eq!(fill_columns(&[2, 2, 2, 2, 2, 2], 11), Some(4));
+    }
+
+    #[test]
+    fn too_narrow_to_fill_returns_none() {
+        assert_eq!(fill_columns(&[2, 2, 2], 2), None);
+    }
+
+    #[test]
+    fn a_single_cell_never_fills() {
+        assert_eq!(fill_columns(&[2], 111), None);
+    }
+
+    #[test]
+    fn no_cells_never_fill() {
+        assert_eq!(fill_columns(&[], 111), None);
     }
 }

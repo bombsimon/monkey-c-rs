@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"var z = [1, 22, 333, 4,];\", 12)"
+---
+var z = [
+      1, 22,
+    333,  4,
+];

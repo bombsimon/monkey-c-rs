@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"var s = [:a, :b, :cccc];\", 15)"
+---
+var s = [
+    :a,   :b,
+    :cccc
+];

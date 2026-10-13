@@ -21,6 +21,31 @@ while Prettier defaults to 80. Both can be reconfigured, with `--line-width` or
 columns for readability, which Prettier doesn't. It can be disabled with
 `--no-alignment`, or with `alignment = false` in `rafiki.toml`.
 
+## Short arrays
+
+Both formatters [fill the lines][filling-short-arrays] of a wrapped array
+instead of giving each item its own line, but differ in when and how. Prettier
+only fills arrays of numbers and puts as many on each line as fit. `rafiki`
+fills any array of [short][short-array-element-width] items and lines them up
+in columns, with numbers aligned by their last digit.
+
+```monkey-c
+// rafiki
+var keys = [
+    :alpha, :beta,   :gamma, :delta, :epsilon, :zeta, :eta, :theta, :iota,
+    :kappa, :lambda, :mu
+];
+
+// Prettier
+var keys = [
+    :alpha,
+    :beta,
+    // ...
+    :lambda,
+    :mu,
+];
+```
+
 ## Trailing commas
 
 Prettier adds a trailing comma to every list it breaks over multiple lines.
@@ -461,6 +486,8 @@ var b = 2;
 ```
 
 [column-alignment]: ..#column-alignment
+[filling-short-arrays]: ..#filling-short-arrays
+[short-array-element-width]: ../../configuration/settings#short-array-element-width
 [comments]: ..#comments
 [magic-trailing-comma]: ..#the-magic-trailing-comma
 [null-union]: ../../linter/rules/null-union

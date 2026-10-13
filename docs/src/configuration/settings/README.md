@@ -24,6 +24,16 @@ columns. See [Column alignment](../../formatter#column-alignment).
 - **Flag:** `--alignment` or `--no-alignment`
 - **Editor option:** `alignment`
 
+### `short-array-element-width`
+
+The widest an array item can be for the array to fill its lines instead of
+putting each item on its own line. Every item has to fit, and `0` turns filling
+off. See [Filling short arrays](../../formatter#filling-short-arrays).
+
+- **Default:** `8`
+- **Flag:** `--short-array-element-width <COLUMNS>`
+- **Editor option:** `shortArrayElementWidth`
+
 ## `[lint]`
 
 ### `enable`

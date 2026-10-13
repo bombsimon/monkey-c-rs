@@ -122,6 +122,14 @@ mod tests {
     }
 
     #[test]
+    fn format_keys_are_kebab_case() {
+        let config: Config =
+            toml::from_str("[format]\nshort-array-element-width = 0\n").expect("config parses");
+
+        assert_eq!(config.format.short_array_element_width, Some(0));
+    }
+
+    #[test]
     fn an_unknown_key_is_an_error() {
         let error = toml::from_str::<Config>("[format]\nline_width = 80\n")
             .expect_err("snake_case key is rejected");

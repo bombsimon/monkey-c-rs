@@ -1,0 +1,15 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"var names = [:a, :b, :c, :d, :e, :thisOneIsFarTooLong, :f, :g, :h];\",\n40)"
+---
+var names = [
+    :a,
+    :b,
+    :c,
+    :d,
+    :e,
+    :thisOneIsFarTooLong,
+    :f,
+    :g,
+    :h
+];
