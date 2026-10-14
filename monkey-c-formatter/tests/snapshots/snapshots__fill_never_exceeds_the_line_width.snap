@@ -1,0 +1,10 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"var w = [1, 2, 3, 100000];\", 13)"
+---
+var w = [
+    1,
+    2,
+    3,
+    100000
+];

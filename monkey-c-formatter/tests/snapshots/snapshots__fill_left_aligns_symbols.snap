@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_width(\"var keys = [:alpha, :beta, :gamma, :delta, :epsilon, :zeta, :eta, :theta, :iota, :kappa, :lambda, :mu];\",\n80)"
+---
+var keys = [
+    :alpha, :beta,   :gamma, :delta, :epsilon, :zeta, :eta, :theta, :iota,
+    :kappa, :lambda, :mu
+];

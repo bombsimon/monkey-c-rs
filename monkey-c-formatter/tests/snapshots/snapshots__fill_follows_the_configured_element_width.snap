@@ -1,0 +1,18 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_short_array_element_width(r#\"\nvar short = [:alpha, :beta, :gamma, :delta, :theta, :zeta, :eta, :iota];\nvar long = [:alpha, :beta, :gamma, :delta, :theta, :zeta, :eta, :epsilon];\n\"#.trim(),\n7)"
+---
+var short = [
+    :alpha, :beta, :gamma, :delta,
+    :theta, :zeta, :eta,   :iota
+];
+var long = [
+    :alpha,
+    :beta,
+    :gamma,
+    :delta,
+    :theta,
+    :zeta,
+    :eta,
+    :epsilon
+];

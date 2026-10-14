@@ -37,6 +37,9 @@ pub struct Formatter {
     /// When `true`, runs of related entries are rendered with their separator
     /// operators column-aligned, as are trailing comments on consecutive lines.
     align_pairs: bool,
+    /// The widest an item can be for a broken array to fill its lines with aligned columns
+    /// instead of one item per line. `0` never fills.
+    short_array_element_width: usize,
     /// Positional drain cursor over all source comments. Advanced forward as
     /// the formatter builds the Doc tree; each comment is emitted exactly once
     /// at the first output position that follows its source location.
@@ -52,6 +55,7 @@ impl Formatter {
             line_index: LineIndex::new(source),
             line_width: 100,
             align_pairs: false,
+            short_array_element_width: 8,
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
     }
@@ -65,6 +69,13 @@ impl Formatter {
     /// Enable column-aligned separators and trailing comments across related entries (opt-in).
     pub fn with_alignment(mut self, align_pairs: bool) -> Self {
         self.align_pairs = align_pairs;
+        self
+    }
+
+    /// Fill arrays whose items are all at most `width` columns wide, packing them into aligned
+    /// columns instead of one per line. `0` never fills (default: 8).
+    pub fn with_short_array_element_width(mut self, width: usize) -> Self {
+        self.short_array_element_width = width;
         self
     }
 

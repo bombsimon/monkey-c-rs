@@ -109,6 +109,7 @@ fn format_source(
     let formatted = Formatter::new(source)
         .with_line_width(settings.line_width)
         .with_alignment(settings.alignment)
+        .with_short_array_element_width(settings.short_array_element_width)
         .format(&output);
 
     // Warn (without failing) about any comment the formatter could not carry

@@ -17,6 +17,15 @@ fn format_width(src: &str, width: usize) -> String {
     run(src, Formatter::new(src).with_line_width(width))
 }
 
+fn format_short_array_element_width(src: &str, element_width: usize) -> String {
+    run(
+        src,
+        Formatter::new(src)
+            .with_line_width(40)
+            .with_short_array_element_width(element_width),
+    )
+}
+
 fn format_aligned_width(src: &str, width: usize) -> String {
     run(
         src,
@@ -585,6 +594,151 @@ fn array_no_trailing_comma_breaks_when_wide() {
     insta::assert_snapshot!(format_width(
         "var a = [\"a_long_string\", \"another_long_string\"];",
         30
+    ));
+}
+
+#[test]
+fn fill_short_byte_array() {
+    insta::assert_snapshot!(format_width(
+        "var parameters = [0x56, 0x34, 0x12, 0x63, 0x96, 0x47, 0x71, 0x73, 0x4f, 0xbd, 0x76, 0xe3, 0xb4, 0x05, 0x19, 0xd1, 0xd9, 0x4a, 0x48]b;",
+        80
+    ));
+}
+
+#[test]
+fn fill_trailing_comma_breaks_and_fills() {
+    insta::assert_snapshot!(format("var small = [1, 2, 3,];"));
+}
+
+#[test]
+fn fill_right_aligns_numbers() {
+    insta::assert_snapshot!(format_width(
+        "var offsets = [0, 12, 250, -3, 1024, 7, 88, -512, 16, 4096, 3, 65535, -1, 42, 900, 5, 100, -20000, 64, 8];",
+        80
+    ));
+}
+
+#[test]
+fn fill_left_aligns_symbols() {
+    insta::assert_snapshot!(format_width(
+        "var keys = [:alpha, :beta, :gamma, :delta, :epsilon, :zeta, :eta, :theta, :iota, :kappa, :lambda, :mu];",
+        80
+    ));
+}
+
+#[test]
+fn fill_left_aligns_mixed_numbers_and_symbols() {
+    insta::assert_snapshot!(format_width(
+        "var mixed = [1, :two, 300, :four, 5, :six, 7000, :eight, 9, :ten, 11];",
+        40
+    ));
+}
+
+#[test]
+fn fill_measures_from_the_indent_it_is_nested_in() {
+    insta::assert_snapshot!(format_width(
+        r#"
+class A {
+    function f() {
+        var bytes = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a];
+    }
+}
+"#
+        .trim(),
+        40
+    ));
+}
+
+#[test]
+fn fill_as_a_sole_call_argument() {
+    insta::assert_snapshot!(format_width(
+        "function f() { send([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c]); }",
+        40
+    ));
+}
+
+#[test]
+fn fill_skips_arrays_with_a_long_item() {
+    insta::assert_snapshot!(format_width(
+        "var names = [:a, :b, :c, :d, :e, :thisOneIsFarTooLong, :f, :g, :h];",
+        40
+    ));
+}
+
+#[test]
+fn fill_skips_arrays_with_a_block_comment() {
+    insta::assert_snapshot!(format_width(
+        "var bytes = [0x01, 0x02, /* magic */ 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09];",
+        40
+    ));
+}
+
+#[test]
+fn fill_skips_arrays_with_a_line_comment() {
+    insta::assert_snapshot!(format(
+        r#"
+var table = [
+    0x00, 0x01, 0x02, // header
+    0x10, 0x11
+];
+"#
+        .trim()
+    ));
+}
+
+#[test]
+fn fill_turned_off_keeps_one_item_per_line() {
+    insta::assert_snapshot!(format_short_array_element_width(
+        "var bytes = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a];",
+        0
+    ));
+}
+
+#[test]
+fn fill_follows_the_configured_element_width() {
+    insta::assert_snapshot!(format_short_array_element_width(
+        r#"
+var short = [:alpha, :beta, :gamma, :delta, :theta, :zeta, :eta, :iota];
+var long = [:alpha, :beta, :gamma, :delta, :theta, :zeta, :eta, :epsilon];
+"#
+        .trim(),
+        7
+    ));
+}
+
+#[test]
+fn fill_right_aligns_hex_numbers() {
+    insta::assert_snapshot!(format_width(
+        "var masks = [0x1, 0xff, 0x10, 0xfff, 0x2, 0xf0, 0x100, 0x3, 0x4, 0xabc];",
+        30
+    ));
+}
+
+#[test]
+fn fill_right_aligns_with_a_trailing_comma() {
+    insta::assert_snapshot!(format_width("var z = [1, 22, 333, 4,];", 12));
+}
+
+#[test]
+fn fill_right_aligns_a_wide_last_number() {
+    insta::assert_snapshot!(format_width("var w = [1, 2, 3, 100000];", 14));
+}
+
+#[test]
+fn fill_never_exceeds_the_line_width() {
+    insta::assert_snapshot!(format_width("var w = [1, 2, 3, 100000];", 13));
+}
+
+#[test]
+fn fill_left_aligns_a_last_symbol_without_extra_padding() {
+    insta::assert_snapshot!(format_width("var s = [:a, :b, :cccc];", 15));
+}
+
+#[test]
+fn fill_breaks_a_line_that_only_fits_without_spaces() {
+    insta::assert_snapshot!(format_width(
+        "var z = [10, 2, 30, 4, 50, 6, 70, 8, 90, 1, 11, 2, 13, 4, 15, 6, 17, 8, 19, 2, 21, 2, 23, 4, 25, 6, 27, 8, 29, 3];",
+        111
     ));
 }
 

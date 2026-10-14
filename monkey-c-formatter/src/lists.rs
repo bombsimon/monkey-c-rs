@@ -3,11 +3,11 @@
 
 use monkey_c_parser::ast::{
     ArrayExpr, CallArg, CallExpr, DictEntry, DictExpr, Expr, LiteralValue, Parameter, Parens,
-    Separated, Span,
+    Separated, Span, UnaryOperator,
 };
 
 use crate::Formatter;
-use crate::doc::{Doc, display_width};
+use crate::doc::{Alignment, Doc, display_width, render_flat};
 use crate::expressions::{format_double_lit, format_float_lit};
 
 /// An item in a delimited list (array entry, dict pair, call arg, etc.) along
@@ -235,6 +235,10 @@ impl Formatter {
             return self.empty_collection_to_doc(e.span, "[", "]");
         }
 
+        if self.array_can_fill(e) {
+            return self.format_array_filled(e);
+        }
+
         if self.collection_must_break(e.span, e.entries.has_trailing_comma()) {
             return self.format_array_multiline(e);
         }
@@ -250,6 +254,81 @@ impl Formatter {
                 self.expr_with_leading_bounded(&entry.value, next_entry_start)
             },
         )
+    }
+
+    /// Whether every item is short enough to fill the lines of a broken array. Comments and blank
+    /// lines mean the rows were laid out by hand, so those arrays keep one item per line.
+    fn array_can_fill(&self, e: &ArrayExpr) -> bool {
+        if self.short_array_element_width == 0 || self.has_comments_in(e.span) {
+            return false;
+        }
+
+        let mut previous_end: Option<usize> = None;
+
+        e.entries.iter().all(|entry| {
+            let span = entry.value.span();
+            let after_blank_line = previous_end.is_some_and(|end| {
+                self.line_index
+                    .blank_lines_between(end as u32, span.start as u32)
+                    > 0
+            });
+
+            previous_end = Some(span.end);
+
+            // Measured as printed, so a string with wide characters or an item split over lines
+            // in the source counts what it will take up.
+            let item = render_flat(&self.expr_inner_to_doc(&entry.value));
+
+            !after_blank_line
+                && !item.contains('\n')
+                && display_width(&item) <= self.short_array_element_width
+        })
+    }
+
+    fn format_array_filled(&self, e: &ArrayExpr) -> Doc {
+        let last_index = e.entries.len() - 1;
+        let trailing_comma = e.entries.has_trailing_comma();
+
+        let cells = e
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let content = self.expr_inner_to_doc(&entry.value);
+
+                if index == last_index && !trailing_comma {
+                    return content;
+                }
+
+                Doc::concat(vec![content, Doc::text(",")])
+            })
+            .collect();
+
+        let all_numbers = e
+            .entries
+            .iter()
+            .all(|entry| is_number_literal(&entry.value));
+        let alignment = if all_numbers {
+            Alignment::Right
+        } else {
+            Alignment::Left
+        };
+
+        if trailing_comma {
+            return Doc::bracketed(
+                Doc::text("["),
+                Doc::Empty,
+                Doc::Fill(cells, alignment),
+                Doc::text("]"),
+            );
+        }
+
+        Doc::Group(vec![
+            Doc::text("["),
+            Doc::Indent(vec![Doc::SoftLine, Doc::Fill(cells, alignment)]),
+            Doc::SoftLine,
+            Doc::text("]"),
+        ])
     }
 
     /// A trailing comma keeps a collection one entry per line, and so does a `//` comment since it
@@ -719,6 +798,25 @@ impl Formatter {
     }
 }
 
+/// Whether `expr` is a number literal, negated or not, so it lines up by its last digit.
+fn is_number_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Unary(unary) if unary.operator == UnaryOperator::Neg => {
+            is_number_literal(&unary.operand)
+        }
+        Expr::Lit(literal) => matches!(
+            literal.value,
+            LiteralValue::Number(_)
+                | LiteralValue::Long(_)
+                | LiteralValue::Hex(_)
+                | LiteralValue::HexLong(_)
+                | LiteralValue::Float(_)
+                | LiteralValue::Double(_)
+        ),
+        _ => false,
+    }
+}
+
 /// Compute the flat display width of a dict key expression without touching
 /// the comment cursor. Used for alignment padding in multiline dicts.
 ///
@@ -746,5 +844,116 @@ fn expr_key_width(expr: &Expr) -> Option<usize> {
             LiteralValue::NaN => "NaN".len(),
         }),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use monkey_c_parser::ast::{Ast, Stmt};
+    use monkey_c_parser::parser::Parser;
+
+    /// `src` as the value of a return, so it parses as an expression and its spans point into the
+    /// same source the formatter reads.
+    fn wrap(src: &str) -> String {
+        format!("function f() {{ return {src}; }}")
+    }
+
+    fn parse_array(wrapped: &str) -> ArrayExpr {
+        let ast = Parser::new(wrapped).parse().expect("should parse").ast;
+
+        if let Ast::Document(nodes, _) = ast
+            && let Some(Ast::Function(function)) = nodes.into_iter().next()
+            && let Some(Stmt::Return(ret)) = function.body.unwrap().stmts.into_iter().next()
+            && let Some(Expr::Array(array)) = ret.value
+        {
+            return array;
+        }
+
+        panic!("could not extract array");
+    }
+
+    fn can_fill(src: &str, width: usize) -> bool {
+        let wrapped = wrap(src);
+
+        Formatter::new(&wrapped)
+            .with_short_array_element_width(width)
+            .array_can_fill(&parse_array(&wrapped))
+    }
+
+    fn is_number(item: &str) -> bool {
+        let array = parse_array(&wrap(&format!("[{item}]")));
+        let entry = array.entries.iter().next().expect("one entry");
+
+        is_number_literal(&entry.value)
+    }
+
+    #[test]
+    fn array_with_only_short_items_can_fill() {
+        assert!(can_fill("[:foo, :bar, :baz, :biz, :foo2]", 8));
+    }
+
+    #[test]
+    fn array_with_one_long_item_cannot_fill() {
+        assert!(!can_fill("[:foo, :bar, :thisIsWayTooLong]", 8));
+    }
+
+    #[test]
+    fn items_exactly_as_wide_as_the_limit_can_fill() {
+        assert!(can_fill("[:abcdefg, :a]", 8));
+        assert!(!can_fill("[:abcdefgh, :a]", 8));
+    }
+
+    #[test]
+    fn a_width_of_zero_never_fills() {
+        assert!(!can_fill("[1, 2, 3]", 0));
+    }
+
+    #[test]
+    fn items_are_measured_by_display_width() {
+        // 8 columns on screen but 11 bytes in the source.
+        assert!(can_fill("[\"日本語\", \"a\"]", 8));
+    }
+
+    #[test]
+    fn items_are_measured_as_formatted() {
+        // The source spreads `-  1` over 4 columns, the output prints it as `-1`.
+        assert!(can_fill("[-  1, 2]", 2));
+    }
+
+    #[test]
+    fn a_blank_line_between_items_keeps_them_apart() {
+        assert!(!can_fill("[\n    1,\n\n    2,\n]", 8));
+    }
+
+    #[test]
+    fn integers_and_floats_are_numbers() {
+        for item in ["0", "42", "100l", "1.5", "1.5f", "2.5d"] {
+            assert!(is_number(item), "{item}");
+        }
+    }
+
+    #[test]
+    fn hex_literals_are_numbers() {
+        assert!(is_number("0x1f"));
+        assert!(is_number("0x1fl"));
+    }
+
+    #[test]
+    fn negated_numbers_are_numbers() {
+        assert!(is_number("-3"));
+        assert!(is_number("-1.5"));
+    }
+
+    #[test]
+    fn negated_names_are_not_numbers() {
+        assert!(!is_number("-x"));
+    }
+
+    #[test]
+    fn symbols_and_strings_are_not_numbers() {
+        assert!(!is_number(":foo"));
+        assert!(!is_number("\"12\""));
     }
 }

@@ -25,6 +25,7 @@ use crate::uri;
 struct InitializationOptions {
     line_width: Option<usize>,
     alignment: Option<bool>,
+    short_array_element_width: Option<usize>,
 }
 
 /// Settings used throughout one language-server session.
@@ -39,6 +40,7 @@ impl InitializationOptions {
         FormatConfig {
             line_width: self.line_width,
             alignment: self.alignment,
+            short_array_element_width: self.short_array_element_width,
         }
     }
 }
@@ -155,6 +157,14 @@ mod tests {
         assert_eq!(settings.format.line_width, 80);
         // Unset key keeps its default.
         assert!(settings.format.alignment);
+    }
+
+    #[test]
+    fn short_array_element_width_is_read_as_camel_case() {
+        let params = json!({ "initializationOptions": { "shortArrayElementWidth": 0 } });
+        let (settings, _) = resolve(&ConfigSource::Defaults, &params);
+
+        assert_eq!(settings.format.short_array_element_width, 0);
     }
 
     #[test]

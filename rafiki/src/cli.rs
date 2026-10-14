@@ -178,6 +178,10 @@ pub struct FormatArgs {
     /// Do not align enum values and fat commas.
     #[arg(long, overrides_with = "alignment")]
     pub no_alignment: bool,
+
+    /// Fill arrays whose items are all at most this wide, 0 to never fill. [default: 8]
+    #[arg(long, value_name = "COLUMNS")]
+    pub short_array_element_width: Option<usize>,
 }
 
 impl FormatArgs {
@@ -185,6 +189,7 @@ impl FormatArgs {
         FormatConfig {
             line_width: self.line_width,
             alignment: flag_pair(self.alignment, self.no_alignment),
+            short_array_element_width: self.short_array_element_width,
         }
     }
 }
@@ -403,6 +408,14 @@ mod tests {
             .to_config();
         assert_eq!(config.alignment, Some(false));
         assert_eq!(config.line_width, None);
+    }
+
+    #[test]
+    fn short_array_element_width_overlays_its_value() {
+        let config = fmt_args(&["rafiki", "fmt", "--short-array-element-width", "0"])
+            .format
+            .to_config();
+        assert_eq!(config.short_array_element_width, Some(0));
     }
 
     #[test]

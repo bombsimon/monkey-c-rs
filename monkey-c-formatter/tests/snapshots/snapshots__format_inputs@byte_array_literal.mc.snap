@@ -7,9 +7,7 @@ function f() {
     var computed = [8 * mprime + lprime]b;
     var empty = []b;
     var multiline = [
-        0,
-        1,
-        2,
+        0, 1, 2,
     ]b;
     var regular = [1, 2, 3];
     var allocated = new [SIZE]b;

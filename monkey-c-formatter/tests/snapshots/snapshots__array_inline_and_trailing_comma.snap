@@ -4,7 +4,5 @@ expression: "format(r#\"\nvar fits = [1, 2, 3];\nvar collapses = [1, 2, 3,];\n\"
 ---
 var fits = [1, 2, 3];
 var collapses = [
-    1,
-    2,
-    3,
+    1, 2, 3,
 ];

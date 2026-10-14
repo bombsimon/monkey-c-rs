@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(\"var small = [1, 2, 3,];\")"
+---
+var small = [
+    1, 2, 3,
+];
