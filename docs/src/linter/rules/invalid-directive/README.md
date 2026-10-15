@@ -15,6 +15,8 @@ is still reported and the comment looks like it should work.
 - A `rafiki: fmt off` or `rafiki: fmt on` that shares its line with code, or a
   `rafiki: fmt off` with no declaration or statement after it, which the
   formatter leaves as a plain comment
+- A `rafiki: fmt on` with no `rafiki: fmt off` before it in the same block, or a
+  `rafiki: fmt off` when formatting is already off
 - A rule name that doesn't exist
 - A missing `[` or `]`, or an empty rule list
 - A `file-ignore` after the first line of code
