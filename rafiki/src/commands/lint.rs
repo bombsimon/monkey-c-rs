@@ -2,7 +2,7 @@
 
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 use monkey_c_config::{FilesSettings, LintSettings};
-use monkey_c_linter::{Diagnostic, Fix, apply_fixes, lint, rules};
+use monkey_c_linter::{Diagnostic, Fix, apply_fixes, lint_selected, rules};
 
 use std::fs;
 use std::io;
@@ -123,12 +123,9 @@ fn findings(
         diagnostics::already_reported()
     })?;
 
-    let findings = lint(&output, source)
-        .into_iter()
-        .filter(|finding| settings.selects(finding.rule))
-        .collect();
-
-    Ok(findings)
+    Ok(lint_selected(&output, source, |rule| {
+        settings.selects(rule)
+    }))
 }
 
 /// Render a single finding to stderr — coloured caret with file:line:col, source

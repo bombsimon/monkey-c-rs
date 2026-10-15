@@ -14,11 +14,13 @@
 //!    `check_stmt`, …).
 //! 2. Add one line to the matching `dispatch_*` in [`visit`].
 pub mod rules;
+mod suppression;
 pub mod visit;
 
 use monkey_c_parser::ast::Span;
 use monkey_c_parser::parser::ParseOutput;
 
+use crate::suppression::Suppressions;
 use crate::visit::LintContext;
 
 /// A lint finding.
@@ -70,9 +72,22 @@ impl Fix {
 /// `source` is the original source text — rules use it to build replacement
 /// strings for their fixes.
 pub fn lint(output: &ParseOutput, source: &str) -> Vec<Diagnostic> {
+    lint_selected(output, source, |_| true)
+}
+
+/// Like [`lint`], but only reports the rules `selected` accepts. Findings silenced by a
+/// `rafiki: ignore` comment are dropped either way, so their fixes are never applied.
+pub fn lint_selected(
+    output: &ParseOutput,
+    source: &str,
+    selected: impl Fn(&str) -> bool,
+) -> Vec<Diagnostic> {
     let ctx = LintContext { source };
     let mut diags = Vec::new();
     visit::walk(&output.ast, &ctx, &mut diags);
+
+    let suppressions = Suppressions::new(output, source);
+    diags.retain(|d| selected(d.rule) && !suppressions.covers(d));
 
     diags.sort_by_key(|d| d.span.start);
     diags
