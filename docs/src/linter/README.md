@@ -69,3 +69,8 @@ To silence a rule for a whole file, use `rafiki: file-ignore` before any code:
 
 Every comment has to name its rules; there's no way to silence all of them at
 once.
+
+Suppressions are checked too. [`unused-ignore`](rules/unused-ignore) flags a
+rule with nothing left to silence, and `--fix` removes it.
+[`invalid-directive`](rules/invalid-directive) flags a `rafiki:` comment that
+can't be read, like one naming a rule that doesn't exist.

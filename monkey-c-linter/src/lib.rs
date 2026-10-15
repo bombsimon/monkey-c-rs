@@ -86,8 +86,13 @@ pub fn lint_selected(
     let mut diags = Vec::new();
     visit::walk(&output.ast, &ctx, &mut diags);
 
+    // Findings about the comments are added after suppression, so no comment can silence them.
     let suppressions = Suppressions::new(output, source);
-    diags.retain(|d| selected(d.rule) && !suppressions.covers(d));
+    let directive_findings = suppressions.findings(&diags, source, &selected);
+
+    diags.retain(|d| !suppressions.covers(d));
+    diags.extend(directive_findings);
+    diags.retain(|d| selected(d.rule));
 
     diags.sort_by_key(|d| d.span.start);
     diags

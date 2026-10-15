@@ -6,6 +6,7 @@ pub mod collapsible_if;
 pub mod compound_assignment;
 pub mod ifs_same_cond;
 pub mod import_order;
+pub mod invalid_directive;
 pub mod modifier_order;
 pub mod naming_convention;
 pub mod null_union;
@@ -14,6 +15,7 @@ pub mod pipe_union;
 pub mod redundant_resource_ref;
 pub mod super_initializer_call;
 pub mod unneeded_parens;
+pub mod unused_ignore;
 
 /// A lint rule as presented to users, in `--list-rules` and in the rule documentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +72,11 @@ pub const ALL: &[Rule] = &[
         fix: FixAvailability::Sometimes,
     },
     Rule {
+        name: invalid_directive::RULE,
+        summary: "A `rafiki:` comment that isn't a valid directive",
+        fix: FixAvailability::Never,
+    },
+    Rule {
         name: modifier_order::RULE,
         summary: "`static` written before the visibility",
         fix: FixAvailability::Sometimes,
@@ -107,6 +114,11 @@ pub const ALL: &[Rule] = &[
     Rule {
         name: unneeded_parens::RULE,
         summary: "Parentheses that can't change how the code is read",
+        fix: FixAvailability::Always,
+    },
+    Rule {
+        name: unused_ignore::RULE,
+        summary: "A rule in a `rafiki: ignore` comment with nothing to silence",
         fix: FixAvailability::Always,
     },
 ];
