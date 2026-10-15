@@ -2,7 +2,7 @@
 
 use gen_lsp_types::{Code, Diagnostic, DiagnosticSeverity};
 use monkey_c_formatter::Formatter;
-use monkey_c_linter::lint;
+use monkey_c_linter::lint_selected;
 use monkey_c_parser::ast::Span;
 use monkey_c_parser::parser::Parser;
 
@@ -27,10 +27,9 @@ pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
             message: error.message.into(),
             ..Default::default()
         }],
-        Ok(output) => lint(&output, text)
-            .into_iter()
-            .filter(|finding| settings.selects(finding.rule))
-            .map(|finding| lint_diagnostic(&mapper, &finding))
+        Ok(output) => lint_selected(&output, text, |rule| settings.selects(rule))
+            .iter()
+            .map(|finding| lint_diagnostic(&mapper, finding))
             .collect(),
     }
 }
@@ -42,12 +41,7 @@ pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
 pub fn lints(text: &str, settings: &LintSettings) -> Vec<monkey_c_linter::Diagnostic> {
     Parser::new(text)
         .parse()
-        .map(|output| {
-            lint(&output, text)
-                .into_iter()
-                .filter(|finding| settings.selects(finding.rule))
-                .collect()
-        })
+        .map(|output| lint_selected(&output, text, |rule| settings.selects(rule)))
         .unwrap_or_default()
 }
 
