@@ -15,6 +15,7 @@ mod position;
 mod uri;
 
 use monkey_c_config::{ConfigSource, FormatSettings};
+use monkey_c_linter::suppression;
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -250,7 +251,9 @@ fn format(
 /// filter:
 ///
 /// - one `quickfix` per fixable lint finding overlapping the requested range,
-///   each carrying just that finding's fix and the diagnostic it resolves; and
+///   each carrying just that finding's fix and the diagnostic it resolves;
+/// - one `quickfix` per rule found in that range that adds a `rafiki: ignore`
+///   comment for it, listed after the fixes since fixing beats silencing; and
 /// - a single `source.fixAll` action bundling every fixable finding, which an
 ///   editor can run on save to apply all lint fixes at once.
 fn code_actions(
@@ -263,36 +266,42 @@ fn code_actions(
         return Vec::new();
     };
 
+    let Some((output, findings)) = analysis::lints(text, settings) else {
+        return Vec::new();
+    };
+
     let mapper = PositionMapper::new(text);
     let only = &params.context.only;
-    let findings = analysis::lints(text, settings);
     let mut actions = Vec::new();
 
     if kind_permitted(only, &CodeActionKind::QuickFix) {
-        for finding in &findings {
-            let Some(fix) = &finding.fix else {
+        let requested: Vec<_> = findings
+            .iter()
+            .filter(|finding| finding_requested(mapper.range(finding.span), params))
+            .collect();
+
+        for finding in &requested {
+            if let Some(fix) = &finding.fix {
+                let title = format!("Fix: {}", finding.message);
+                actions.push(quick_fix(uri, &mapper, finding, title, fix));
+            }
+        }
+
+        // Two findings of one rule on one line would offer the same comment twice.
+        let mut ignores = Vec::new();
+
+        for finding in &requested {
+            let Some(fix) = suppression::ignore_fix(&output, text, finding) else {
                 continue;
             };
-            if !finding_requested(mapper.range(finding.span), params) {
+
+            if ignores.contains(&fix) {
                 continue;
             }
 
-            let edits = fix
-                .edits
-                .iter()
-                .map(|edit| TextEdit {
-                    range: mapper.range(edit.span),
-                    new_text: edit.replacement.clone(),
-                })
-                .collect();
-
-            actions.push(CodeActionResponse::CodeAction(CodeAction {
-                title: format!("Fix: {}", finding.message),
-                kind: Some(CodeActionKind::QuickFix),
-                diagnostics: Some(vec![analysis::lint_diagnostic(&mapper, finding)]),
-                edit: Some(workspace_edit(uri, edits)),
-                ..Default::default()
-            }));
+            let title = format!("Ignore `{}` with a comment", finding.rule);
+            actions.push(quick_fix(uri, &mapper, finding, title, &fix));
+            ignores.push(fix);
         }
     }
 
@@ -303,6 +312,33 @@ fn code_actions(
     }
 
     actions
+}
+
+/// A `quickfix` applying `fix`, attached to the diagnostic for `finding` so the
+/// editor clears it once applied.
+fn quick_fix(
+    uri: &Uri,
+    mapper: &PositionMapper,
+    finding: &monkey_c_linter::Diagnostic,
+    title: String,
+    fix: &monkey_c_linter::Fix,
+) -> CodeActionResponse {
+    let edits = fix
+        .edits
+        .iter()
+        .map(|edit| TextEdit {
+            range: mapper.range(edit.span),
+            new_text: edit.replacement.clone(),
+        })
+        .collect();
+
+    CodeActionResponse::CodeAction(CodeAction {
+        title,
+        kind: Some(CodeActionKind::QuickFix),
+        diagnostics: Some(vec![analysis::lint_diagnostic(mapper, finding)]),
+        edit: Some(workspace_edit(uri, edits)),
+        ..Default::default()
+    })
 }
 
 /// A `source.fixAll` action applying every fixable finding at once, or `None`
@@ -408,4 +444,77 @@ fn respond(
         .send(Message::Response(Response::new_ok(id, result)))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use monkey_c_config::LintSettings;
+
+    /// The titles of the `quickfix` actions offered for the whole of `line` in `text`.
+    fn quick_fix_titles(text: &str, line: u32) -> Vec<String> {
+        let uri: Uri = serde_json::from_value(serde_json::json!("file:///a.mc")).expect("uri");
+        let documents = Documents::from([(uri, text.to_string())]);
+        let params: CodeActionParams = serde_json::from_value(serde_json::json!({
+            "textDocument": { "uri": "file:///a.mc" },
+            "range": {
+                "start": { "line": line, "character": 0 },
+                "end": { "line": line + 1, "character": 0 },
+            },
+            "context": { "diagnostics": [], "only": ["quickfix"] },
+        }))
+        .expect("params");
+
+        code_actions(&documents, &LintSettings::default(), &params)
+            .into_iter()
+            .filter_map(|action| match action {
+                CodeActionResponse::CodeAction(action) => Some(action.title),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn offers_to_ignore_each_rule_after_the_fixes() {
+        let text = "var a = (b == true);\n";
+
+        assert_eq!(
+            quick_fix_titles(text, 0),
+            vec![
+                "Fix: unneeded parentheses around expression",
+                "Fix: comparison to boolean literal — `b == true` can be written as `b`",
+                "Ignore `unneeded-parens` with a comment",
+                "Ignore `bool-comparison` with a comment",
+            ]
+        );
+    }
+
+    #[test]
+    fn offers_to_ignore_a_finding_without_a_fix() {
+        let text = "function Foo() {}\n";
+
+        assert_eq!(
+            quick_fix_titles(text, 0),
+            vec!["Ignore `naming-convention` with a comment"]
+        );
+    }
+
+    #[test]
+    fn offers_each_ignore_once_per_line() {
+        let text = "var a = (b == true) && (c == true);\n";
+
+        let ignores: Vec<_> = quick_fix_titles(text, 0)
+            .into_iter()
+            .filter(|title| title.starts_with("Ignore"))
+            .collect();
+
+        assert_eq!(
+            ignores,
+            vec![
+                "Ignore `unneeded-parens` with a comment",
+                "Ignore `bool-comparison` with a comment",
+            ]
+        );
+    }
 }

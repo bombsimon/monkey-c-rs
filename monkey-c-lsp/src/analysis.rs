@@ -4,7 +4,7 @@ use gen_lsp_types::{Code, Diagnostic, DiagnosticSeverity};
 use monkey_c_formatter::Formatter;
 use monkey_c_linter::lint_selected;
 use monkey_c_parser::ast::Span;
-use monkey_c_parser::parser::Parser;
+use monkey_c_parser::parser::{ParseOutput, Parser};
 
 use crate::position::PositionMapper;
 use monkey_c_config::{FormatSettings, LintSettings};
@@ -34,15 +34,19 @@ pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
     }
 }
 
-/// The raw linter findings for `text` (empty when it doesn't parse). Unlike [`diagnostics`], these
-/// retain the byte [`Span`] and [`Fix`] needed to build code actions.
+/// The parsed `text` with its raw linter findings, or `None` when it doesn't parse. Unlike
+/// [`diagnostics`], the findings retain the byte [`Span`] and [`Fix`] needed to build code actions,
+/// and the parse lets an action see the comments around a finding.
 ///
 /// [`Fix`]: monkey_c_linter::Fix
-pub fn lints(text: &str, settings: &LintSettings) -> Vec<monkey_c_linter::Diagnostic> {
-    Parser::new(text)
-        .parse()
-        .map(|output| lint_selected(&output, text, |rule| settings.selects(rule)))
-        .unwrap_or_default()
+pub fn lints(
+    text: &str,
+    settings: &LintSettings,
+) -> Option<(ParseOutput, Vec<monkey_c_linter::Diagnostic>)> {
+    let output = Parser::new(text).parse().ok()?;
+    let findings = lint_selected(&output, text, |rule| settings.selects(rule));
+
+    Some((output, findings))
 }
 
 /// Convert one linter finding into its LSP diagnostic — the same shape [`diagnostics`] publishes,
@@ -88,6 +92,8 @@ mod tests {
         };
 
         assert!(diagnostics(text, &settings).is_empty());
-        assert!(lints(text, &settings).is_empty());
+
+        let (_, findings) = lints(text, &settings).expect("parses");
+        assert!(findings.is_empty());
     }
 }

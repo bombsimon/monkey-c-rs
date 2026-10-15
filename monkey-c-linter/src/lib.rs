@@ -14,7 +14,7 @@
 //!    `check_stmt`, …).
 //! 2. Add one line to the matching `dispatch_*` in [`visit`].
 pub mod rules;
-mod suppression;
+pub mod suppression;
 pub mod visit;
 
 use monkey_c_parser::ast::Span;

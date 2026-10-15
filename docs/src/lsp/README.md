@@ -6,6 +6,8 @@ protocol can use the formatter and linter while you work. It gives you:
 - Lint findings and syntax errors as you type.
 - Formatting of the whole file, for example on save.
 - Lint fixes as code actions, either for a single finding or for the whole file.
+- A code action to [ignore a finding](../linter#suppressing-findings) with a
+  `rafiki: ignore` comment.
 
 The server is meant to run next to the language server that comes with the
 Connect IQ SDK, which handles code navigation like going to a definition. It
