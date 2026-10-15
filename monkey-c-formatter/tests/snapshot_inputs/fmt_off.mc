@@ -1,0 +1,91 @@
+import Toybox.Lang;
+
+// rafiki: fmt off
+const LOOKUP = [
+    1,   2,   3,
+    10,  20,  30,
+];
+// rafiki: fmt on
+
+class   Foo {
+  // rafiki: fmt off keep the column layout
+  var x = {
+    :a              => 1,
+    :dontAlignThis  => 2
+  };
+  // rafiki: fmt on
+  var   y=2;
+
+    function unclosedRunsToTheEndOfTheBody() {
+        var a=1;
+        // rafiki: fmt off
+        var b  =  2;
+
+        var c  =  3;   // trailing
+    }
+
+    function reindentsTheRegionAsAWhole() {
+            // rafiki: fmt off
+            if (x) {
+                foo(  1  );
+            }
+            // rafiki: fmt on
+        var d=4;
+    }
+
+    function insideASwitchCase(n) {
+        switch (n) {
+            case 1:
+                // rafiki: fmt off
+                foo(  1  );
+                // rafiki: fmt on
+                bar(  2  );
+        }
+    }
+
+    function onlyBetweenStatements() {
+        var e = {
+            // rafiki: fmt off
+            :a   =>   1,
+        };
+        // rafiki: fmt on
+        baz(  3  );
+        // rafiki: fmt off
+    }
+
+    function emptyPairKeepsTheNextStatement() {
+        // rafiki: fmt off
+        // rafiki: fmt on
+        var x  =  1;
+        // rafiki: fmt off
+        // rafiki: fmt on
+        // rafiki: fmt off
+        var y  =  2;
+        // rafiki: fmt on
+        var z  =  3;
+    }
+
+    function blockCommentsSharingALine() {
+        /* rafiki: fmt off */ var w  =  1;
+        /* rafiki: fmt on */ var v  =  2;
+    }
+
+    function linesLessIndentedThanTheComment() {
+        // rafiki: fmt off
+        var z  =  [1,
+2];
+        // rafiki: fmt on
+    }
+
+    // rafiki: fmt off
+    function regionEndingWithAFunction() {
+        return  1;
+    }
+    // rafiki: fmt on
+    function afterTheRegion() {
+    }
+}
+
+// rafiki: fmt off
+// rafiki: fmt on
+const A  =  1;

@@ -11,6 +11,10 @@ is still reported and the comment looks like it should work.
 ## What it flags
 
 - A word after `rafiki:` that isn't a known directive
+- `rafiki: fmt` without `off` or `on` after it
+- A `rafiki: fmt off` or `rafiki: fmt on` that shares its line with code, or a
+  `rafiki: fmt off` with no declaration or statement after it, which the
+  formatter leaves as a plain comment
 - A rule name that doesn't exist
 - A missing `[` or `]`, or an empty rule list
 - A `file-ignore` after the first line of code

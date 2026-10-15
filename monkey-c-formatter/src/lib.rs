@@ -8,6 +8,7 @@ mod member_chain;
 mod operators;
 mod statements;
 mod types;
+mod verbatim;
 
 use monkey_c_parser::ast::CommentStmt;
 use monkey_c_parser::comments::CommentCursor;
@@ -31,6 +32,7 @@ use std::collections::HashMap;
 /// line-breaking decisions globally rather than per-node, so a dict or array
 /// that fits on one line is kept there automatically.
 pub struct Formatter {
+    source: String,
     line_index: LineIndex,
     /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
@@ -52,6 +54,7 @@ impl Formatter {
         let source = source.as_ref();
 
         Self {
+            source: source.to_string(),
             line_index: LineIndex::new(source),
             line_width: 100,
             align_pairs: false,

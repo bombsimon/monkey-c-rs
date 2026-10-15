@@ -165,12 +165,18 @@ impl Formatter {
         let mut docs = Vec::new();
         let mut prev_end: Option<usize> = None;
         let mut prev_is_block_decl = false;
+        let spans: Vec<Span> = decls.iter().filter_map(Ast::span).copied().collect();
+        let mut verbatim_end = 0;
 
         for (idx, decl) in decls.iter().enumerate() {
             let Some(decl_span) = decl.span() else {
                 continue;
             };
             let decl_span = *decl_span;
+
+            if decl_span.start < verbatim_end {
+                continue;
+            }
 
             let eff_start = self.effective_start(decl_span);
             let is_block_decl = matches!(decl, Ast::Function(_) | Ast::Class(_) | Ast::Module(_));
@@ -182,6 +188,18 @@ impl Formatter {
                 } else {
                     gap
                 });
+            }
+
+            // `spans` skips the declarations without one, so `idx` can't index it.
+            let remaining = spans.partition_point(|span| span.start < decl_span.start);
+
+            if let Some(region) = self.fmt_off_region(&spans[remaining..], container.end) {
+                docs.push(self.drain_leading_doc(region.start));
+                docs.push(self.verbatim_doc(region));
+                prev_end = Some(region.end);
+                prev_is_block_decl = false;
+                verbatim_end = region.end;
+                continue;
             }
 
             // Bound the trailing drain at the next decl's start so that same-line

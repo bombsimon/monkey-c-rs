@@ -405,13 +405,28 @@ impl Formatter {
 
         let mut docs = Vec::new();
         let mut prev_end: Option<usize> = None;
+        let spans: Vec<Span> = stmts.iter().map(|stmt| *stmt.span()).collect();
+        let mut verbatim_end = 0;
 
-        for stmt in stmts {
+        for (idx, stmt) in stmts.iter().enumerate() {
             let span = *stmt.span();
+
+            if span.start < verbatim_end {
+                continue;
+            }
+
             let eff_start = self.effective_start(span);
 
             if let Some(pe) = prev_end {
                 docs.push(self.gap_between_positions(pe, eff_start));
+            }
+
+            if let Some(region) = self.fmt_off_region(&spans[idx..], container.end) {
+                docs.push(self.drain_leading_doc(region.start));
+                docs.push(self.verbatim_doc(region));
+                prev_end = Some(region.end);
+                verbatim_end = region.end;
+                continue;
             }
 
             docs.push(self.stmt_to_doc_bounded(stmt, container.end));
