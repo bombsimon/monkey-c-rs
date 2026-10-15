@@ -47,8 +47,15 @@ impl Suppressions {
         let mut comments = Vec::new();
         let mut problems = Vec::new();
 
+        let mut fmt_regions = FmtRegions {
+            source,
+            comments: all_comments,
+            nodes: &nodes,
+            open_bodies: Vec::new(),
+        };
+
         for comment in all_comments {
-            if let Some(message) = fmt_placement_problem(comment, source, all_comments, &nodes) {
+            if let Some(message) = fmt_regions.problem(comment) {
                 problems.push(Problem {
                     message,
                     span: comment.span,
@@ -318,33 +325,92 @@ fn fmt_problem(args: &str) -> Option<String> {
     }
 }
 
-/// What's wrong with where a `rafiki: fmt off` or `rafiki: fmt on` is written, if anything. The
-/// formatter only acts on them on their own lines, with `off` before a declaration or statement,
-/// and silently leaves any other one as a plain comment.
-fn fmt_placement_problem(
-    comment: &CommentStmt,
-    source: &str,
-    comments: &[CommentStmt],
-    nodes: &[Span],
-) -> Option<String> {
-    let argument = fmt_argument(comment)?;
-    let line = line_range(source, comment.span.start);
-    let own_line = source[line.start..comment.span.start].trim().is_empty()
-        && source[comment.span.end..line.end].trim().is_empty();
+/// Follows the `rafiki: fmt off` regions through a file the way the formatter does, to find the
+/// `fmt` comments it would silently leave as plain comments.
+struct FmtRegions<'a> {
+    source: &'a str,
+    comments: &'a [CommentStmt],
+    nodes: &'a [Span],
+    open_bodies: Vec<Option<Span>>,
+}
 
-    if !own_line {
-        return Some(format!(
-            "`rafiki: fmt {argument}` must be on a line of its own"
-        ));
+impl FmtRegions<'_> {
+    /// What's wrong with `comment` if it's a `rafiki: fmt off` or `rafiki: fmt on` that does
+    /// nothing. Comments must be passed in source order.
+    fn problem(&mut self, comment: &CommentStmt) -> Option<String> {
+        let argument = fmt_argument(comment)?;
+        let position = comment.span.start;
+        let containing: Vec<Span> = self
+            .nodes
+            .iter()
+            .filter(|span| span.start < position && position < span.end)
+            .copied()
+            .collect();
+
+        // `None` is the top level of the file.
+        let body = containing
+            .iter()
+            .min_by_key(|span| span.end - span.start)
+            .copied();
+
+        // A region keeps everything in it as written, so a comment inside one opened further out
+        // is just part of its text.
+        let in_outer_region = std::iter::once(None)
+            .chain(containing.into_iter().map(Some))
+            .any(|outer| outer != body && self.open_bodies.contains(&outer));
+
+        if in_outer_region {
+            return None;
+        }
+
+        let open = self.open_bodies.iter().position(|open| *open == body);
+
+        if argument == "off" && open.is_some() {
+            return Some("formatting is already off from a `rafiki: fmt off` above".to_string());
+        }
+
+        if let Some(message) = self.placement_problem(comment, argument) {
+            return Some(message);
+        }
+
+        match open {
+            None if argument == "off" => self.open_bodies.push(body),
+            Some(index) => {
+                self.open_bodies.swap_remove(index);
+            }
+            None => {
+                return Some("`rafiki: fmt on` without a `rafiki: fmt off` before it".to_string());
+            }
+        }
+
+        None
     }
 
-    let next = next_token(source, comment.span.end, comments);
+    /// The formatter only acts on `fmt` comments on their own lines, with `off` before a
+    /// declaration or statement.
+    fn placement_problem(&self, comment: &CommentStmt, argument: &str) -> Option<String> {
+        let line = line_range(self.source, comment.span.start);
+        let own_line = self.source[line.start..comment.span.start]
+            .trim()
+            .is_empty()
+            && self.source[comment.span.end..line.end].trim().is_empty();
 
-    if argument == "off" && !nodes.iter().any(|span| span.start == next) {
-        return Some("`rafiki: fmt off` must come before a declaration or statement".to_string());
+        if !own_line {
+            return Some(format!(
+                "`rafiki: fmt {argument}` must be on a line of its own"
+            ));
+        }
+
+        let next = next_token(self.source, comment.span.end, self.comments);
+
+        if argument == "off" && !self.nodes.iter().any(|span| span.start == next) {
+            return Some(
+                "`rafiki: fmt off` must come before a declaration or statement".to_string(),
+            );
+        }
+
+        None
     }
-
-    None
 }
 
 /// The `off` or `on` in a `rafiki: fmt` directive.
@@ -1160,6 +1226,82 @@ function f() {
             messages(src, "invalid-directive"),
             vec!["`rafiki: fmt off` must come before a declaration or statement"; 2]
         );
+    }
+
+    #[test]
+    fn reports_fmt_on_without_fmt_off() {
+        let src = r#"
+// rafiki: fmt on
+function f() {
+    // rafiki: fmt off
+    var a  =  1;
+    // rafiki: fmt on
+    var b = 2;
+    // rafiki: fmt on
+}
+"#;
+
+        assert_eq!(
+            messages(src, "invalid-directive"),
+            vec!["`rafiki: fmt on` without a `rafiki: fmt off` before it"; 2]
+        );
+    }
+
+    #[test]
+    fn reports_fmt_on_closing_a_region_in_another_body() {
+        let src = r#"
+function f() {
+    if (a) {
+        // rafiki: fmt off
+        foo(  1  );
+    }
+    // rafiki: fmt on
+}
+"#;
+
+        assert_eq!(
+            messages(src, "invalid-directive"),
+            vec!["`rafiki: fmt on` without a `rafiki: fmt off` before it"]
+        );
+    }
+
+    #[test]
+    fn reports_fmt_off_while_already_off() {
+        let src = r#"
+function f() {
+    // rafiki: fmt off
+    var a  =  1;
+    // rafiki: fmt off
+    var b  =  2;
+    // rafiki: fmt on
+}
+"#;
+
+        assert_eq!(
+            messages(src, "invalid-directive"),
+            vec!["formatting is already off from a `rafiki: fmt off` above"]
+        );
+    }
+
+    #[test]
+    fn skips_fmt_comments_inside_a_region() {
+        let src = r#"
+class A {
+    // rafiki: fmt off
+    function f() {
+        // rafiki: fmt on
+        var a  =  1; // rafiki: fmt off
+    }
+    // rafiki: fmt on
+}
+
+// rafiki: fmt off
+function g() {
+    // rafiki: fmt on
+}
+"#;
+
+        assert!(messages(src, "invalid-directive").is_empty());
     }
 
     /// `src` after silencing its first `rule` finding with [`ignore_fix`].
