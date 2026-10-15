@@ -167,6 +167,89 @@ impl IgnoreComment {
     }
 }
 
+/// A fix silencing `finding` with a `rafiki: ignore` comment, or `None` when a comment can't
+/// silence it. The comment goes at the end of the finding's line, which keeps a run of similar
+/// statements together, unless that line already has a comment. A suppression already there or
+/// on the line above gets the rule added instead, so ignoring several rules doesn't stack up
+/// comments.
+pub fn ignore_fix(output: &ParseOutput, source: &str, finding: &Diagnostic) -> Option<Fix> {
+    let rule = finding.rule;
+
+    if rule_problem(rule).is_some() {
+        return None;
+    }
+
+    let comments = &output.comments.comments;
+    let line = line_range(source, finding.span.start);
+    let trailing = comments.iter().find(|comment| {
+        line.contains(&comment.span.start)
+            && !source[line.start..comment.span.start].trim().is_empty()
+    });
+
+    let existing = trailing
+        .and_then(ignore_directive)
+        .or_else(|| comment_above(comments, source, line.start).and_then(ignore_directive));
+
+    if let Some(directive) = existing {
+        // Already listed but still reported means the comment doesn't reach this finding, and
+        // listing the rule again wouldn't change that.
+        if directive.rules.iter().any(|listed| listed.name == rule) {
+            return None;
+        }
+
+        let mut names: Vec<&str> = directive.rules.iter().map(|r| r.name.as_str()).collect();
+        names.push(rule);
+
+        return Some(Fix::single(directive.list, names.join(", ")));
+    }
+
+    let text = &source[line.clone()];
+
+    if trailing.is_none() {
+        let end = line.start + text.trim_end().len();
+
+        return Some(Fix::single(
+            Span { start: end, end },
+            format!(" // {PREFIX} ignore[{rule}]"),
+        ));
+    }
+
+    let indent = &text[..text.len() - text.trim_start().len()];
+    let newline = if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+
+    Some(Fix::single(
+        Span {
+            start: line.start,
+            end: line.start,
+        },
+        format!("{indent}// {PREFIX} ignore[{rule}]{newline}"),
+    ))
+}
+
+/// The comment alone on the line before `line_start`, if there is one.
+fn comment_above<'a>(
+    comments: &'a [CommentStmt],
+    source: &str,
+    line_start: usize,
+) -> Option<&'a CommentStmt> {
+    let above = line_range(source, line_start.checked_sub(1)?);
+
+    comments.iter().find(|comment| {
+        above.contains(&comment.span.start)
+            && source[above.start..comment.span.start].trim().is_empty()
+    })
+}
+
+fn ignore_directive(comment: &CommentStmt) -> Option<Directive> {
+    let directive = parse(comment)?.ok()?;
+
+    (directive.kind == Kind::Ignore).then_some(directive)
+}
+
 /// Why the rule `name` can't be silenced, if it can't. The rules about `rafiki:` comments are left
 /// out since a comment silencing them could hide its own mistakes.
 fn rule_problem(name: &str) -> Option<String> {
@@ -961,5 +1044,142 @@ var a = (1);
                  `file-ignore`"
             ]
         );
+    }
+
+    /// `src` after silencing its first `rule` finding with [`ignore_fix`].
+    fn ignored(src: &str, rule: &str) -> Option<String> {
+        let output = Parser::new(src).parse().expect("parse");
+        let finding = lint(&output, src).into_iter().find(|d| d.rule == rule)?;
+
+        Some(apply_fixes(src, vec![ignore_fix(&output, src, &finding)?]))
+    }
+
+    #[test]
+    fn ignore_fix_adds_a_comment_at_the_end_of_the_line() {
+        let src = r#"
+function f() {
+    var a = 1;
+    var accentColorStart = (height / 6) * 5;
+    var b = 2;
+}
+"#;
+
+        assert_eq!(
+            ignored(src, "unneeded-parens").as_deref(),
+            Some(
+                r#"
+function f() {
+    var a = 1;
+    var accentColorStart = (height / 6) * 5; // rafiki: ignore[unneeded-parens]
+    var b = 2;
+}
+"#
+            )
+        );
+    }
+
+    #[test]
+    fn ignore_fix_goes_above_a_line_with_a_comment() {
+        let src = r#"
+function f() {
+    var a = (1); // the answer
+}
+"#;
+
+        assert_eq!(
+            ignored(src, "unneeded-parens").as_deref(),
+            Some(
+                r#"
+function f() {
+    // rafiki: ignore[unneeded-parens]
+    var a = (1); // the answer
+}
+"#
+            )
+        );
+    }
+
+    #[test]
+    fn ignore_fix_adds_to_the_comment_at_the_end_of_the_line() {
+        let src = r#"
+var a = (b == true); // rafiki: ignore[unneeded-parens]
+"#;
+
+        assert_eq!(
+            ignored(src, "bool-comparison").as_deref(),
+            Some(
+                r#"
+var a = (b == true); // rafiki: ignore[unneeded-parens, bool-comparison]
+"#
+            )
+        );
+    }
+
+    #[test]
+    fn ignore_fix_covers_a_second_statement_on_the_line() {
+        let src = r#"
+var a = 1; var b = (2);
+"#;
+        let silenced = ignored(src, "unneeded-parens").expect("a fix");
+
+        assert!(rules(&silenced).is_empty(), "{silenced}");
+    }
+
+    #[test]
+    fn ignore_fix_silences_the_finding() {
+        let src = r#"
+function f() {
+    foo(
+        a,
+        b == true
+    );
+}
+"#;
+        let silenced = ignored(src, "bool-comparison").expect("a fix");
+
+        assert!(rules(&silenced).is_empty(), "{silenced}");
+    }
+
+    #[test]
+    fn ignore_fix_adds_to_the_comment_above() {
+        let src = r#"
+function f() {
+    // rafiki: ignore[unneeded-parens] parens kept for clarity
+    var a = (b == true);
+}
+"#;
+
+        assert_eq!(
+            ignored(src, "bool-comparison").as_deref(),
+            Some(
+                r#"
+function f() {
+    // rafiki: ignore[unneeded-parens, bool-comparison] parens kept for clarity
+    var a = (b == true);
+}
+"#
+            )
+        );
+    }
+
+    #[test]
+    fn ignore_fix_keeps_crlf_line_endings() {
+        let src = "function f() {\r\n    var a = (1); // why\r\n}\r\n";
+
+        assert_eq!(
+            ignored(src, "unneeded-parens").as_deref(),
+            Some(
+                "function f() {\r\n    // rafiki: ignore[unneeded-parens]\r\n    var a = (1); // why\r\n}\r\n"
+            )
+        );
+    }
+
+    #[test]
+    fn ignore_fix_is_not_offered_for_rules_about_comments() {
+        let src = r#"
+var a = 1; // rafiki: ignore[unneeded-parens]
+"#;
+
+        assert_eq!(ignored(src, unused_ignore::RULE), None);
     }
 }
