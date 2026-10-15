@@ -8,52 +8,200 @@ use std::ops::Range;
 use monkey_c_parser::ast::{Ast, CommentStmt, ElseBranch, IfStmt, Span, Stmt};
 use monkey_c_parser::parser::ParseOutput;
 
-use crate::Diagnostic;
+use crate::rules::{self, invalid_directive, unused_ignore};
+use crate::{Diagnostic, Fix};
 
 const PREFIX: &str = "rafiki:";
 
-/// Every suppression comment in a file, resolved to the source range it covers.
+/// Every suppression comment in a file, resolved to the source range it covers, along with the
+/// `rafiki:` comments that can't be read.
 pub(crate) struct Suppressions {
-    entries: Vec<Suppression>,
+    comments: Vec<IgnoreComment>,
+    problems: Vec<Problem>,
 }
 
-struct Suppression {
-    rules: Vec<String>,
+struct IgnoreComment {
+    span: Span,
+    list: Span,
+    rules: Vec<ListedRule>,
     range: Range<usize>,
+}
+
+#[derive(Debug, PartialEq)]
+struct ListedRule {
+    name: String,
+    span: Span,
+}
+
+struct Problem {
+    message: String,
+    span: Span,
 }
 
 impl Suppressions {
     pub(crate) fn new(output: &ParseOutput, source: &str) -> Self {
-        let comments = &output.comments.comments;
-        let first_token = next_token(source, 0, comments);
+        let all_comments = &output.comments.comments;
+        let first_token = next_token(source, 0, all_comments);
         let nodes = node_spans(&output.ast);
 
-        let entries = comments
-            .iter()
-            .filter_map(|comment| {
-                let directive = parse(comment)?;
-                let range = match directive.kind {
-                    Kind::Ignore => ignore_range(comment, source, comments, &nodes),
-                    Kind::FileIgnore => file_range(comment, source, first_token)?,
-                };
+        let mut comments = Vec::new();
+        let mut problems = Vec::new();
 
-                Some(Suppression {
-                    rules: directive.rules,
-                    range,
-                })
-            })
-            .collect();
+        for comment in all_comments {
+            let Some(parsed) = parse(comment) else {
+                continue;
+            };
 
-        Self { entries }
+            let directive = match parsed {
+                Ok(directive) => directive,
+                Err(message) => {
+                    problems.push(Problem {
+                        message,
+                        span: comment.span,
+                    });
+                    continue;
+                }
+            };
+
+            // A `file-ignore` further down would hide a file-wide suppression where nobody looks
+            // for one.
+            let range = match directive.kind {
+                Kind::Ignore => ignore_range(comment, source, all_comments, &nodes),
+                Kind::FileIgnore if comment.span.end <= first_token => 0..source.len(),
+                Kind::FileIgnore => {
+                    problems.push(Problem {
+                        message: "`file-ignore` must come before any code".to_string(),
+                        span: comment.span,
+                    });
+                    continue;
+                }
+            };
+
+            comments.push(IgnoreComment {
+                span: comment.span,
+                list: directive.list,
+                rules: directive.rules,
+                range,
+            });
+        }
+
+        Self { comments, problems }
     }
 
     /// Whether a comment silences `diagnostic`. Only the start of its span counts, so a finding
     /// covering a whole function belongs to the line the function starts on.
     pub(crate) fn covers(&self, diagnostic: &Diagnostic) -> bool {
-        self.entries.iter().any(|entry| {
-            entry.range.contains(&diagnostic.span.start)
-                && entry.rules.iter().any(|rule| rule == diagnostic.rule)
+        self.comments.iter().any(|comment| {
+            comment.range.contains(&diagnostic.span.start)
+                && comment
+                    .rules
+                    .iter()
+                    .any(|listed| listed.name == diagnostic.rule)
         })
+    }
+
+    /// Findings about the `rafiki:` comments themselves: the ones that can't be read, and every
+    /// listed rule that `selected` runs but has nothing in `findings` to silence. `findings` must
+    /// be taken before suppression, or every rule in use would look unused.
+    pub(crate) fn findings(
+        &self,
+        findings: &[Diagnostic],
+        source: &str,
+        selected: impl Fn(&str) -> bool,
+    ) -> Vec<Diagnostic> {
+        let mut out: Vec<Diagnostic> = self
+            .problems
+            .iter()
+            .map(|problem| invalid_directive::diagnostic(problem.message.clone(), problem.span))
+            .collect();
+
+        for comment in &self.comments {
+            let mut unused = Vec::new();
+
+            for listed in &comment.rules {
+                if let Some(message) = rule_problem(&listed.name) {
+                    out.push(invalid_directive::diagnostic(message, listed.span));
+                    continue;
+                }
+
+                let reported = findings.iter().any(|finding| {
+                    finding.rule == listed.name && comment.range.contains(&finding.span.start)
+                });
+
+                if selected(&listed.name) && !reported {
+                    unused.push(listed);
+                }
+            }
+
+            if unused.is_empty() {
+                continue;
+            }
+
+            let fix = comment.without(&unused, source);
+            out.extend(
+                unused.iter().map(|listed| {
+                    unused_ignore::diagnostic(&listed.name, listed.span, fix.clone())
+                }),
+            );
+        }
+
+        out
+    }
+}
+
+impl IgnoreComment {
+    /// A fix dropping `unused` from the comment, or the whole comment when no rule is left.
+    fn without(&self, unused: &[&ListedRule], source: &str) -> Fix {
+        let kept: Vec<&str> = self
+            .rules
+            .iter()
+            .filter(|listed| !unused.iter().any(|u| u.span == listed.span))
+            .map(|listed| listed.name.as_str())
+            .collect();
+
+        if kept.is_empty() {
+            return Fix::single(removal(self.span, source), "");
+        }
+
+        Fix::single(self.list, kept.join(", "))
+    }
+}
+
+/// Why the rule `name` can't be silenced, if it can't. The rules about `rafiki:` comments are left
+/// out since a comment silencing them could hide its own mistakes.
+fn rule_problem(name: &str) -> Option<String> {
+    if name == unused_ignore::RULE || name == invalid_directive::RULE {
+        return Some(format!("`{name}` can't be silenced by a comment"));
+    }
+
+    if !rules::exists(name) {
+        return Some(format!("unknown rule `{name}`"));
+    }
+
+    None
+}
+
+/// The span to delete to remove `comment`: its whole line when it's alone on it, or the comment
+/// and the space before it when it trails code.
+fn removal(comment: Span, source: &str) -> Span {
+    let line_start = source[..comment.start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[comment.end..]
+        .find('\n')
+        .map_or(source.len(), |i| comment.end + i);
+
+    let before = &source[line_start..comment.start];
+    let after = &source[comment.end..line_end];
+
+    if before.trim().is_empty() && after.trim().is_empty() {
+        return Span {
+            start: line_start,
+            end: (line_end + 1).min(source.len()),
+        };
+    }
+
+    Span {
+        start: line_start + before.trim_end().len(),
+        end: comment.end,
     }
 }
 
@@ -66,32 +214,79 @@ enum Kind {
 #[derive(Debug, PartialEq)]
 struct Directive {
     kind: Kind,
-    rules: Vec<String>,
+    list: Span,
+    rules: Vec<ListedRule>,
 }
 
-/// Read a suppression from `comment`, or `None` when it isn't one. Doc comments (`//!`) never
-/// match since their text starts with the extra `!`. Anything after `]` is the optional reason.
-fn parse(comment: &CommentStmt) -> Option<Directive> {
-    let rest = comment.text.trim_start().strip_prefix(PREFIX)?.trim_start();
+/// Read the directive in `comment`: `None` when it isn't a `rafiki:` comment, and an error when
+/// it is one that can't be read. Doc comments (`//!`) never match since their text starts with the
+/// extra `!`. Anything after `]` is the optional reason.
+fn parse(comment: &CommentStmt) -> Option<Result<Directive, String>> {
+    let text = comment.text.as_str();
+    let rest = text.trim_start().strip_prefix(PREFIX)?.trim_start();
 
-    let (kind, rest) = match rest.strip_prefix("file-ignore[") {
-        Some(rest) => (Kind::FileIgnore, rest),
-        None => (Kind::Ignore, rest.strip_prefix("ignore[")?),
+    let verb_end = rest
+        .find(|c: char| c == '[' || c.is_whitespace())
+        .unwrap_or(rest.len());
+
+    // Directives other tools add, like a future formatter one, belong here too, so they aren't
+    // reported as unknown.
+    let kind = match &rest[..verb_end] {
+        "ignore" => Kind::Ignore,
+        "file-ignore" => Kind::FileIgnore,
+        "" => return Some(Err("`rafiki:` is missing a directive".to_string())),
+        verb => {
+            return Some(Err(format!(
+                "`{verb}` is not a known `rafiki:` directive, the known ones are `ignore` and \
+                 `file-ignore`"
+            )));
+        }
     };
 
-    let (list, _reason) = rest.split_once(']')?;
-    let rules: Vec<String> = list
-        .split(',')
-        .map(str::trim)
-        .filter(|rule| !rule.is_empty())
-        .map(String::from)
-        .collect();
+    let Some(rest) = rest[verb_end..].strip_prefix('[') else {
+        return Some(Err(
+            "expected the rules in `[...]` right after the directive".to_string(),
+        ));
+    };
 
-    if rules.is_empty() {
-        return None;
+    // `text` starts right after the `//` or `/*`, and `rest` is a suffix of it, so its position
+    // in the source follows from its length.
+    let list_start = comment.span.start + 2 + text.len() - rest.len();
+
+    let Some(close) = rest.find(']') else {
+        return Some(Err("missing `]` after the rules".to_string()));
+    };
+
+    let mut rules = Vec::new();
+    let mut part_start = list_start;
+
+    for part in rest[..close].split(',') {
+        let name = part.trim();
+
+        if !name.is_empty() {
+            let start = part_start + part.len() - part.trim_start().len();
+            rules.push(ListedRule {
+                name: name.to_string(),
+                span: Span {
+                    start,
+                    end: start + name.len(),
+                },
+            });
+        }
+
+        part_start += part.len() + 1;
     }
 
-    Some(Directive { kind, rules })
+    if rules.is_empty() {
+        return Some(Err("no rules listed, name the rules to ignore".to_string()));
+    }
+
+    let list = Span {
+        start: list_start,
+        end: list_start + close,
+    };
+
+    Some(Ok(Directive { kind, list, rules }))
 }
 
 /// A trailing comment covers its own line and the outermost node ending on it. An own-line comment
@@ -130,16 +325,6 @@ fn ignore_range(
         Some(end) => next..end,
         None => line_range(source, next),
     }
-}
-
-/// The whole file, as long as the comment comes before any code. A `file-ignore` further down
-/// would hide a file-wide suppression where nobody looks for one.
-fn file_range(comment: &CommentStmt, source: &str, first_token: usize) -> Option<Range<usize>> {
-    if comment.span.end > first_token {
-        return None;
-    }
-
-    Some(0..source.len())
 }
 
 /// The position of the first token at or after `pos`, skipping whitespace and comments so stacked
@@ -267,7 +452,7 @@ fn collect_if(s: &IfStmt, spans: &mut Vec<Span>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lint;
+    use crate::{apply_fixes, lint};
     use monkey_c_parser::parser::Parser;
 
     fn comment(text: &str) -> CommentStmt {
@@ -278,11 +463,22 @@ mod tests {
         }
     }
 
-    fn directive(kind: Kind, rules: &[&str]) -> Option<Directive> {
-        Some(Directive {
-            kind,
-            rules: rules.iter().map(|rule| rule.to_string()).collect(),
+    /// The kind and rule names `text` parses to, leaving out the spans.
+    fn parsed(text: &str) -> Option<Result<(Kind, Vec<String>), String>> {
+        parse(&comment(text)).map(|parsed| {
+            parsed.map(|directive| {
+                let names = directive.rules.into_iter().map(|rule| rule.name).collect();
+
+                (directive.kind, names)
+            })
         })
+    }
+
+    fn directive(kind: Kind, rules: &[&str]) -> Option<Result<(Kind, Vec<String>), String>> {
+        Some(Ok((
+            kind,
+            rules.iter().map(|rule| rule.to_string()).collect(),
+        )))
     }
 
     /// The rule names of the findings left after suppression.
@@ -292,10 +488,32 @@ mod tests {
         lint(&output, src).iter().map(|d| d.rule).collect()
     }
 
+    /// The messages of the findings `rule` reports.
+    fn messages(src: &str, rule: &str) -> Vec<String> {
+        let output = Parser::new(src).parse().expect("parse");
+
+        lint(&output, src)
+            .into_iter()
+            .filter(|d| d.rule == rule)
+            .map(|d| d.message)
+            .collect()
+    }
+
+    /// `src` after applying every fix once, as `rafiki lint --fix` does.
+    fn fixed(src: &str) -> String {
+        let output = Parser::new(src).parse().expect("parse");
+        let fixes = lint(&output, src)
+            .into_iter()
+            .filter_map(|d| d.fix)
+            .collect();
+
+        apply_fixes(src, fixes)
+    }
+
     #[test]
     fn parses_ignore() {
         assert_eq!(
-            parse(&comment(" rafiki: ignore[bool-comparison]")),
+            parsed(" rafiki: ignore[bool-comparison]"),
             directive(Kind::Ignore, &["bool-comparison"])
         );
     }
@@ -303,7 +521,7 @@ mod tests {
     #[test]
     fn parses_file_ignore() {
         assert_eq!(
-            parse(&comment(" rafiki: file-ignore[one-class-per-file]")),
+            parsed(" rafiki: file-ignore[one-class-per-file]"),
             directive(Kind::FileIgnore, &["one-class-per-file"])
         );
     }
@@ -311,40 +529,49 @@ mod tests {
     #[test]
     fn parses_rule_lists_with_spacing_and_trailing_comma() {
         assert_eq!(
-            parse(&comment(" rafiki: ignore[ a,b , c, ]")),
+            parsed(" rafiki: ignore[ a,b , c, ]"),
             directive(Kind::Ignore, &["a", "b", "c"])
         );
     }
 
     #[test]
     fn parses_without_spaces() {
-        assert_eq!(
-            parse(&comment("rafiki:ignore[a]")),
-            directive(Kind::Ignore, &["a"])
-        );
+        assert_eq!(parsed("rafiki:ignore[a]"), directive(Kind::Ignore, &["a"]));
     }
 
     #[test]
     fn ignores_the_reason() {
         assert_eq!(
-            parse(&comment(" rafiki: ignore[a] name comes from the SDK [sic]")),
+            parsed(" rafiki: ignore[a] name comes from the SDK [sic]"),
             directive(Kind::Ignore, &["a"])
         );
     }
 
     #[test]
-    fn rejects_non_directives() {
+    fn skips_comments_that_are_not_directives() {
         for text in [
             " just a comment",
             "! rafiki: ignore[a]",
-            " rafiki: ignore",
-            " rafiki: ignore[]",
-            " rafiki: ignore[a",
-            " rafiki: ignroe[a]",
-            " rafiki: ignore [a]",
             " see rafiki: ignore[a]",
         ] {
-            assert_eq!(parse(&comment(text)), None, "{text:?}");
+            assert_eq!(parsed(text), None, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_directives() {
+        for text in [
+            " rafiki: ignore",
+            " rafiki: ignore [a]",
+            " rafiki: ignore[]",
+            " rafiki: ignore[ , ]",
+            " rafiki: ignore[a",
+            " rafiki: file-ignore",
+            " rafiki:",
+            " rafiki: ignroe[a]",
+            " rafiki: fmt off",
+        ] {
+            assert!(matches!(parsed(text), Some(Err(_))), "{text:?}");
         }
     }
 
@@ -422,10 +649,10 @@ function f() {
     fn own_line_comment_covers_a_multi_line_statement() {
         let src = r#"
 function f() {
-    // rafiki: ignore[unneeded-parens]
+    // rafiki: ignore[bool-comparison]
     foo(
-        (1),
-        (2)
+        a == true,
+        b == true
     );
 }
 "#;
@@ -537,7 +764,7 @@ function f() {
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["unneeded-parens", "unused-ignore"]);
     }
 
     #[test]
@@ -565,14 +792,14 @@ class B {}
     }
 
     #[test]
-    fn file_ignore_after_code_does_nothing() {
+    fn file_ignore_after_code_is_invalid() {
         let src = r#"
 class A {}
 // rafiki: file-ignore[one-class-per-file]
 class B {}
 "#;
 
-        assert_eq!(rules(src), vec!["one-class-per-file"]);
+        assert_eq!(rules(src), vec!["invalid-directive", "one-class-per-file"]);
     }
 
     #[test]
@@ -583,5 +810,156 @@ var a = (1);
 "#;
 
         assert_eq!(rules(src), vec!["unneeded-parens"]);
+    }
+
+    #[test]
+    fn reports_an_unused_rule() {
+        let src = r#"
+var a = 1; // rafiki: ignore[unneeded-parens]
+"#;
+
+        assert_eq!(
+            messages(src, unused_ignore::RULE),
+            vec!["`unneeded-parens` is never reported here, so ignoring it has no effect"]
+        );
+    }
+
+    #[test]
+    fn does_not_report_rules_that_are_not_selected() {
+        let src = r#"
+var a = 1; // rafiki: ignore[unneeded-parens]
+"#;
+        let output = Parser::new(src).parse().expect("parse");
+
+        let findings = crate::lint_selected(&output, src, |rule| rule != "unneeded-parens");
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn unused_ignore_can_be_turned_off() {
+        let src = r#"
+var a = 1; // rafiki: ignore[unneeded-parens]
+"#;
+        let output = Parser::new(src).parse().expect("parse");
+
+        let findings = crate::lint_selected(&output, src, |rule| rule != unused_ignore::RULE);
+
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn fix_removes_an_own_line_comment_with_its_line() {
+        let src = r#"
+function f() {
+    // rafiki: ignore[unneeded-parens] no longer needed
+    var a = 1;
+}
+"#;
+
+        assert_eq!(
+            fixed(src),
+            r#"
+function f() {
+    var a = 1;
+}
+"#
+        );
+    }
+
+    #[test]
+    fn fix_removes_a_trailing_comment_with_the_space_before_it() {
+        let src = r#"
+var a = 1;   // rafiki: ignore[unneeded-parens]
+"#;
+
+        assert_eq!(fixed(src), "\nvar a = 1;\n");
+    }
+
+    #[test]
+    fn fix_keeps_the_rules_still_in_use() {
+        let src = r#"
+var a = (b == true); // rafiki: ignore[collapsible-if, unneeded-parens, compound-assignment, bool-comparison] reason
+"#;
+
+        assert_eq!(
+            rules(src),
+            vec!["unused-ignore", "unused-ignore"],
+            "one finding per unused rule"
+        );
+        assert_eq!(
+            fixed(src),
+            r#"
+var a = (b == true); // rafiki: ignore[unneeded-parens, bool-comparison] reason
+"#
+        );
+    }
+
+    #[test]
+    fn fix_finds_the_rules_in_a_block_comment() {
+        let src = r#"
+var a = (1); /* rafiki: ignore[unneeded-parens,bool-comparison] */
+"#;
+
+        assert_eq!(
+            fixed(src),
+            r#"
+var a = (1); /* rafiki: ignore[unneeded-parens] */
+"#
+        );
+    }
+
+    #[test]
+    fn reports_an_unknown_rule() {
+        let src = r#"
+var a = (1); // rafiki: ignore[unneeded-paren, unneeded-parens]
+"#;
+
+        assert_eq!(rules(src), vec!["invalid-directive"]);
+        assert_eq!(
+            messages(src, invalid_directive::RULE),
+            vec!["unknown rule `unneeded-paren`"]
+        );
+    }
+
+    #[test]
+    fn rules_about_suppressions_cannot_be_silenced() {
+        let src = r#"
+var a = 1; // rafiki: ignore[unused-ignore, invalid-directive]
+"#;
+
+        assert_eq!(
+            messages(src, invalid_directive::RULE),
+            vec![
+                "`unused-ignore` can't be silenced by a comment",
+                "`invalid-directive` can't be silenced by a comment",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_a_malformed_suppression() {
+        let src = r#"
+var a = (1); // rafiki: ignore unneeded-parens
+"#;
+
+        assert_eq!(rules(src), vec!["unneeded-parens", "invalid-directive"]);
+    }
+
+    #[test]
+    fn reports_an_unknown_directive() {
+        let src = r#"
+// rafiki: ignroe[unneeded-parens]
+var a = (1);
+"#;
+
+        assert_eq!(rules(src), vec!["invalid-directive", "unneeded-parens"]);
+        assert_eq!(
+            messages(src, invalid_directive::RULE),
+            vec![
+                "`ignroe` is not a known `rafiki:` directive, the known ones are `ignore` and \
+                 `file-ignore`"
+            ]
+        );
     }
 }
