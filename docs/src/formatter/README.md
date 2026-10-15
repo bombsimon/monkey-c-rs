@@ -163,6 +163,26 @@ long comment isn't rewrapped and can go past the line width. A `//` comment at
 the end of a line doesn't count toward the width either, so it never forces the
 code before it to wrap.
 
+## Skipping formatting
+
+To keep some code exactly as written, like a hand-aligned table, put it between
+`rafiki: fmt off` and `rafiki: fmt on` comments:
+
+```monkey-c
+// rafiki: fmt off
+const LOOKUP = [
+    1,   2,   3,
+    10,  20,  30,
+];
+// rafiki: fmt on
+```
+
+Both comments go on their own lines between statements or declarations, like
+[ruff]'s `fmt: off`. Without a `rafiki: fmt on`, the rest of the block is kept as
+written. The lines keep their layout relative to each other, but the code as a
+whole is indented to match the code around it. A line indented less than the
+`rafiki: fmt off` comment is moved in to line up with it.
+
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [alignment]: ../configuration/settings#alignment
 [line-width]: ../configuration/settings#line-width

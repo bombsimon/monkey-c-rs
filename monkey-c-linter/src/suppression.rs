@@ -48,6 +48,14 @@ impl Suppressions {
         let mut problems = Vec::new();
 
         for comment in all_comments {
+            if let Some(message) = fmt_placement_problem(comment, source, all_comments, &nodes) {
+                problems.push(Problem {
+                    message,
+                    span: comment.span,
+                });
+                continue;
+            }
+
             let Some(parsed) = parse(comment) else {
                 continue;
             };
@@ -301,6 +309,56 @@ struct Directive {
     rules: Vec<ListedRule>,
 }
 
+/// What's wrong with the arguments of a `rafiki: fmt` directive, if anything. The formatter acts on
+/// it; anything after `off` or `on` is a reason.
+fn fmt_problem(args: &str) -> Option<String> {
+    match args.split_whitespace().next() {
+        Some("off" | "on") => None,
+        _ => Some("expected `off` or `on` after `fmt`".to_string()),
+    }
+}
+
+/// What's wrong with where a `rafiki: fmt off` or `rafiki: fmt on` is written, if anything. The
+/// formatter only acts on them on their own lines, with `off` before a declaration or statement,
+/// and silently leaves any other one as a plain comment.
+fn fmt_placement_problem(
+    comment: &CommentStmt,
+    source: &str,
+    comments: &[CommentStmt],
+    nodes: &[Span],
+) -> Option<String> {
+    let argument = fmt_argument(comment)?;
+    let line = line_range(source, comment.span.start);
+    let own_line = source[line.start..comment.span.start].trim().is_empty()
+        && source[comment.span.end..line.end].trim().is_empty();
+
+    if !own_line {
+        return Some(format!(
+            "`rafiki: fmt {argument}` must be on a line of its own"
+        ));
+    }
+
+    let next = next_token(source, comment.span.end, comments);
+
+    if argument == "off" && !nodes.iter().any(|span| span.start == next) {
+        return Some("`rafiki: fmt off` must come before a declaration or statement".to_string());
+    }
+
+    None
+}
+
+/// The `off` or `on` in a `rafiki: fmt` directive.
+fn fmt_argument(comment: &CommentStmt) -> Option<&str> {
+    let rest = comment.text.trim_start().strip_prefix(PREFIX)?;
+    let mut words = rest.split_whitespace();
+
+    if words.next()? != "fmt" {
+        return None;
+    }
+
+    words.next().filter(|word| matches!(*word, "off" | "on"))
+}
+
 /// Read the directive in `comment`: `None` when it isn't a `rafiki:` comment, and an error when
 /// it is one that can't be read. Doc comments (`//!`) never match since their text starts with the
 /// extra `!`. Anything after `]` is the optional reason.
@@ -312,16 +370,17 @@ fn parse(comment: &CommentStmt) -> Option<Result<Directive, String>> {
         .find(|c: char| c == '[' || c.is_whitespace())
         .unwrap_or(rest.len());
 
-    // Directives other tools add, like a future formatter one, belong here too, so they aren't
-    // reported as unknown.
+    // Directives for other tools, like the formatter's, are checked here too so a typo in one is
+    // reported rather than silently doing nothing.
     let kind = match &rest[..verb_end] {
         "ignore" => Kind::Ignore,
         "file-ignore" => Kind::FileIgnore,
+        "fmt" => return fmt_problem(&rest[verb_end..]).map(Err),
         "" => return Some(Err("`rafiki:` is missing a directive".to_string())),
         verb => {
             return Some(Err(format!(
-                "`{verb}` is not a known `rafiki:` directive, the known ones are `ignore` and \
-                 `file-ignore`"
+                "`{verb}` is not a known `rafiki:` directive, the known ones are `ignore`, \
+                 `file-ignore` and `fmt`"
             )));
         }
     };
@@ -636,6 +695,8 @@ mod tests {
             " just a comment",
             "! rafiki: ignore[a]",
             " see rafiki: ignore[a]",
+            " rafiki: fmt off",
+            " rafiki: fmt on keeps the table aligned",
         ] {
             assert_eq!(parsed(text), None, "{text:?}");
         }
@@ -652,7 +713,8 @@ mod tests {
             " rafiki: file-ignore",
             " rafiki:",
             " rafiki: ignroe[a]",
-            " rafiki: fmt off",
+            " rafiki: fmt",
+            " rafiki: fmt of",
         ] {
             assert!(matches!(parsed(text), Some(Err(_))), "{text:?}");
         }
@@ -1040,9 +1102,63 @@ var a = (1);
         assert_eq!(
             messages(src, invalid_directive::RULE),
             vec![
-                "`ignroe` is not a known `rafiki:` directive, the known ones are `ignore` and \
-                 `file-ignore`"
+                "`ignroe` is not a known `rafiki:` directive, the known ones are `ignore`, \
+                 `file-ignore` and `fmt`"
             ]
+        );
+    }
+
+    #[test]
+    fn accepts_fmt_comments_around_statements() {
+        let src = r#"
+class A {
+    // rafiki: fmt off
+    (:debug)
+    function f() {
+        // rafiki: fmt off
+        var a  =  1;
+        // rafiki: fmt on
+    }
+    // rafiki: fmt on
+}
+"#;
+
+        assert!(messages(src, "invalid-directive").is_empty());
+    }
+
+    #[test]
+    fn reports_a_fmt_comment_sharing_its_line() {
+        let src = r#"
+function f() {
+    var a  =  1; // rafiki: fmt off
+    /* rafiki: fmt on */ var b  =  2;
+}
+"#;
+
+        assert_eq!(
+            messages(src, "invalid-directive"),
+            vec![
+                "`rafiki: fmt off` must be on a line of its own",
+                "`rafiki: fmt on` must be on a line of its own",
+            ]
+        );
+    }
+
+    #[test]
+    fn reports_fmt_off_without_a_statement_after_it() {
+        let src = r#"
+function f() {
+    var a = {
+        // rafiki: fmt off
+        :a   =>   1,
+    };
+    // rafiki: fmt off
+}
+"#;
+
+        assert_eq!(
+            messages(src, "invalid-directive"),
+            vec!["`rafiki: fmt off` must come before a declaration or statement"; 2]
         );
     }
 
