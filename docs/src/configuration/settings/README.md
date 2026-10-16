@@ -4,6 +4,28 @@ Each setting lists its default and how to set it outside of `rafiki.toml`. Only
 the formatting settings can be sent by an editor. The rest are read from the
 file.
 
+Every setting at its default:
+
+```toml
+[format]
+line-width = 111
+alignment = true
+short-array-element-width = 8
+exclude = []
+
+[lint]
+enable = []
+disable = []
+exclude = []
+
+[lint.per-file-ignores]
+# "tests/**" = ["naming-convention"]
+
+[files]
+exclude = []
+respect-gitignore = true
+```
+
 ## `[format]`
 
 ### `line-width`
