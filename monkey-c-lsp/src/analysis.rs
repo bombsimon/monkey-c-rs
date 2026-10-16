@@ -7,13 +7,14 @@ use monkey_c_parser::ast::Span;
 use monkey_c_parser::parser::{ParseOutput, Parser};
 
 use crate::position::PositionMapper;
-use monkey_c_config::{FormatSettings, LintSettings};
+use monkey_c_config::FormatSettings;
 
 const SOURCE: &str = "monkey-c";
 
-/// Parse and lint `text`, returning LSP diagnostics. A parse error yields a single error
-/// diagnostic; otherwise every lint finding becomes a warning tagged with its rule name.
-pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
+/// Parse and lint `text` with the rules `selected` accepts, returning LSP diagnostics. A parse
+/// error yields a single error diagnostic; otherwise every lint finding becomes a warning tagged
+/// with its rule name.
+pub fn diagnostics(text: &str, selected: impl Fn(&str) -> bool) -> Vec<Diagnostic> {
     let mapper = PositionMapper::new(text);
 
     match Parser::new(text).parse() {
@@ -27,7 +28,7 @@ pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
             message: error.message.into(),
             ..Default::default()
         }],
-        Ok(output) => lint_selected(&output, text, |rule| settings.selects(rule))
+        Ok(output) => lint_selected(&output, text, selected)
             .iter()
             .map(|finding| lint_diagnostic(&mapper, finding))
             .collect(),
@@ -41,10 +42,10 @@ pub fn diagnostics(text: &str, settings: &LintSettings) -> Vec<Diagnostic> {
 /// [`Fix`]: monkey_c_linter::Fix
 pub fn lints(
     text: &str,
-    settings: &LintSettings,
+    selected: impl Fn(&str) -> bool,
 ) -> Option<(ParseOutput, Vec<monkey_c_linter::Diagnostic>)> {
     let output = Parser::new(text).parse().ok()?;
-    let findings = lint_selected(&output, text, |rule| settings.selects(rule));
+    let findings = lint_selected(&output, text, selected);
 
     Some((output, findings))
 }
@@ -82,6 +83,7 @@ pub fn format(text: &str, settings: &FormatSettings) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use monkey_c_config::LintSettings;
 
     #[test]
     fn disabled_lints_are_not_published_or_offered_as_actions() {
@@ -91,9 +93,9 @@ mod tests {
             ..LintSettings::default()
         };
 
-        assert!(diagnostics(text, &settings).is_empty());
+        assert!(diagnostics(text, |rule| settings.selects(rule)).is_empty());
 
-        let (_, findings) = lints(text, &settings).expect("parses");
+        let (_, findings) = lints(text, |rule| settings.selects(rule)).expect("parses");
         assert!(findings.is_empty());
     }
 }

@@ -190,6 +190,7 @@ impl FormatArgs {
             line_width: self.line_width,
             alignment: flag_pair(self.alignment, self.no_alignment),
             short_array_element_width: self.short_array_element_width,
+            ..FormatConfig::default()
         }
     }
 }

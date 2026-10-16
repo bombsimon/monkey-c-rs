@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use std::collections::BTreeMap;
+
 /// Which lint rules run, resolved. `enable` empty means "every rule"; a
 /// non-empty `enable` is an allowlist. `disable` always subtracts, so a rule
 /// named in both is silenced.
@@ -45,14 +47,29 @@ impl LintSettings {
 }
 
 /// The `[lint]` table, and the shape of the CLI's `--enable`/`--disable`.
+///
+/// `exclude` and `per-file-ignores` only come from the file, and are read through
+/// [`PathRules`](crate::PathRules) since they depend on where the file is.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct LintConfig {
     pub enable: Option<Vec<String>>,
     pub disable: Option<Vec<String>>,
+    pub exclude: Option<Vec<String>>,
+    pub per_file_ignores: Option<BTreeMap<String, Vec<String>>>,
 }
 
 impl LintConfig {
+    /// Every rule name in `per-file-ignores`, for the same validation as
+    /// [`LintSettings::named_rules`].
+    pub fn per_file_rules(&self) -> impl Iterator<Item = &str> {
+        self.per_file_ignores
+            .iter()
+            .flat_map(BTreeMap::values)
+            .flatten()
+            .map(String::as_str)
+    }
+
     /// A layer from CLI list flags, where "not given" is an empty list rather
     /// than `None`. Empty lists must not overlay, or passing neither flag would
     /// wipe the file's selection.
@@ -60,6 +77,7 @@ impl LintConfig {
         Self {
             enable: (!enable.is_empty()).then(|| enable.to_vec()),
             disable: (!disable.is_empty()).then(|| disable.to_vec()),
+            ..Self::default()
         }
     }
 }

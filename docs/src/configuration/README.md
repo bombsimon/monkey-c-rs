@@ -51,9 +51,14 @@ rafiki: rafiki.toml: TOML parse error at line 2, column 1
   |
 2 | line_width = 40
   | ^^^^^^^^^^
-unknown field `line_width`, expected one of `line-width`, `alignment`, `short-array-element-width`
+unknown field `line_width`, expected one of `line-width`, `alignment`, `short-array-element-width`, `exclude`
 ```
 
 On the command line that stops the run with exit code `2`. The language server
 shows the error in your editor instead and carries on with the defaults, so you
 keep your diagnostics while you fix the file.
+
+An invalid glob in an `exclude` or `per-file-ignores` setting is reported the
+same way, except that the language server only drops that one glob and keeps
+the rest of the file, so a typo doesn't start formatting the files your other
+excludes protect.

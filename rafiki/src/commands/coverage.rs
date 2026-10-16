@@ -14,7 +14,7 @@
 //! under a fixed `bin/` regardless of which subdirectory it is invoked from.
 
 use comfy_table::Table;
-use monkey_c_config::FilesSettings;
+use monkey_c_config::PathMatcher;
 use monkey_c_coverage::{
     FunctionSite, coverage_jungle, instrument, manifest_line, parse_hits, parse_manifest_line,
     runtime_module,
@@ -388,12 +388,14 @@ fn project_root() -> io::Result<PathBuf> {
 /// alongside `./source/A.mc`) dedupe to one entry instead of instrumenting
 /// the same file twice under different ids.
 fn collect_mc_files(root: &Path, paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
-    let settings = FilesSettings {
-        exclude: vec!["bin/**".to_string()],
-        respect_gitignore: false,
-    };
+    let build_output = PathMatcher::new(root, &["/bin/".to_string()], "/bin/", None)
+        .expect("the built-in glob is valid");
 
-    let files = discovery::collect(paths, &settings, root)?;
+    // Only directories are checked, so a walk skips `bin/` while a file named on the command line
+    // is always used.
+    let files = discovery::collect(paths, false, move |path, is_dir| {
+        is_dir && build_output.is_match(path, is_dir)
+    })?;
 
     let mut files: Vec<PathBuf> = files
         .iter()
@@ -640,6 +642,28 @@ mod tests {
              FNF:2\n\
              FNH:1\n\
              end_of_record\n"
+        );
+    }
+
+    #[test]
+    fn build_output_is_skipped_by_a_walk_but_not_when_named() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let root = dir.path();
+        fs::create_dir_all(root.join("bin")).expect("create bin");
+        fs::create_dir_all(root.join("source")).expect("create source");
+        fs::write(root.join("bin/Helper.mc"), "").expect("write build output");
+        fs::write(root.join("source/A.mc"), "").expect("write source");
+
+        let walked = collect_mc_files(root, &[root.to_path_buf()]).expect("walks");
+        let named = collect_mc_files(root, &[root.join("bin/Helper.mc")]).expect("collects");
+
+        assert_eq!(
+            walked,
+            vec![fs::canonicalize(root.join("source/A.mc")).expect("exists")]
+        );
+        assert_eq!(
+            named,
+            vec![fs::canonicalize(root.join("bin/Helper.mc")).expect("exists")]
         );
     }
 

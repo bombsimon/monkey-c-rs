@@ -6,6 +6,7 @@ use monkey_c_linter::{Diagnostic, Fix, apply_fixes, lint_selected, rules};
 
 use std::fs;
 use std::io;
+use std::path::Path;
 
 use crate::cli::{GlobalArgs, LintArgs};
 use crate::diagnostics::{self, Renderer};
@@ -32,22 +33,33 @@ pub fn run(global: &GlobalArgs, args: &LintArgs) -> io::Result<bool> {
         .with_overrides(&config.files)
         .with_overrides(&args.files.to_config());
 
-    validate_rule_names(&lint_settings)?;
+    validate_rule_names(
+        lint_settings
+            .named_rules()
+            .chain(config.lint.per_file_rules()),
+    )?;
 
-    let exclude_root = loaded.exclude_root(&args.files.exclude)?;
+    let path_rules = settings::path_rules(&loaded, &files, &args.files.exclude)?;
+    let walk_rules = path_rules.clone();
+    let excluded = move |path: &Path, is_dir| !walk_rules.lints(path, is_dir);
 
-    runner::each_target(&args.paths, &files, &exclude_root, |target| {
-        lint_target(target, args.fix, &lint_settings, &renderer)
+    runner::each_target(&args.paths, files.respect_gitignore, excluded, |target| {
+        // Stdin has no path for `per-file-ignores` to match.
+        let ignored = match target {
+            Target::Stdin => Vec::new(),
+            Target::File(path) => path_rules.ignored_rules(path),
+        };
+
+        let selected = |rule: &str| lint_settings.selects(rule) && !ignored.contains(&rule);
+
+        lint_target(target, args.fix, &selected, &renderer)
     })
 }
 
 /// Reject rule names no rule answers to. A misspelling in `enable` would
 /// otherwise silence every rule and look like a clean run.
-fn validate_rule_names(settings: &LintSettings) -> io::Result<()> {
-    let unknown: Vec<&str> = settings
-        .named_rules()
-        .filter(|name| !rules::exists(name))
-        .collect();
+fn validate_rule_names<'a>(names: impl Iterator<Item = &'a str>) -> io::Result<()> {
+    let unknown: Vec<&str> = names.filter(|name| !rules::exists(name)).collect();
 
     if unknown.is_empty() {
         return Ok(());
@@ -73,7 +85,7 @@ fn validate_rule_names(settings: &LintSettings) -> io::Result<()> {
 fn lint_target(
     target: Target<'_>,
     fix: bool,
-    settings: &LintSettings,
+    selected: &dyn Fn(&str) -> bool,
     renderer: &Renderer,
 ) -> io::Result<bool> {
     let label = target.label();
@@ -82,7 +94,7 @@ fn lint_target(
         Target::File(path) => renderer.read_source(path)?,
     };
 
-    let initial_findings = findings(&source, settings, &label, renderer)?;
+    let initial_findings = findings(&source, selected, &label, renderer)?;
 
     // Fixing is meaningless for stdin: there is no file to rewrite, so the
     // findings are reported instead.
@@ -96,7 +108,7 @@ fn lint_target(
             fs::write(path, &fixed)?;
         }
 
-        let remaining = self::findings(&fixed, settings, &label, renderer)?;
+        let remaining = self::findings(&fixed, selected, &label, renderer)?;
 
         (fixed, remaining)
     } else {
@@ -112,7 +124,7 @@ fn lint_target(
 
 fn findings(
     source: &str,
-    settings: &LintSettings,
+    selected: &dyn Fn(&str) -> bool,
     label: &str,
     renderer: &Renderer,
 ) -> io::Result<Vec<Diagnostic>> {
@@ -123,9 +135,7 @@ fn findings(
         diagnostics::already_reported()
     })?;
 
-    Ok(lint_selected(&output, source, |rule| {
-        settings.selects(rule)
-    }))
+    Ok(lint_selected(&output, source, selected))
 }
 
 /// Render a single finding to stderr — coloured caret with file:line:col, source
@@ -216,12 +226,13 @@ mod tests {
     #[test]
     fn every_real_rule_name_validates() {
         let all: Vec<&str> = rules::ALL.iter().map(|rule| rule.name).collect();
-        validate_rule_names(&settings(&all, &[])).expect("the real rule list is accepted");
+        validate_rule_names(settings(&all, &[]).named_rules())
+            .expect("the real rule list is accepted");
     }
 
     #[test]
     fn an_unknown_rule_name_is_rejected() {
-        let error = validate_rule_names(&settings(&["import-ordering"], &[]))
+        let error = validate_rule_names(settings(&["import-ordering"], &[]).named_rules())
             .expect_err("a misspelled rule is rejected");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
@@ -232,12 +243,14 @@ mod tests {
 
     #[test]
     fn an_unknown_disabled_rule_is_also_rejected() {
-        validate_rule_names(&settings(&[], &["nope"])).expect_err("disable is validated too");
+        validate_rule_names(settings(&[], &["nope"]).named_rules())
+            .expect_err("disable is validated too");
     }
 
     #[test]
     fn no_selection_validates() {
-        validate_rule_names(&LintSettings::default()).expect("an empty selection is fine");
+        validate_rule_names(LintSettings::default().named_rules())
+            .expect("an empty selection is fine");
     }
 
     #[test]
@@ -249,8 +262,8 @@ mod tests {
     #[test]
     fn a_parse_error_stops_linting_the_target() {
         let renderer = Renderer::new(false);
-        let error = findings("class {{{", &LintSettings::default(), "test", &renderer)
-            .expect_err("broken source fails");
+        let error =
+            findings("class {{{", &|_| true, "test", &renderer).expect_err("broken source fails");
 
         assert!(diagnostics::is_already_reported(&error));
     }
@@ -264,13 +277,7 @@ mod tests {
         let path = dir.path().join("Two.mc");
         fs::write(&path, "class A {\n}\nclass B {\n}\n").expect("write fixture");
 
-        let clean = lint_target(
-            Target::File(&path),
-            true,
-            &LintSettings::default(),
-            &renderer,
-        )
-        .expect("lints");
+        let clean = lint_target(Target::File(&path), true, &|_| true, &renderer).expect("lints");
 
         assert!(!clean, "an unfixable finding must fail the run");
     }
@@ -281,19 +288,15 @@ mod tests {
         // `Foo_bar` violates the naming convention for a class.
         let source = "class Foo_bar {\n}\n";
 
-        let all = findings(source, &LintSettings::default(), "test", &renderer).expect("lints");
+        let all = findings(source, &|_| true, "test", &renderer).expect("lints");
         assert!(
             all.iter().any(|f| f.rule == "naming-convention"),
             "the fixture triggers naming-convention"
         );
 
-        let filtered = findings(
-            source,
-            &settings(&[], &["naming-convention"]),
-            "test",
-            &renderer,
-        )
-        .expect("lints");
+        let settings = settings(&[], &["naming-convention"]);
+        let filtered =
+            findings(source, &|rule| settings.selects(rule), "test", &renderer).expect("lints");
         assert!(filtered.iter().all(|f| f.rule != "naming-convention"));
     }
 }

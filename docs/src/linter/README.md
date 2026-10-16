@@ -70,6 +70,11 @@ To silence a rule for a whole file, use `rafiki: file-ignore` before any code:
 Every comment has to name its rules; there's no way to silence all of them at
 once.
 
+To silence rules for whole paths, like every test file, use
+[`per-file-ignores`](../configuration/settings#per-file-ignores) in
+`rafiki.toml` instead. To skip linting some paths entirely, use
+[`exclude`](../configuration/settings#exclude-1).
+
 Suppressions are checked too. [`unused-ignore`](rules/unused-ignore) flags a
 rule with nothing left to silence, and `--fix` removes it.
 [`invalid-directive`](rules/invalid-directive) flags a `rafiki:` comment that

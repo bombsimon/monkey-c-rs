@@ -26,6 +26,7 @@ rafiki fmt source/ tests/Tests.mc
 Directories are searched for `.mc` files. A file you name directly is used
 whatever its extension. Hidden directories and anything `.gitignore` excludes
 are skipped, see [`[files]`](../configuration/settings#files) to change that.
+Paths in an `exclude` setting are skipped even when named.
 
 Pass `-` to read from stdin instead:
 

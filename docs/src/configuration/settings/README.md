@@ -34,6 +34,14 @@ off. See [Filling short arrays](../../formatter#filling-short-arrays).
 - **Flag:** `--short-array-element-width <COLUMNS>`
 - **Editor option:** `shortArrayElementWidth`
 
+### `exclude`
+
+Paths to never format, on top of [`[files]` `exclude`](#exclude-2), like a file
+of hand-aligned tables that's still linted. Uses the same globs, relative to
+`rafiki.toml`.
+
+- **Default:** `[]`
+
 ## `[lint]`
 
 ### `enable`
@@ -55,13 +63,43 @@ Rules to turn off. A rule listed in both `enable` and `disable` is turned off.
 A rule name that doesn't exist is an error. Otherwise a typo in `enable` would
 turn every rule off and look like a clean run.
 
+### `exclude`
+
+Paths to never lint, on top of [`[files]` `exclude`](#exclude-2), like test
+fixtures that are still formatted. Uses the same globs, relative to
+`rafiki.toml`.
+
+- **Default:** `[]`
+
+### `per-file-ignores`
+
+Rules to turn off for some paths only, as a table from a glob to a list of
+rules. Uses the same globs as `exclude`, relative to `rafiki.toml`.
+
+```toml
+[lint.per-file-ignores]
+"tests/**" = ["naming-convention"]
+"source/Strings.mc" = ["one-class-per-file", "naming-convention"]
+```
+
+- **Default:** `{}`
+
 ## `[files]`
 
 ### `exclude`
 
-Paths to skip, as globs in `.gitignore` syntax. In `rafiki.toml` they're
-relative to the file itself, and on the command line they're relative to the
-current directory.
+Paths to neither format nor lint, as globs in `.gitignore` syntax. In
+`rafiki.toml` they're relative to the file itself, and on the command line
+they're relative to the current directory.
+
+As in `.gitignore`, a `!` pattern brings back a path an earlier pattern
+excluded, but not a file inside an excluded directory. Use `gen/*` with
+`!gen/Keep.mc` rather than `gen/`.
+
+Excluded files are skipped even when you name them on the command line, so a
+pre-commit hook or editor integration that passes every changed file still
+leaves them alone. The language server skips them too. Use `--no-config` to
+reach one anyway.
 
 - **Default:** `[]`
 - **Flag:** `--exclude <GLOB>`, repeated for more than one

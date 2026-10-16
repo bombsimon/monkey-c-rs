@@ -38,14 +38,41 @@ impl ConfigSource {
     ///
     /// Finding no file is not an error — it is the same as an empty one — but a
     /// file that exists and cannot be read or parsed is.
-    pub fn resolve(&self, start: &Path) -> Result<Config, Error> {
-        match self {
-            Self::Defaults => Ok(Config::default()),
-            Self::File(path) => Config::load(path),
-            Self::Discover => Ok(Config::discover(start)?
-                .map(|(_, config)| config)
-                .unwrap_or_default()),
-        }
+    pub fn resolve(&self, start: &Path) -> Result<ResolvedConfig, Error> {
+        let found = match self {
+            Self::Defaults => None,
+            Self::File(path) => Some((path.clone(), Config::load(path)?)),
+            Self::Discover => Config::discover(start)?,
+        };
+
+        let resolved = match found {
+            Some((path, config)) => ResolvedConfig {
+                config,
+                path: Some(path),
+            },
+            None => ResolvedConfig::default(),
+        };
+
+        Ok(resolved)
+    }
+}
+
+/// A [`Config`] together with the file it was read from, if any.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResolvedConfig {
+    pub config: Config,
+    pub path: Option<PathBuf>,
+}
+
+impl ResolvedConfig {
+    /// The directory the file's relative paths belong to: its own, or the working directory when
+    /// no file was read.
+    pub fn directory(&self) -> PathBuf {
+        self.path
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
     }
 }
 
@@ -86,7 +113,8 @@ mod tests {
 
         let config = ConfigSource::Defaults
             .resolve(dir.path())
-            .expect("resolves");
+            .expect("resolves")
+            .config;
 
         assert_eq!(
             config,
@@ -103,7 +131,8 @@ mod tests {
 
         let config = ConfigSource::File(path)
             .resolve(Path::new("."))
-            .expect("resolves");
+            .expect("resolves")
+            .config;
 
         assert_eq!(config.format.line_width, Some(42));
     }
@@ -127,9 +156,10 @@ mod tests {
         let nested = dir.path().join("src").join("deep");
         fs::create_dir_all(&nested).expect("create dirs");
 
-        let config = ConfigSource::Discover.resolve(&nested).expect("resolves");
+        let resolved = ConfigSource::Discover.resolve(&nested).expect("resolves");
 
-        assert_eq!(config.format.line_width, Some(7));
+        assert_eq!(resolved.config.format.line_width, Some(7));
+        assert_eq!(resolved.directory(), dir.path());
     }
 
     #[test]
@@ -138,7 +168,8 @@ mod tests {
 
         let config = ConfigSource::Discover
             .resolve(dir.path())
-            .expect("resolves");
+            .expect("resolves")
+            .config;
 
         assert_eq!(config, Config::default());
     }

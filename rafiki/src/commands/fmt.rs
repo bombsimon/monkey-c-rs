@@ -7,6 +7,7 @@ use similar::{ChangeTag, TextDiff};
 
 use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 
 use crate::cli::{FmtArgs, GlobalArgs};
 use crate::diagnostics::{self, Renderer};
@@ -42,9 +43,10 @@ pub fn run(global: &GlobalArgs, args: &FmtArgs) -> io::Result<bool> {
     };
 
     let color = global.stdout_color();
-    let exclude_root = loaded.exclude_root(&args.files.exclude)?;
+    let path_rules = settings::path_rules(&loaded, &files, &args.files.exclude)?;
+    let excluded = move |path: &Path, is_dir| !path_rules.formats(path, is_dir);
 
-    runner::each_target(&args.paths, &files, &exclude_root, |target| {
+    runner::each_target(&args.paths, files.respect_gitignore, excluded, |target| {
         format_target(target, mode, &format, &renderer, color)
     })
 }
