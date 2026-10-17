@@ -125,8 +125,17 @@ impl PathMatcher {
     }
 }
 
-/// `path` made absolute with `.` and `..` resolved, without touching the filesystem.
+/// `path` made absolute with `.` and `..` resolved. Only a path with `..` touches the filesystem,
+/// since after a symlink `..` leads to the parent of the link's target rather than of the link.
 fn normalize(path: &Path) -> PathBuf {
+    if path
+        .components()
+        .any(|component| component == Component::ParentDir)
+        && let Ok(canonical) = fs::canonicalize(path)
+    {
+        return canonical;
+    }
+
     let absolute = path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
     let mut normalized = PathBuf::new();
 
@@ -329,6 +338,25 @@ mod tests {
             assert!(matcher.is_match(&link.join("gen/A.mc"), false), "{root:?}");
             assert!(matcher.is_match(&real.join("gen/A.mc"), false), "{root:?}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_parent_directory_after_a_symlink_leaves_the_target() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let project = fs::canonicalize(dir.path())
+            .expect("canonical")
+            .join("project");
+        fs::create_dir_all(project.join("src")).expect("create src");
+        fs::create_dir_all(project.join("gen")).expect("create gen");
+        fs::write(project.join("gen/A.mc"), "").expect("write source");
+
+        let link = dir.path().join("link");
+        unix::fs::symlink(project.join("src"), &link).expect("symlink");
+
+        let matcher = matcher(&project, &["gen/**"]);
+
+        assert!(matcher.is_match(&link.join("../gen/A.mc"), false));
     }
 
     /// The rules in `text` for a `rafiki.toml` in `/project`, without `--exclude`.
