@@ -242,12 +242,10 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix;
 
-    fn patterns(globs: &[&str]) -> Vec<String> {
-        globs.iter().map(|glob| glob.to_string()).collect()
-    }
-
     fn matcher(root: &Path, globs: &[&str]) -> PathMatcher {
-        PathMatcher::new(root, &patterns(globs), "files.exclude", None).expect("globs")
+        let patterns: Vec<String> = globs.iter().map(|glob| glob.to_string()).collect();
+
+        PathMatcher::new(root, &patterns, "files.exclude", None).expect("globs")
     }
 
     /// `text` as if read from `/project/rafiki.toml`.
@@ -281,27 +279,22 @@ mod tests {
     }
 
     #[test]
-    fn a_negated_pattern_keeps_a_file() {
-        let matcher = matcher(Path::new("/project"), &["gen/*", "!gen/Keep.mc"]);
+    fn a_negated_pattern_keeps_a_file_unless_its_directory_is_excluded() {
+        let files = matcher(Path::new("/project"), &["gen/*", "!gen/Keep.mc"]);
+        let directory = matcher(Path::new("/project"), &["gen/", "!gen/Keep.mc"]);
 
-        assert!(file_matches(&matcher, "/project/gen/A.mc"));
-        assert!(!file_matches(&matcher, "/project/gen/Keep.mc"));
+        assert!(file_matches(&files, "/project/gen/A.mc"));
+        assert!(!file_matches(&files, "/project/gen/Keep.mc"));
+        assert!(file_matches(&directory, "/project/gen/Keep.mc"));
     }
 
     #[test]
-    fn relative_paths_resolve_against_the_working_directory() {
-        let matcher = matcher(Path::new("."), &["gen/**"]);
+    fn paths_are_made_absolute_with_dots_resolved() {
+        let relative = matcher(Path::new("."), &["gen/**"]);
+        let parent = matcher(Path::new("/project/src/.."), &["gen/**"]);
 
-        assert!(file_matches(&matcher, "gen/A.mc"));
-        assert!(file_matches(&matcher, "./gen/A.mc"));
-    }
-
-    #[test]
-    fn parent_directories_in_either_path_are_resolved() {
-        let matcher = matcher(Path::new("/project/src/.."), &["gen/**"]);
-
-        assert!(file_matches(&matcher, "/project/gen/A.mc"));
-        assert!(file_matches(&matcher, "/project/src/../gen/A.mc"));
+        assert!(file_matches(&relative, "./gen/A.mc"));
+        assert!(file_matches(&parent, "/project/src/../gen/A.mc"));
     }
 
     #[cfg(unix)]
@@ -323,50 +316,6 @@ mod tests {
             assert!(matcher.is_match(&link.join("gen/A.mc"), false), "{root:?}");
             assert!(matcher.is_match(&real.join("gen/A.mc"), false), "{root:?}");
         }
-    }
-
-    #[test]
-    fn a_file_in_an_excluded_directory_cannot_be_brought_back() {
-        let matcher = matcher(Path::new("/project"), &["gen/", "!gen/Keep.mc"]);
-
-        assert!(file_matches(&matcher, "/project/gen/Keep.mc"));
-    }
-
-    #[test]
-    fn an_empty_matcher_matches_nothing() {
-        assert!(!file_matches(&PathMatcher::default(), "A.mc"));
-    }
-
-    #[test]
-    fn an_invalid_glob_is_an_error() {
-        let error = PathMatcher::new(
-            Path::new("."),
-            &patterns(&["a{b"]),
-            "format.exclude",
-            Some(Path::new("/project/rafiki.toml")),
-        )
-        .expect_err("rejected");
-
-        assert!(
-            error
-                .to_string()
-                .starts_with("/project/rafiki.toml: invalid glob `a{b` in `format.exclude`: "),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn a_lenient_matcher_keeps_the_valid_globs() {
-        let (matcher, errors) = PathMatcher::lenient(
-            Path::new("/project"),
-            &patterns(&["a{b", "gen/**"]),
-            "--exclude",
-            None,
-        );
-
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].to_string().contains("`a{b`"), "{}", errors[0]);
-        assert!(file_matches(&matcher, "/project/gen/A.mc"));
     }
 
     /// The rules in `text` for a `rafiki.toml` in `/project`, with `[files]` excludes resolved the

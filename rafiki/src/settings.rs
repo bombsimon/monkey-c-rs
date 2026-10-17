@@ -160,21 +160,7 @@ mod tests {
     }
 
     #[test]
-    fn cli_excludes_get_around_an_invalid_glob_in_the_file() {
-        let loaded = ResolvedConfig {
-            config: toml_config("[files]\nexclude = [\"a{b\"]\n"),
-            path: None,
-        };
-        let files = FilesSettings {
-            exclude: vec!["gen/**".to_string()],
-            ..FilesSettings::default()
-        };
-
-        path_rules(&loaded, &files, &files.exclude).expect("the file's globs are replaced");
-    }
-
-    #[test]
-    fn an_invalid_glob_names_its_file_and_setting() {
+    fn an_invalid_glob_names_where_it_came_from() {
         let loaded = ResolvedConfig {
             config: toml_config("[files]\nexclude = [\"a{b\"]\n"),
             path: Some(PathBuf::from("project/rafiki.toml")),
@@ -196,6 +182,14 @@ mod tests {
                 .starts_with("invalid glob `a{b` in `--exclude`"),
             "{error}"
         );
+
+        // `--exclude` replaces the file's globs, so it gets around a bad one there.
+        let flags = vec!["gen/**".to_string()];
+        let files = FilesSettings {
+            exclude: flags.clone(),
+            ..files
+        };
+        path_rules(&loaded, &files, &flags).expect("the file's globs are replaced");
     }
 
     fn toml_config(text: &str) -> Config {

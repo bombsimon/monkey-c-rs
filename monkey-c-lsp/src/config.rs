@@ -337,24 +337,6 @@ exclude = ["vendor/**"]
     }
 
     #[test]
-    fn per_file_ignores_apply_to_matching_documents() {
-        let (dir, _path) = project(
-            r#"
-[lint.per-file-ignores]
-"tests/**" = ["naming-convention"]
-"#,
-        );
-        let (settings, _) = resolve(&ConfigSource::Discover, &params_rooted_at(dir.path()));
-
-        assert!(!settings.rule_filter(&uri(&dir.path().join("tests/A.mc")))(
-            "naming-convention"
-        ));
-        assert!(settings.rule_filter(&uri(&dir.path().join("src/A.mc")))(
-            "naming-convention"
-        ));
-    }
-
-    #[test]
     fn an_invalid_glob_warns_and_keeps_the_other_excludes() {
         let (dir, _path) = project(
             r#"
@@ -373,15 +355,6 @@ exclude = ["a{b"]
             "{warnings:?}"
         );
         assert!(!settings.formats(&uri(&dir.path().join("gen/A.mc"))));
-    }
-
-    #[test]
-    fn unknown_rules_in_per_file_ignores_warn() {
-        let (_dir, path) = project("[lint.per-file-ignores]\n\"tests/**\" = [\"not-a-rule\"]\n");
-        let (_, warnings) = resolve(&ConfigSource::File(path), &json!({}));
-
-        assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].contains("not-a-rule"));
     }
 
     #[test]

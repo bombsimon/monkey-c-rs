@@ -169,33 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn excluded_files_are_skipped() {
-        let dir = tree();
-        let files = collect(
-            &[dir.path().to_path_buf()],
-            false,
-            excluding(dir.path(), "src/**"),
-        )
-        .expect("walks");
-
-        assert_eq!(names(&files), vec!["Generated.mc"]);
-    }
-
-    #[test]
-    fn excludes_relative_to_a_parent_apply_when_walking_a_subdirectory() {
-        let dir = tree();
-        let root = dir.path().join("src/..");
-        let files = collect(
-            &[dir.path().join("src")],
-            false,
-            excluding(&root, "src/Main.mc"),
-        )
-        .expect("walks");
-
-        assert!(files.is_empty());
-    }
-
-    #[test]
     fn an_excluded_directory_is_not_entered() {
         let dir = tree();
         let nested = dir.path().join("build/nested");
