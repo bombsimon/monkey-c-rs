@@ -11,7 +11,10 @@
 //! are ignored and missing keys fall through, so old and new clients
 //! interoperate.
 
-use monkey_c_config::{Config, ConfigSource, FormatConfig, FormatSettings, LintSettings};
+use gen_lsp_types::Uri;
+use monkey_c_config::{
+    ConfigSource, FormatConfig, FormatSettings, LintSettings, PathRules, ResolvedConfig,
+};
 use monkey_c_linter::rules;
 use serde::Deserialize;
 
@@ -29,10 +32,32 @@ struct InitializationOptions {
 }
 
 /// Settings used throughout one language-server session.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Default)]
 pub struct Settings {
     pub format: FormatSettings,
     pub lint: LintSettings,
+    path_rules: PathRules,
+}
+
+/// Documents without a path, like an untitled buffer, are never excluded and get no
+/// `per-file-ignores`, the same as stdin on the command line.
+impl Settings {
+    pub fn formats(&self, uri: &Uri) -> bool {
+        uri::to_path(&uri.0).is_none_or(|path| self.path_rules.formats(&path, false))
+    }
+
+    pub fn lints(&self, uri: &Uri) -> bool {
+        uri::to_path(&uri.0).is_none_or(|path| self.path_rules.lints(&path, false))
+    }
+
+    /// Which rules run for the document at `uri`.
+    pub fn rule_filter(&self, uri: &Uri) -> impl Fn(&str) -> bool + '_ {
+        let ignored = uri::to_path(&uri.0)
+            .map(|path| self.path_rules.ignored_rules(&path))
+            .unwrap_or_default();
+
+        move |rule| self.lint.selects(rule) && !ignored.contains(&rule)
+    }
 }
 
 impl InitializationOptions {
@@ -41,6 +66,7 @@ impl InitializationOptions {
             line_width: self.line_width,
             alignment: self.alignment,
             short_array_element_width: self.short_array_element_width,
+            ..FormatConfig::default()
         }
     }
 }
@@ -52,12 +78,12 @@ impl InitializationOptions {
 pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, Vec<String>) {
     let mut warnings = Vec::new();
 
-    let file = match file_config(source, params) {
-        Ok(config) => config,
+    let mut resolved = match file_config(source, params) {
+        Ok(resolved) => resolved,
         Err(message) => {
             warnings.push(message);
 
-            Config::default()
+            ResolvedConfig::default()
         }
     };
 
@@ -67,36 +93,63 @@ pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, 
         .unwrap_or_default();
 
     let format = FormatSettings::default()
-        .with_overrides(&file.format)
+        .with_overrides(&resolved.config.format)
         .with_overrides(&options.to_config());
-    let mut lint = LintSettings::default().with_overrides(&file.lint);
+    let mut lint = LintSettings::default().with_overrides(&resolved.config.lint);
 
     let unknown: Vec<_> = lint
         .named_rules()
+        .chain(resolved.config.lint.per_file_rules())
         .filter(|name| !rules::exists(name))
+        .map(str::to_string)
         .collect();
+    // Only the unknown names are dropped, so one typo doesn't turn back on every rule the
+    // project disabled.
     if !unknown.is_empty() {
         warnings.push(format!(
             "unknown lint rules in rafiki.toml: {}",
             unknown.join(", ")
         ));
-        lint = LintSettings::default();
+        lint.enable.retain(|name| rules::exists(name));
+        lint.disable.retain(|name| rules::exists(name));
+
+        for listed in resolved
+            .config
+            .lint
+            .per_file_ignores
+            .iter_mut()
+            .flat_map(|map| map.values_mut())
+        {
+            listed.retain(|name| rules::exists(name));
+        }
     }
 
-    (Settings { format, lint }, warnings)
+    let (path_rules, glob_errors) = PathRules::lenient(&resolved, &[]);
+    warnings.extend(glob_errors.iter().map(ToString::to_string));
+
+    let settings = Settings {
+        format,
+        lint,
+        path_rules,
+    };
+
+    (settings, warnings)
 }
 
-/// The `[format]` table `source` resolves to, searching from the workspace root
+/// The configuration `source` resolves to, searching from the workspace root
 /// the client reported.
 ///
 /// A session with no workspace root has nothing to search: the server's working
 /// directory belongs to whoever spawned the editor and may have no relation to
 /// the code being edited, so discovering from there could silently apply a
 /// stranger's settings.
-fn file_config(source: &ConfigSource, params: &serde_json::Value) -> Result<Config, String> {
+fn file_config(
+    source: &ConfigSource,
+    params: &serde_json::Value,
+) -> Result<ResolvedConfig, String> {
     let root = match workspace_root(params) {
         Some(root) => root,
-        None if *source == ConfigSource::Discover => return Ok(Config::default()),
+        None if *source == ConfigSource::Discover => return Ok(ResolvedConfig::default()),
         None => PathBuf::new(),
     };
 
@@ -215,13 +268,84 @@ mod tests {
     }
 
     #[test]
-    fn unknown_lint_rules_warn_and_fall_back_to_defaults() {
+    fn unknown_lint_rules_warn_and_are_dropped() {
         let (_dir, path) = project("[lint]\nenable = [\"not-a-rule\"]\n");
         let (settings, warnings) = resolve(&ConfigSource::File(path), &json!({}));
 
         assert!(settings.lint.selects("naming-convention"));
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("not-a-rule"));
+    }
+
+    #[test]
+    fn an_unknown_rule_keeps_the_rest_of_the_selection() {
+        let (dir, _path) = project(
+            r#"
+[lint]
+disable = ["naming-convention"]
+
+[lint.per-file-ignores]
+"tests/**" = ["naming-conventon", "import-order"]
+"#,
+        );
+        let (settings, warnings) = resolve(&ConfigSource::Discover, &params_rooted_at(dir.path()));
+        let test_file = settings.rule_filter(&uri(&dir.path().join("tests/A.mc")));
+
+        assert_eq!(warnings.len(), 1);
+        assert!(!settings.lint.selects("naming-convention"));
+        assert!(!test_file("import-order"));
+    }
+
+    fn uri(path: &std::path::Path) -> Uri {
+        Uri(format!("file://{}", path.display()))
+    }
+
+    #[test]
+    fn excluded_documents_are_neither_formatted_nor_linted() {
+        let (dir, _path) = project(
+            r#"
+[files]
+exclude = ["gen/**"]
+
+[format]
+exclude = ["tables/**"]
+
+[lint]
+exclude = ["vendor/**"]
+"#,
+        );
+        let (settings, warnings) = resolve(&ConfigSource::Discover, &params_rooted_at(dir.path()));
+        let root = dir.path();
+
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(!settings.formats(&uri(&root.join("gen/A.mc"))));
+        assert!(!settings.lints(&uri(&root.join("gen/A.mc"))));
+        assert!(!settings.formats(&uri(&root.join("tables/A.mc"))));
+        assert!(settings.lints(&uri(&root.join("tables/A.mc"))));
+        assert!(settings.formats(&uri(&root.join("vendor/A.mc"))));
+        assert!(!settings.lints(&uri(&root.join("vendor/A.mc"))));
+        assert!(settings.formats(&Uri("untitled:Untitled-1".to_string())));
+    }
+
+    #[test]
+    fn an_invalid_glob_warns_and_keeps_the_other_excludes() {
+        let (dir, _path) = project(
+            r#"
+[files]
+exclude = ["gen/**"]
+
+[lint]
+exclude = ["a{b"]
+"#,
+        );
+        let (settings, warnings) = resolve(&ConfigSource::Discover, &params_rooted_at(dir.path()));
+
+        assert_eq!(warnings.len(), 1);
+        assert!(
+            warnings[0].contains("rafiki.toml: invalid glob `a{b` in `lint.exclude`"),
+            "{warnings:?}"
+        );
+        assert!(!settings.formats(&uri(&dir.path().join("gen/A.mc"))));
     }
 
     #[test]

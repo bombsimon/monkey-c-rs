@@ -190,6 +190,7 @@ impl FormatArgs {
             line_width: self.line_width,
             alignment: flag_pair(self.alignment, self.no_alignment),
             short_array_element_width: self.short_array_element_width,
+            ..FormatConfig::default()
         }
     }
 }
@@ -214,8 +215,8 @@ pub struct FileArgs {
 impl FileArgs {
     pub fn to_config(&self) -> FilesConfig {
         FilesConfig {
-            exclude: (!self.exclude.is_empty()).then(|| self.exclude.clone()),
             respect_gitignore: flag_pair(self.respect_gitignore, self.no_respect_gitignore),
+            ..FilesConfig::default()
         }
     }
 }

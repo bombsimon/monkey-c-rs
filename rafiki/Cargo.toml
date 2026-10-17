@@ -18,7 +18,7 @@ ariadne = "0.6"
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
 comfy-table.workspace = true
-ignore = "0.4"
+ignore.workspace = true
 monkey-c-config.workspace = true
 monkey-c-coverage.workspace = true
 monkey-c-formatter.workspace = true

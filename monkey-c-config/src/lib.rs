@@ -15,18 +15,20 @@ mod error;
 mod files;
 mod format;
 mod lint;
+mod paths;
 mod source;
 
 pub use crate::error::Error;
 pub use crate::files::{FilesConfig, FilesSettings};
 pub use crate::format::{FormatConfig, FormatSettings};
 pub use crate::lint::{LintConfig, LintSettings};
-pub use crate::source::ConfigSource;
+pub use crate::paths::{PathMatcher, PathRules};
+pub use crate::source::{ConfigSource, ResolvedConfig};
 
 use serde::Deserialize;
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{self, Path, PathBuf};
 
 /// The configuration file name looked for when walking up from a target path.
 pub const FILE_NAME: &str = "rafiki.toml";
@@ -81,8 +83,11 @@ impl Config {
 
 /// The nearest existing `rafiki.toml` at or above `start`.
 fn find_config_file(start: &Path) -> Option<PathBuf> {
+    // A relative path runs out of ancestors at its first component, so `.` would never reach the
+    // directories above the working directory.
+    let start = path::absolute(start).ok()?;
     let start = if start.is_dir() {
-        start
+        start.as_path()
     } else {
         start.parent()?
     };

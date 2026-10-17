@@ -14,7 +14,7 @@ mod config;
 mod position;
 mod uri;
 
-use monkey_c_config::{ConfigSource, FormatSettings};
+use monkey_c_config::ConfigSource;
 use monkey_c_linter::suppression;
 
 use std::collections::HashMap;
@@ -88,7 +88,7 @@ fn main_loop(
                 handle_request(connection, &documents, settings, request)?;
             }
             Message::Notification(notification) => {
-                handle_notification(connection, &mut documents, &settings.lint, notification)?;
+                handle_notification(connection, &mut documents, settings, notification)?;
             }
             Message::Response(_) => {}
         }
@@ -108,11 +108,11 @@ fn handle_request(
 
     if method == DocumentFormattingRequest::METHOD {
         let params: DocumentFormattingParams = serde_json::from_value(request.params)?;
-        let edits = format(documents, &settings.format, &params);
+        let edits = format(documents, settings, &params);
         respond(connection, id, serde_json::to_value(edits)?)?;
     } else if method == CodeActionRequest::METHOD {
         let params: CodeActionParams = serde_json::from_value(request.params)?;
-        let actions = code_actions(documents, &settings.lint, &params);
+        let actions = code_actions(documents, settings, &params);
         respond(connection, id, serde_json::to_value(actions)?)?;
     } else {
         // Unknown request: reply with an empty success so the client isn't left
@@ -126,7 +126,7 @@ fn handle_request(
 fn handle_notification(
     connection: &Connection,
     documents: &mut Documents,
-    lint_settings: &monkey_c_config::LintSettings,
+    settings: &config::Settings,
     notification: Notification,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let method = LspNotificationMethod::from(notification.method.as_str());
@@ -136,7 +136,7 @@ fn handle_notification(
             serde_json::from_value(notification.params)?;
         let uri = params.text_document.uri;
         documents.insert(uri.clone(), params.text_document.text);
-        publish(connection, documents, lint_settings, &uri)?;
+        publish(connection, documents, settings, &uri)?;
     } else if method == DidChangeTextDocumentNotification::METHOD {
         let params: gen_lsp_types::DidChangeTextDocumentParams =
             serde_json::from_value(notification.params)?;
@@ -144,7 +144,7 @@ fn handle_notification(
         if let Some(change) = params.content_changes.into_iter().next_back() {
             let uri = params.text_document.text_document_identifier.uri;
             documents.insert(uri.clone(), content_change_text(change));
-            publish(connection, documents, lint_settings, &uri)?;
+            publish(connection, documents, settings, &uri)?;
         }
     } else if method == DidCloseTextDocumentNotification::METHOD {
         let params: DidCloseTextDocumentParams = serde_json::from_value(notification.params)?;
@@ -165,18 +165,23 @@ fn content_change_text(change: TextDocumentContentChangeEvent) -> String {
     }
 }
 
-/// Analyse the document at `uri` and publish its diagnostics.
+/// Analyse the document at `uri` and publish its diagnostics, or none when it's excluded from
+/// linting.
 fn publish(
     connection: &Connection,
     documents: &Documents,
-    settings: &monkey_c_config::LintSettings,
+    settings: &config::Settings,
     uri: &Uri,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
     let Some(text) = documents.get(uri) else {
         return Ok(());
     };
 
-    let diagnostics = analysis::diagnostics(text, settings);
+    if !settings.lints(uri) {
+        return send_diagnostics(connection, uri.clone(), Vec::new());
+    }
+
+    let diagnostics = analysis::diagnostics(text, settings.rule_filter(uri));
     send_diagnostics(connection, uri.clone(), diagnostics)
 }
 
@@ -218,10 +223,10 @@ fn send_diagnostics(
 
 /// The formatting edits for a document: a single edit replacing the whole
 /// document with its formatted text. Returns no edits when the document is
-/// unknown, doesn't parse, or is already formatted.
+/// unknown, excluded from formatting, doesn't parse, or is already formatted.
 fn format(
     documents: &Documents,
-    settings: &FormatSettings,
+    settings: &config::Settings,
     params: &DocumentFormattingParams,
 ) -> Vec<TextEdit> {
     let uri = &params.text_document.uri;
@@ -229,7 +234,11 @@ fn format(
         return Vec::new();
     };
 
-    let Some(formatted) = analysis::format(text, settings) else {
+    if !settings.formats(uri) {
+        return Vec::new();
+    }
+
+    let Some(formatted) = analysis::format(text, &settings.format) else {
         return Vec::new();
     };
 
@@ -258,7 +267,7 @@ fn format(
 ///   editor can run on save to apply all lint fixes at once.
 fn code_actions(
     documents: &Documents,
-    settings: &monkey_c_config::LintSettings,
+    settings: &config::Settings,
     params: &CodeActionParams,
 ) -> Vec<CodeActionResponse> {
     let uri = &params.text_document.uri;
@@ -266,7 +275,11 @@ fn code_actions(
         return Vec::new();
     };
 
-    let Some((output, findings)) = analysis::lints(text, settings) else {
+    if !settings.lints(uri) {
+        return Vec::new();
+    }
+
+    let Some((output, findings)) = analysis::lints(text, settings.rule_filter(uri)) else {
         return Vec::new();
     };
 
@@ -450,8 +463,6 @@ fn respond(
 mod tests {
     use super::*;
 
-    use monkey_c_config::LintSettings;
-
     /// The titles of the `quickfix` actions offered for the whole of `line` in `text`.
     fn quick_fix_titles(text: &str, line: u32) -> Vec<String> {
         let uri: Uri = serde_json::from_value(serde_json::json!("file:///a.mc")).expect("uri");
@@ -466,7 +477,7 @@ mod tests {
         }))
         .expect("params");
 
-        code_actions(&documents, &LintSettings::default(), &params)
+        code_actions(&documents, &config::Settings::default(), &params)
             .into_iter()
             .filter_map(|action| match action {
                 CodeActionResponse::CodeAction(action) => Some(action.title),

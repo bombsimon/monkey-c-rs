@@ -3,37 +3,12 @@
 //! Only the file layer lives here; each command overlays its own flags on top,
 //! since which flags exist differs per command.
 
-use monkey_c_config::Config;
+use monkey_c_config::ResolvedConfig;
 
-use std::env;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::cli::GlobalArgs;
-
-/// A configuration together with the directory its relative paths belong to.
-#[derive(Debug)]
-pub struct LoadedConfig {
-    pub config: Config,
-    pub directory: PathBuf,
-}
-
-impl LoadedConfig {
-    /// Where `--exclude` globs on the command line resolve relative to.
-    ///
-    /// A CLI `--exclude` replaces the file's list rather than extending it (see
-    /// `FilesSettings::with_overrides`), so once the command line sets any, the
-    /// effective excludes are CLI-only and should resolve against the working
-    /// directory; otherwise they come from the file and resolve against its
-    /// directory.
-    pub fn exclude_root(&self, cli_excludes: &[String]) -> io::Result<PathBuf> {
-        if cli_excludes.is_empty() {
-            Ok(self.directory.clone())
-        } else {
-            env::current_dir()
-        }
-    }
-}
 
 /// Load the configuration for a run: the file named by `--config`, or the
 /// nearest `rafiki.toml` at or above `target`, or the defaults.
@@ -42,27 +17,8 @@ impl LoadedConfig {
 /// that `rafiki fmt some/project/File.mc` honours that project's settings. A run
 /// spanning several projects resolves one configuration from the first of them,
 /// which keeps a single invocation internally consistent.
-pub fn load(global: &GlobalArgs, target: Option<&Path>) -> io::Result<LoadedConfig> {
-    let root = discovery_root(target);
-    let source = global.config_source();
-
-    let (config, path) = match source {
-        monkey_c_config::ConfigSource::Defaults => (Config::default(), None),
-        monkey_c_config::ConfigSource::File(path) => (Config::load(&path)?, Some(path)),
-        monkey_c_config::ConfigSource::Discover => match Config::discover(&root)? {
-            Some((path, config)) => (config, Some(path)),
-            None => (Config::default(), None),
-        },
-    };
-
-    let directory = path
-        .as_deref()
-        .and_then(Path::parent)
-        .filter(|path| !path.as_os_str().is_empty())
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    Ok(LoadedConfig { config, directory })
+pub fn load(global: &GlobalArgs, target: Option<&Path>) -> io::Result<ResolvedConfig> {
+    Ok(global.config_source().resolve(&discovery_root(target))?)
 }
 
 /// Where to start walking up from. Stdin (`-`) has no location of its own, so
@@ -79,6 +35,7 @@ mod tests {
     use super::*;
     use crate::cli::{Cli, Command};
     use clap::Parser;
+    use monkey_c_config::Config;
 
     use std::fs;
 
@@ -124,7 +81,7 @@ mod tests {
         let config = load(&global(&["rafiki", "fmt"]), Some(&file)).expect("loads");
 
         assert_eq!(config.config.format.line_width, Some(7));
-        assert_eq!(config.directory, dir.path());
+        assert_eq!(config.directory(), dir.path());
     }
 
     #[test]
@@ -149,34 +106,5 @@ mod tests {
     fn the_parsed_command_is_unaffected_by_global_flags() {
         let cli = Cli::try_parse_from(["rafiki", "--no-config", "lint"]).expect("parses");
         assert!(matches!(cli.command, Command::Lint(_)));
-    }
-
-    #[test]
-    fn exclude_root_follows_the_file_when_the_flag_is_unset() {
-        let loaded = LoadedConfig {
-            config: Config::default(),
-            directory: PathBuf::from("/project"),
-        };
-
-        assert_eq!(
-            loaded.exclude_root(&[]).expect("resolves"),
-            PathBuf::from("/project")
-        );
-    }
-
-    #[test]
-    fn exclude_root_follows_the_working_directory_when_the_flag_is_set() {
-        let loaded = LoadedConfig {
-            config: Config::default(),
-            directory: PathBuf::from("/project"),
-        };
-        let cwd = env::current_dir().expect("cwd");
-
-        assert_eq!(
-            loaded
-                .exclude_root(&["src/**".to_string()])
-                .expect("resolves"),
-            cwd
-        );
     }
 }

@@ -1,29 +1,24 @@
 use serde::Deserialize;
 
-/// Which files a directory walk yields, resolved.
+/// Which files a directory walk yields, resolved. The excludes are resolved by
+/// [`PathRules`](crate::PathRules) instead, since they depend on where they're
+/// set.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FilesSettings {
-    pub exclude: Vec<String>,
     pub respect_gitignore: bool,
 }
 
 impl Default for FilesSettings {
     fn default() -> Self {
         Self {
-            exclude: Vec::new(),
             respect_gitignore: true,
         }
     }
 }
 
 impl FilesSettings {
-    /// Overlay the keys `config` sets, with the same replace-not-extend rule for
-    /// lists as [`LintSettings`](crate::LintSettings).
+    /// Overlay the keys `config` sets.
     pub fn with_overrides(mut self, config: &FilesConfig) -> Self {
-        if let Some(exclude) = &config.exclude {
-            self.exclude = exclude.clone();
-        }
-
         if let Some(respect_gitignore) = config.respect_gitignore {
             self.respect_gitignore = respect_gitignore;
         }
@@ -53,6 +48,5 @@ mod tests {
         });
 
         assert!(!settings.respect_gitignore);
-        assert!(settings.exclude.is_empty());
     }
 }

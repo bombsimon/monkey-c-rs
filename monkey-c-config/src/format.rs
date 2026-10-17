@@ -42,12 +42,16 @@ impl FormatSettings {
 
 /// The `[format]` table. Also the shape of the CLI's formatting flags and of an
 /// LSP client's `initializationOptions`, so all three overlay identically.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+///
+/// `exclude` only comes from the file, and is read through
+/// [`PathRules`](crate::PathRules) since it depends on where the file is.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct FormatConfig {
     pub line_width: Option<usize>,
     pub alignment: Option<bool>,
     pub short_array_element_width: Option<usize>,
+    pub exclude: Option<Vec<String>>,
 }
 
 #[cfg(test)]
@@ -71,11 +75,13 @@ mod tests {
             line_width: Some(80),
             alignment: Some(false),
             short_array_element_width: Some(4),
+            ..FormatConfig::default()
         };
         let flags = FormatConfig {
             line_width: Some(100),
             alignment: None,
             short_array_element_width: Some(0),
+            ..FormatConfig::default()
         };
 
         let settings = FormatSettings::default()

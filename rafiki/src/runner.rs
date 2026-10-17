@@ -4,8 +4,6 @@
 //! need one failing file not to abort the rest of the run, so that plumbing
 //! lives here and the commands only say what to do with one target.
 
-use monkey_c_config::FilesSettings;
-
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -38,8 +36,8 @@ impl Target<'_> {
 /// the findings in every other one.
 pub fn each_target(
     paths: &[PathBuf],
-    files: &FilesSettings,
-    exclude_root: &Path,
+    respect_gitignore: bool,
+    excluded: impl Fn(&Path, bool) -> bool + Clone + Send + Sync + 'static,
     mut action: impl FnMut(Target<'_>) -> io::Result<bool>,
 ) -> io::Result<bool> {
     if paths.iter().any(|path| path == Path::new("-")) {
@@ -53,7 +51,7 @@ pub fn each_target(
         return action(Target::Stdin);
     }
 
-    let targets = discovery::collect(paths, files, exclude_root)?;
+    let targets = discovery::collect(paths, respect_gitignore, excluded)?;
     let mut all_clean = true;
 
     for target in &targets {
@@ -83,10 +81,8 @@ mod tests {
     #[test]
     fn stdin_cannot_be_mixed_with_paths() {
         let paths = vec![PathBuf::from("-"), PathBuf::from("src")];
-        let error = each_target(&paths, &FilesSettings::default(), Path::new("."), |_| {
-            Ok(true)
-        })
-        .expect_err("mixing is rejected");
+        let error =
+            each_target(&paths, true, |_, _| false, |_| Ok(true)).expect_err("mixing is rejected");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
     }
@@ -96,8 +92,8 @@ mod tests {
         let seen = RefCell::new(Vec::new());
         let clean = each_target(
             &[PathBuf::from("-")],
-            &FilesSettings::default(),
-            Path::new("."),
+            true,
+            |_, _| false,
             |target| {
                 seen.borrow_mut().push(target.label());
 
@@ -119,8 +115,8 @@ mod tests {
         let seen = RefCell::new(Vec::new());
         let clean = each_target(
             &[dir.path().to_path_buf()],
-            &FilesSettings::default(),
-            dir.path(),
+            true,
+            |_, _| false,
             |target| {
                 let label = target.label();
                 seen.borrow_mut().push(label.clone());
@@ -145,8 +141,8 @@ mod tests {
 
         let clean = each_target(
             &[dir.path().to_path_buf()],
-            &FilesSettings::default(),
-            dir.path(),
+            true,
+            |_, _| false,
             |_| Ok(false),
         )
         .expect("runs");
@@ -159,8 +155,8 @@ mod tests {
         let seen = RefCell::new(0);
         each_target(
             &[PathBuf::from("nope/missing.mc")],
-            &FilesSettings::default(),
-            Path::new("."),
+            true,
+            |_, _| false,
             |_| {
                 *seen.borrow_mut() += 1;
 
@@ -179,8 +175,8 @@ mod tests {
 
         let clean = each_target(
             &[dir.path().to_path_buf()],
-            &FilesSettings::default(),
-            dir.path(),
+            true,
+            |_, _| false,
             |_| Ok(false),
         )
         .expect("runs");
