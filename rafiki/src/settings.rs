@@ -3,36 +3,12 @@
 //! Only the file layer lives here; each command overlays its own flags on top,
 //! since which flags exist differs per command.
 
-use monkey_c_config::{FilesSettings, PathMatcher, PathRules, ResolvedConfig};
+use monkey_c_config::ResolvedConfig;
 
-use std::env;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::cli::GlobalArgs;
-
-/// The settings that depend on which file is checked, with `files` already resolved from
-/// `loaded` and the command line. Globs in the file resolve against its directory, but once
-/// `--exclude` has replaced the file's `[files]` excludes (see `FilesSettings::with_overrides`),
-/// those resolve against the working directory.
-pub fn path_rules(
-    loaded: &ResolvedConfig,
-    files: &FilesSettings,
-    cli_excludes: &[String],
-) -> io::Result<PathRules> {
-    let files_exclude = if cli_excludes.is_empty() {
-        PathMatcher::new(
-            &loaded.directory(),
-            &files.exclude,
-            "files.exclude",
-            loaded.path.as_deref(),
-        )?
-    } else {
-        PathMatcher::new(&env::current_dir()?, &files.exclude, "--exclude", None)?
-    };
-
-    Ok(PathRules::new(loaded, files_exclude)?)
-}
 
 /// Load the configuration for a run: the file named by `--config`, or the
 /// nearest `rafiki.toml` at or above `target`, or the defaults.
@@ -59,7 +35,7 @@ mod tests {
     use super::*;
     use crate::cli::{Cli, Command};
     use clap::Parser;
-    use monkey_c_config::{Config, FilesConfig};
+    use monkey_c_config::Config;
 
     use std::fs;
 
@@ -130,73 +106,5 @@ mod tests {
     fn the_parsed_command_is_unaffected_by_global_flags() {
         let cli = Cli::try_parse_from(["rafiki", "--no-config", "lint"]).expect("parses");
         assert!(matches!(cli.command, Command::Lint(_)));
-    }
-
-    #[test]
-    fn cli_excludes_replace_the_files_and_resolve_against_the_working_directory() {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let loaded = ResolvedConfig {
-            config: toml_config("[files]\nexclude = [\"bin/**\"]\n"),
-            path: Some(dir.path().join("rafiki.toml")),
-        };
-        let cwd = env::current_dir().expect("cwd");
-        let resolve = |flags: &[String]| {
-            let files = FilesSettings::default()
-                .with_overrides(&loaded.config.files)
-                .with_overrides(&FilesConfig {
-                    exclude: (!flags.is_empty()).then(|| flags.to_vec()),
-                    ..FilesConfig::default()
-                });
-
-            path_rules(&loaded, &files, flags).expect("resolves")
-        };
-
-        let from_file = resolve(&[]);
-        assert!(!from_file.formats(&dir.path().join("bin/A.mc"), false));
-
-        let from_flag = resolve(&["gen/**".to_string()]);
-        assert!(from_flag.formats(&dir.path().join("bin/A.mc"), false));
-        assert!(!from_flag.formats(&cwd.join("gen/A.mc"), false));
-    }
-
-    #[test]
-    fn an_invalid_glob_names_where_it_came_from() {
-        let loaded = ResolvedConfig {
-            config: toml_config("[files]\nexclude = [\"a{b\"]\n"),
-            path: Some(PathBuf::from("project/rafiki.toml")),
-        };
-        let files = FilesSettings::default().with_overrides(&loaded.config.files);
-
-        let error = path_rules(&loaded, &files, &[]).expect_err("rejected");
-        assert!(
-            error
-                .to_string()
-                .starts_with("project/rafiki.toml: invalid glob `a{b` in `files.exclude`"),
-            "{error}"
-        );
-
-        let error = path_rules(&loaded, &files, &["a{b".to_string()]).expect_err("rejected");
-        assert!(
-            error
-                .to_string()
-                .starts_with("invalid glob `a{b` in `--exclude`"),
-            "{error}"
-        );
-
-        // `--exclude` replaces the file's globs, so it gets around a bad one there.
-        let flags = vec!["gen/**".to_string()];
-        let files = FilesSettings {
-            exclude: flags.clone(),
-            ..files
-        };
-        path_rules(&loaded, &files, &flags).expect("the file's globs are replaced");
-    }
-
-    fn toml_config(text: &str) -> Config {
-        let dir = tempfile::tempdir().expect("temp dir");
-        let path = dir.path().join("rafiki.toml");
-        fs::write(&path, text).expect("write config");
-
-        Config::load(&path).expect("parses")
     }
 }

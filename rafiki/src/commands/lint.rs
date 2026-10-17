@@ -1,7 +1,7 @@
 //! `rafiki lint` — report, and optionally fix, lint findings.
 
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
-use monkey_c_config::{FilesSettings, LintSettings};
+use monkey_c_config::{FilesSettings, LintSettings, PathRules};
 use monkey_c_linter::{Diagnostic, Fix, apply_fixes, lint_selected, rules};
 
 use std::fs;
@@ -39,7 +39,7 @@ pub fn run(global: &GlobalArgs, args: &LintArgs) -> io::Result<bool> {
             .chain(config.lint.per_file_rules()),
     )?;
 
-    let path_rules = settings::path_rules(&loaded, &files, &args.files.exclude)?;
+    let path_rules = PathRules::new(&loaded, &args.files.exclude)?;
     let walk_rules = path_rules.clone();
     let excluded = move |path: &Path, is_dir| !walk_rules.lints(path, is_dir);
 

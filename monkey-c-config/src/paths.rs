@@ -153,11 +153,12 @@ pub struct PathRules {
     per_file_ignores: Vec<(PathMatcher, Vec<String>)>,
 }
 
-/// `files_exclude` is built by the caller, since `--exclude` on the command line replaces the
-/// file's `[files]` excludes and resolves against another directory.
+/// `exclude_flags` are the `--exclude` globs from the command line. When there are any, they
+/// replace the file's `[files] exclude` rather than adding to it, like every list given as a flag,
+/// and resolve against the working directory instead of the file's.
 impl PathRules {
-    pub fn new(resolved: &ResolvedConfig, files_exclude: PathMatcher) -> Result<Self, Error> {
-        let (rules, errors) = Self::lenient(resolved, files_exclude);
+    pub fn new(resolved: &ResolvedConfig, exclude_flags: &[String]) -> Result<Self, Error> {
+        let (rules, errors) = Self::lenient(resolved, exclude_flags);
 
         match errors.into_iter().next() {
             Some(error) => Err(error),
@@ -167,25 +168,37 @@ impl PathRules {
 
     /// The rules from every valid glob, along with an error for each invalid one. One typo then
     /// only loses its own pattern, so an editor doesn't start formatting generated files over it.
-    pub fn lenient(resolved: &ResolvedConfig, files_exclude: PathMatcher) -> (Self, Vec<Error>) {
+    pub fn lenient(resolved: &ResolvedConfig, exclude_flags: &[String]) -> (Self, Vec<Error>) {
         let config = &resolved.config;
         let directory = resolved.directory();
+        let file = resolved.path.as_deref();
         let mut errors = Vec::new();
-        let mut matcher = |patterns: &[String], setting| {
-            let (matcher, mut invalid) =
-                PathMatcher::lenient(&directory, patterns, setting, resolved.path.as_deref());
+        let mut matcher = |root: &Path, patterns: &[String], setting, file| {
+            let (matcher, mut invalid) = PathMatcher::lenient(root, patterns, setting, file);
             errors.append(&mut invalid);
 
             matcher
         };
 
+        let files_exclude = if exclude_flags.is_empty() {
+            let patterns = config.files.exclude.as_deref().unwrap_or_default();
+
+            matcher(&directory, patterns, "files.exclude", file)
+        } else {
+            matcher(Path::new("."), exclude_flags, "--exclude", None)
+        };
+
         let format_exclude = matcher(
+            &directory,
             config.format.exclude.as_deref().unwrap_or_default(),
             "format.exclude",
+            file,
         );
         let lint_exclude = matcher(
+            &directory,
             config.lint.exclude.as_deref().unwrap_or_default(),
             "lint.exclude",
+            file,
         );
 
         let per_file_ignores = config
@@ -194,7 +207,8 @@ impl PathRules {
             .iter()
             .flatten()
             .map(|(pattern, rules)| {
-                let matcher = matcher(std::slice::from_ref(pattern), "lint.per-file-ignores");
+                let pattern = std::slice::from_ref(pattern);
+                let matcher = matcher(&directory, pattern, "lint.per-file-ignores", file);
 
                 (matcher, rules.clone())
             })
@@ -237,7 +251,6 @@ impl PathRules {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::FilesSettings;
 
     #[cfg(unix)]
     use std::os::unix;
@@ -318,16 +331,9 @@ mod tests {
         }
     }
 
-    /// The rules in `text` for a `rafiki.toml` in `/project`, with `[files]` excludes resolved the
-    /// way a caller without `--exclude` does.
+    /// The rules in `text` for a `rafiki.toml` in `/project`, without `--exclude`.
     fn rules(text: &str) -> PathRules {
-        let resolved = resolved(text);
-        let files = FilesSettings::default().with_overrides(&resolved.config.files);
-        let files_exclude =
-            PathMatcher::new(Path::new("/project"), &files.exclude, "files.exclude", None)
-                .expect("globs");
-
-        PathRules::new(&resolved, files_exclude).expect("resolves")
+        PathRules::new(&resolved(text), &[]).expect("resolves")
     }
 
     #[test]
@@ -352,6 +358,37 @@ exclude = ["tests/**"]
         assert!(!formats("/project/gen/A.mc") && lints("/project/gen/A.mc"));
         assert!(formats("/project/tests/A.mc") && !lints("/project/tests/A.mc"));
         assert!(formats("/project/src/A.mc") && lints("/project/src/A.mc"));
+    }
+
+    #[test]
+    fn exclude_flags_replace_the_files_and_resolve_against_the_working_directory() {
+        let resolved = resolved("[files]\nexclude = [\"a{b\", \"bin/**\"]\n");
+        let rules = PathRules::new(&resolved, &["gen/**".to_string()])
+            .expect("the file's invalid glob is replaced too");
+        let cwd = std::env::current_dir().expect("cwd");
+
+        assert!(rules.formats(Path::new("/project/bin/A.mc"), false));
+        assert!(!rules.formats(&cwd.join("gen/A.mc"), false));
+    }
+
+    #[test]
+    fn an_invalid_glob_names_where_it_came_from() {
+        let error =
+            PathRules::new(&resolved("[files]\nexclude = [\"a{b\"]\n"), &[]).expect_err("rejected");
+        assert!(
+            error
+                .to_string()
+                .starts_with("/project/rafiki.toml: invalid glob `a{b` in `files.exclude`: "),
+            "{error}"
+        );
+
+        let error = PathRules::new(&resolved(""), &["a{b".to_string()]).expect_err("rejected");
+        assert!(
+            error
+                .to_string()
+                .starts_with("invalid glob `a{b` in `--exclude`: "),
+            "{error}"
+        );
     }
 
     #[test]
@@ -387,7 +424,7 @@ exclude = ["gen/**"]
 "a{b" = ["naming-convention"]
 "#,
             ),
-            PathMatcher::default(),
+            &[],
         );
 
         assert_eq!(errors.len(), 1);

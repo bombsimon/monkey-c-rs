@@ -13,8 +13,7 @@
 
 use gen_lsp_types::Uri;
 use monkey_c_config::{
-    ConfigSource, FilesSettings, FormatConfig, FormatSettings, LintSettings, PathMatcher,
-    PathRules, ResolvedConfig,
+    ConfigSource, FormatConfig, FormatSettings, LintSettings, PathRules, ResolvedConfig,
 };
 use monkey_c_linter::rules;
 use serde::Deserialize;
@@ -125,15 +124,7 @@ pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, 
         }
     }
 
-    let files = FilesSettings::default().with_overrides(&resolved.config.files);
-    let (files_exclude, mut glob_errors) = PathMatcher::lenient(
-        &resolved.directory(),
-        &files.exclude,
-        "files.exclude",
-        resolved.path.as_deref(),
-    );
-    let (path_rules, mut rule_errors) = PathRules::lenient(&resolved, files_exclude);
-    glob_errors.append(&mut rule_errors);
+    let (path_rules, glob_errors) = PathRules::lenient(&resolved, &[]);
     warnings.extend(glob_errors.iter().map(ToString::to_string));
 
     let settings = Settings {

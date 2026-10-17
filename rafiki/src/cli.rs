@@ -215,8 +215,8 @@ pub struct FileArgs {
 impl FileArgs {
     pub fn to_config(&self) -> FilesConfig {
         FilesConfig {
-            exclude: (!self.exclude.is_empty()).then(|| self.exclude.clone()),
             respect_gitignore: flag_pair(self.respect_gitignore, self.no_respect_gitignore),
+            ..FilesConfig::default()
         }
     }
 }

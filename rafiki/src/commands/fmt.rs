@@ -1,7 +1,7 @@
 //! `rafiki fmt` — rewrite source files in the formatter's canonical style.
 
 use ariadne::{Color, Fmt};
-use monkey_c_config::{FilesSettings, FormatSettings};
+use monkey_c_config::{FilesSettings, FormatSettings, PathRules};
 use monkey_c_formatter::Formatter;
 use similar::{ChangeTag, TextDiff};
 
@@ -43,7 +43,7 @@ pub fn run(global: &GlobalArgs, args: &FmtArgs) -> io::Result<bool> {
     };
 
     let color = global.stdout_color();
-    let path_rules = settings::path_rules(&loaded, &files, &args.files.exclude)?;
+    let path_rules = PathRules::new(&loaded, &args.files.exclude)?;
     let excluded = move |path: &Path, is_dir| !path_rules.formats(path, is_dir);
 
     runner::each_target(&args.paths, files.respect_gitignore, excluded, |target| {
