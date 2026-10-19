@@ -17,12 +17,12 @@
 //! to `arr[next()] += 1` would call `next()` once instead of twice.
 use monkey_c_parser::ast::{AssignOperator, BinaryOperator, Expr, UnaryOperator};
 
-use crate::visit::{ExprPosition, LintContext};
+use crate::visit::LintContext;
 use crate::{Diagnostic, Fix};
 
 pub const RULE: &str = "compound-assignment";
 
-pub fn check_expr(expr: &Expr, _pos: ExprPosition, ctx: &LintContext) -> Option<Diagnostic> {
+pub fn check_expr(expr: &Expr, ctx: &LintContext) -> Option<Diagnostic> {
     let Expr::Assign(assign) = expr else {
         return None;
     };

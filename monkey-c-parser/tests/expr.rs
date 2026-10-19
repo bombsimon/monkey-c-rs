@@ -565,6 +565,10 @@ fn test_left_associativity() {
         ("a << b << c", BinaryOperator::LeftShift),
         ("a & b & c", BinaryOperator::BitAnd),
         ("a | b | c", BinaryOperator::BitOr),
+        ("a && b && c", BinaryOperator::And),
+        ("a and b and c", BinaryOperator::AndKeyword),
+        ("a || b || c", BinaryOperator::Or),
+        ("a or b or c", BinaryOperator::OrKeyword),
     ] {
         let expr = parse_expr(src);
         let Expr::Binary(outer) = &expr else {

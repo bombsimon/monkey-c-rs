@@ -10,16 +10,73 @@ If you're coming from [Prettier][prettier], see
 > inconsistency or a thought on how code should be formatted. Please open an
 > [issue] on GitHub.
 
-## Layout only
+## Never changes meaning
 
-The formatter only changes whitespace and line breaks, never what the code
-says. Changes like removing redundant parentheses are left to the
-[linter][linter], where they can be reviewed on their own.
+The formatter changes whitespace and line breaks, and the [rewrites](#rewrites)
+below that spell the same code in one consistent way. It never changes what the
+code does. Changes that could, or that change the shape of the code like merging
+two `if`s, are left to the [linter][linter], where they can be reviewed on their
+own.
 
-There are two exceptions, neither of which changes what the code does:
+Two more changes are always made:
 
 - `new Foo` gets an empty argument list and becomes `new Foo()`.
 - Extra semicolons are dropped, so `var x = 1;;` becomes `var x = 1;`.
+
+## Rewrites
+
+Monkey C often has several ways to write the same thing. The formatter picks one
+of them, and each choice is a [setting][settings] that can also keep the code as
+written with `"preserve"`.
+
+```monkey-c
+// Before
+using Toybox.WatchUi;
+import Toybox.Lang;
+using Toybox.Graphics;
+
+(:debug, :background)
+static private var mLabel as String or Null;
+
+function width(values as Array<Number | Float>) as Number {
+    return (values.size() * 2);
+}
+
+function title() {
+    return @Rez.Strings.Title;
+}
+
+// After
+using Toybox.Graphics;
+using Toybox.WatchUi;
+
+import Toybox.Lang;
+
+(:debug :background)
+private static var mLabel as String?;
+
+function width(values as Array<Number or Float>) as Number {
+    return values.size() * 2;
+}
+
+function title() {
+    return Rez.Strings.Title;
+}
+```
+
+| Setting                                         | Default              | Rewrites                                         |
+| ----------------------------------------------- | -------------------- | ------------------------------------------------ |
+| [`union-style`][union-style]                    | `"or"`               | `Number \| Float` to `Number or Float`           |
+| [`nullable`][nullable]                          | `"shorthand"`        | `String or Null` to `String?`                    |
+| [`annotation-separator`][annotation-separator]  | `"space"`            | `(:debug, :background)` to `(:debug :background)` |
+| [`resource-ref`][resource-ref]                  | `"bare"`             | `@Rez.Strings.Title` to `Rez.Strings.Title`      |
+| [`modifier-order`][modifier-order]              | `"visibility-first"` | `static private` to `private static`             |
+| [`parens`][parens]                              | `"drop"`             | `return (a + b);` to `return a + b;`             |
+| [`sort-imports`][sort-imports]                  | `true`               | Imports sorted into groups                       |
+
+A rewrite is skipped wherever it would read differently, or where a comment
+inside the code it changes could end up next to the wrong part. To keep one spot
+as written, use [`rafiki: fmt off`](#skipping-formatting).
 
 ## Wrapping long lines
 
@@ -185,8 +242,16 @@ whole is indented to match the code around it. A line indented less than the
 
 [Lindig]: https://lindig.github.io/papers/strictly-pretty-2000.pdf
 [alignment]: ../configuration/settings#alignment
+[annotation-separator]: ../configuration/settings#annotation-separator
 [line-width]: ../configuration/settings#line-width
+[modifier-order]: ../configuration/settings#modifier-order
+[nullable]: ../configuration/settings#nullable
+[parens]: ../configuration/settings#parens
+[resource-ref]: ../configuration/settings#resource-ref
+[settings]: ../configuration/settings
 [short-array-element-width]: ../configuration/settings#short-array-element-width
+[sort-imports]: ../configuration/settings#sort-imports
+[union-style]: ../configuration/settings#union-style
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [linter]: ../linter

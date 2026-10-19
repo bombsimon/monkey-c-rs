@@ -6,6 +6,7 @@ mod expressions;
 mod lists;
 mod member_chain;
 mod operators;
+pub mod options;
 mod statements;
 mod types;
 mod verbatim;
@@ -18,10 +19,11 @@ use monkey_c_parser::parser::ParseOutput;
 use monkey_c_parser::token;
 
 use crate::alignment::align_trailing_comments;
+use crate::options::{AnnotationSeparator, ModifierOrder, Nullable, ResourceRef, UnionStyle};
 use doc::render;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Formats a Monkey C AST back into source text.
 ///
@@ -42,6 +44,16 @@ pub struct Formatter {
     /// The widest an item can be for a broken array to fill its lines with aligned columns
     /// instead of one item per line. `0` never fills.
     short_array_element_width: usize,
+    union_style: UnionStyle,
+    nullable: Nullable,
+    annotation_separator: AnnotationSeparator,
+    resource_ref: ResourceRef,
+    modifier_order: ModifierOrder,
+    parens: options::Parens,
+    sort_imports: bool,
+    /// Where operands written right after a cast start. A `(` there has to stay, or the cast's
+    /// type would take what follows as one more union member.
+    after_cast: RefCell<HashSet<usize>>,
     /// Positional drain cursor over all source comments. Advanced forward as
     /// the formatter builds the Doc tree; each comment is emitted exactly once
     /// at the first output position that follows its source location.
@@ -59,6 +71,14 @@ impl Formatter {
             line_width: 100,
             align_pairs: false,
             short_array_element_width: 8,
+            union_style: UnionStyle::default(),
+            nullable: Nullable::default(),
+            annotation_separator: AnnotationSeparator::default(),
+            resource_ref: ResourceRef::default(),
+            modifier_order: ModifierOrder::default(),
+            parens: options::Parens::default(),
+            sort_imports: true,
+            after_cast: RefCell::default(),
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
     }
@@ -79,6 +99,49 @@ impl Formatter {
     /// columns instead of one per line. `0` never fills (default: 8).
     pub fn with_short_array_element_width(mut self, width: usize) -> Self {
         self.short_array_element_width = width;
+        self
+    }
+
+    /// Set the separator between the members of a union type (default: `or`).
+    pub fn with_union_style(mut self, union_style: UnionStyle) -> Self {
+        self.union_style = union_style;
+        self
+    }
+
+    /// Set how a type that may be `null` is written (default: `T?`).
+    pub fn with_nullable(mut self, nullable: Nullable) -> Self {
+        self.nullable = nullable;
+        self
+    }
+
+    /// Set the separator between the entries of an annotation (default: a space).
+    pub fn with_annotation_separator(mut self, separator: AnnotationSeparator) -> Self {
+        self.annotation_separator = separator;
+        self
+    }
+
+    /// Set whether the legacy `@` before a resource reference is dropped (default: dropped).
+    pub fn with_resource_ref(mut self, resource_ref: ResourceRef) -> Self {
+        self.resource_ref = resource_ref;
+        self
+    }
+
+    /// Set the order of the visibility and `static` keywords (default: visibility first).
+    pub fn with_modifier_order(mut self, modifier_order: ModifierOrder) -> Self {
+        self.modifier_order = modifier_order;
+        self
+    }
+
+    /// Set whether parentheses that can't change how the code reads are dropped (default:
+    /// dropped).
+    pub fn with_parens(mut self, parens: options::Parens) -> Self {
+        self.parens = parens;
+        self
+    }
+
+    /// Sort each run of `using` and `import` declarations into groups (default: on).
+    pub fn with_sort_imports(mut self, sort_imports: bool) -> Self {
+        self.sort_imports = sort_imports;
         self
     }
 

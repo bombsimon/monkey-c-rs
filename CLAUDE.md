@@ -11,7 +11,9 @@
 - monkey-c-linter contains a linter for Monkey C code, based on the parser
 - monkey-c-config contains the `rafiki.toml` format, read by both the CLI and
   the LSP so a project resolves settings identically from either. Settings
-  layer as defaults -> file -> explicit request, via `*Settings::with_overrides`
+  layer as defaults -> file -> explicit request, via `*Settings::with_overrides`.
+  It depends on monkey-c-formatter for the option types and builds the
+  `Formatter` both use, via `FormatSettings::formatter`
 - monkey-c-lsp contains the language server, exposed as a library (`serve`) and
   driven by `rafiki server`. It owns stdout, so nothing else may write there
 - monkey-c-coverage contains the source-instrumentation logic behind `rafiki

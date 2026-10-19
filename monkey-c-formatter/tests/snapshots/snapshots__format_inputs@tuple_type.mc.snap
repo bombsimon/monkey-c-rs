@@ -19,7 +19,7 @@ typedef Pair as [Number, String];
 typedef Nested as [Array<Number>, [Number, Number]];
 
 class C {
-    function tag() as [Number or Null, String] {
+    function tag() as [Number?, String] {
         return [null, "x"];
     }
 }

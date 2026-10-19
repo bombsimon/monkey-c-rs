@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    if ((a <= 7.0 && a >= 4.5) && (b >= 0.0 && b <= 1.5)) {\n        x = true;\n    }\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    if (a <= 7.0 && a >= 4.5 && (b >= 0.0 && b <= 1.5)) {
+        x = true;
+    }
+}

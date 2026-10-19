@@ -8,6 +8,6 @@ class Foo {
 
 typedef OptionalCb as (Method(x as Number) as Void)?;
 
-function f() as (Method() as Boolean) {
+function f() as Method() as Boolean {
     return method(:g);
 }

@@ -35,6 +35,13 @@ fn every_setting_is_documented_at_its_default() {
         line_width,
         alignment,
         short_array_element_width,
+        union_style,
+        nullable,
+        annotation_separator,
+        resource_ref,
+        modifier_order,
+        parens,
+        sort_imports,
         exclude: format_exclude,
     } = format.clone();
     let LintConfig {
@@ -49,6 +56,9 @@ fn every_setting_is_documented_at_its_default() {
     } = files.clone();
 
     assert!(line_width.is_some() && alignment.is_some() && short_array_element_width.is_some());
+    assert!(union_style.is_some() && nullable.is_some() && annotation_separator.is_some());
+    assert!(resource_ref.is_some() && modifier_order.is_some() && parens.is_some());
+    assert!(sort_imports.is_some());
     assert!(enable.is_some() && disable.is_some() && respect_gitignore.is_some());
     assert_eq!(format_exclude, Some(Vec::new()));
     assert_eq!(lint_exclude, Some(Vec::new()));

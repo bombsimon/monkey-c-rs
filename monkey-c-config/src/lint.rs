@@ -95,34 +95,37 @@ mod tests {
 
     #[test]
     fn no_selection_runs_every_rule() {
-        assert!(settings(&[], &[]).selects("import-order"));
+        assert!(settings(&[], &[]).selects("bool-comparison"));
     }
 
     #[test]
     fn enable_is_an_allowlist() {
-        let settings = settings(&["import-order"], &[]);
-        assert!(settings.selects("import-order"));
+        let settings = settings(&["bool-comparison"], &[]);
+        assert!(settings.selects("bool-comparison"));
         assert!(!settings.selects("naming-convention"));
     }
 
     #[test]
     fn disable_subtracts() {
-        let settings = settings(&[], &["import-order"]);
-        assert!(!settings.selects("import-order"));
+        let settings = settings(&[], &["bool-comparison"]);
+        assert!(!settings.selects("bool-comparison"));
         assert!(settings.selects("naming-convention"));
     }
 
     #[test]
     fn disable_wins_over_enable() {
-        let settings = settings(&["import-order", "naming-convention"], &["import-order"]);
-        assert!(!settings.selects("import-order"));
+        let settings = settings(
+            &["bool-comparison", "naming-convention"],
+            &["bool-comparison"],
+        );
+        assert!(!settings.selects("bool-comparison"));
         assert!(settings.selects("naming-convention"));
     }
 
     #[test]
     fn a_flag_list_replaces_the_files_list() {
         let file = LintConfig {
-            disable: Some(vec!["import-order".to_string()]),
+            disable: Some(vec!["bool-comparison".to_string()]),
             ..LintConfig::default()
         };
         let flags = LintConfig::from_flags(&[], &["naming-convention".to_string()]);
@@ -131,14 +134,14 @@ mod tests {
             .with_overrides(&file)
             .with_overrides(&flags);
 
-        assert!(resolved.selects("import-order"));
+        assert!(resolved.selects("bool-comparison"));
         assert!(!resolved.selects("naming-convention"));
     }
 
     #[test]
     fn absent_flags_keep_the_files_selection() {
         let file = LintConfig {
-            disable: Some(vec!["import-order".to_string()]),
+            disable: Some(vec!["bool-comparison".to_string()]),
             ..LintConfig::default()
         };
 
@@ -146,7 +149,7 @@ mod tests {
             .with_overrides(&file)
             .with_overrides(&LintConfig::from_flags(&[], &[]));
 
-        assert!(!resolved.selects("import-order"));
+        assert!(!resolved.selects("bool-comparison"));
     }
 
     #[test]

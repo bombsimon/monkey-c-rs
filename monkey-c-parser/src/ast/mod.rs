@@ -39,7 +39,8 @@ pub enum Visibility {
 }
 
 /// The visibility and `static` keywords written in front of a declaration. Both keep their source
-/// position since the compiler accepts them in either order and the formatter keeps it as written.
+/// position since the compiler accepts them in either order and the formatter can keep it as
+/// written.
 #[derive(Debug, Default, PartialEq)]
 pub struct Modifiers {
     pub visibility: Option<Spanned<Visibility>>,

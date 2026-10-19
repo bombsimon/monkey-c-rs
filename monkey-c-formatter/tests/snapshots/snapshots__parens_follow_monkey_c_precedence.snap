@@ -1,0 +1,16 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var shiftSum = (a + b) << c;\n    var sumShift = a + (b << c);\n    var maskEquals = (a & b) == c;\n    var maskOfEquals = a & (b == c);\n    var orThenAdd = (a | b) + c;\n    var addOr = a + (b | c);\n    var equalsLess = (a == b) < c;\n    var lessOfEquals = a == (b < c);\n    var instanceAnd = (a instanceof B) & c;\n    var sumInstance = (a + b) instanceof C;\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    var shiftSum = (a + b) << c;
+    var sumShift = a + b << c;
+    var maskEquals = a & b == c;
+    var maskOfEquals = a & (b == c);
+    var orThenAdd = a | b + c;
+    var addOr = a + (b | c);
+    var equalsLess = a == b < c;
+    var lessOfEquals = a == (b < c);
+    var instanceAnd = a instanceof B & c;
+    var sumInstance = (a + b) instanceof C;
+}

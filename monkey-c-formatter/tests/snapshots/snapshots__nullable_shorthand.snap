@@ -1,0 +1,29 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(NULLABLES.trim(), |formatter| formatter)"
+---
+typedef A as Number?;
+typedef B as Number?;
+typedef C as Number?;
+typedef D as Number?;
+typedef E as Dictionary<String, Number>?;
+typedef F as Array<Number?>;
+typedef G as {:flag as Boolean}?;
+typedef H as [Number, String]?;
+typedef I as Method(x as Number)?;
+typedef J as (Method() as Boolean)?;
+typedef K as Null or Method() as Boolean;
+typedef L as String or Number or Null;
+typedef M as Number? or String;
+typedef N as Number?;
+typedef O as Null;
+typedef P as Number or /* why */ Null;
+typedef Q as (Method() as Boolean)?;
+typedef R as Method() as Boolean?;
+
+function f(x as Number?) as String? {
+    var a = y as Number?;
+    var b = c ? y as Number? : z;
+    var d = y as Number? == null;
+    var e = y as Number?;
+}

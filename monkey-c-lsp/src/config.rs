@@ -263,7 +263,7 @@ mod tests {
         let (settings, warnings) = resolve(&ConfigSource::File(path), &json!({}));
 
         assert!(!settings.lint.selects("naming-convention"));
-        assert!(settings.lint.selects("import-order"));
+        assert!(settings.lint.selects("bool-comparison"));
         assert!(warnings.is_empty());
     }
 
@@ -285,7 +285,7 @@ mod tests {
 disable = ["naming-convention"]
 
 [lint.per-file-ignores]
-"tests/**" = ["naming-conventon", "import-order"]
+"tests/**" = ["naming-conventon", "bool-comparison"]
 "#,
         );
         let (settings, warnings) = resolve(&ConfigSource::Discover, &params_rooted_at(dir.path()));
@@ -293,7 +293,7 @@ disable = ["naming-convention"]
 
         assert_eq!(warnings.len(), 1);
         assert!(!settings.lint.selects("naming-convention"));
-        assert!(!test_file("import-order"));
+        assert!(!test_file("bool-comparison"));
     }
 
     fn uri(path: &std::path::Path) -> Uri {

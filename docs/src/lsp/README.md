@@ -35,7 +35,7 @@ Settings are read when the server starts, so restart it after changing them.
 - A file that doesn't parse can't be formatted, so formatting does nothing
   until the syntax error is fixed. The error shows up as a diagnostic.
 - Each lint finding is a warning tagged with its rule name, like
-  `unneeded-parens`.
+  `bool-comparison`.
 - When two fixes overlap, fixing the whole file applies the first one. The
   other is applied the next time you fix the file.
 

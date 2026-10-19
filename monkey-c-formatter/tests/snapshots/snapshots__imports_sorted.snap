@@ -1,0 +1,31 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(IMPORTS.trim(), |formatter| formatter)"
+---
+using Toybox.Graphics as Gfx;
+using Toybox.WatchUi;
+
+import Toybox.Lang;
+
+using ModuleA;
+
+import ModuleB;
+
+var x;
+
+// leading
+using Toybox.B;
+using Toybox.A; // trailing
+
+module M {
+    using Toybox.D;
+    using Toybox.C;
+    // between
+    using Toybox.B;
+    using Toybox.A;
+}
+
+module N {
+    using Toybox.B; // after B
+    using Toybox.A;
+}

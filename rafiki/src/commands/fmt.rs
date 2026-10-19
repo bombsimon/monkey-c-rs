@@ -108,11 +108,7 @@ fn format_source(
         diagnostics::already_reported()
     })?;
 
-    let formatted = Formatter::new(source)
-        .with_line_width(settings.line_width)
-        .with_alignment(settings.alignment)
-        .with_short_array_element_width(settings.short_array_element_width)
-        .format(&output);
+    let formatted = settings.formatter(source).format(&output);
 
     // Warn (without failing) about any comment the formatter could not carry
     // into the output, pointing at the original comment via ariadne.

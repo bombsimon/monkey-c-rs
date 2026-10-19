@@ -169,7 +169,7 @@ impl Parser<'_> {
         // followed by a ternary whose branches are symbol literals (`as T ? :a : :b`).
         let peek = self.lexer.peek_token().1;
         let optional = self.current_token == token::Type::Question
-            && (allow_optional || peek == token::Type::Colon || !Self::is_expr_start(&peek));
+            && (allow_optional || peek.follows_nullable_cast());
 
         if optional {
             self.next_token_span(); // consume ?

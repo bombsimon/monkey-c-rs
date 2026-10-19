@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"function f() { var x = y as Number or Null + 1; }\", |formatter|\nformatter,)"
+---
+function f() {
+    var x = y as Number or Null + 1;
+}

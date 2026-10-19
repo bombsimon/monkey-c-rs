@@ -10,7 +10,7 @@
 //!
 //! Adding a rule:
 //! 1. Add `pub mod my_rule;` to [`rules`] and write
-//!    `pub fn check_expr(expr, pos, ctx) -> Option<Diagnostic>` (or
+//!    `pub fn check_expr(expr, ctx) -> Option<Diagnostic>` (or
 //!    `check_stmt`, …).
 //! 2. Add one line to the matching `dispatch_*` in [`visit`].
 pub mod rules;

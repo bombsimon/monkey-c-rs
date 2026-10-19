@@ -1,0 +1,13 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(MODIFIERS.trim(), |formatter|\nformatter.with_modifier_order(ModifierOrder::Preserve),)"
+---
+static public module M {
+    static private const MAX = 10;
+    static public function create() as Void {}
+
+    static hidden var count = 0;
+    static // why
+    protected var other = 0;
+    private static var kept = 0;
+}

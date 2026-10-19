@@ -71,44 +71,18 @@ var settings = {
 ## Parentheses
 
 Prettier rewrites parentheses: it drops the ones precedence makes redundant and
-adds some for clarity. `rafiki` never changes what the code says, so it keeps
-parentheses exactly as written.
+adds some for clarity. `rafiki` drops the ones that [can't change how the code
+reads][parens], but never adds any.
 
 ```monkey-c
 // rafiki
-if ((value != null) && (value.count != 0)) {
 var width = (percent / 100f * total).toLong();
 var scaled = 10 / 360.toFloat();
 
 // Prettier
-if (value != null && value.count != 0) {
 var width = ((percent / 100f) * total).toLong();
 var scaled = 10 / (360).toFloat();
 ```
-
-> [!TIP]
-> The linter's [`unneeded-parens`][unneeded-parens] rule removes redundant
-> parentheses with `--fix`. It only covers positions where parentheses never
-> matter, such as the right-hand side of an assignment or a `return` value, so
-> the first example above isn't rewritten by either tool.
-
-## Legacy `@` resource references
-
-Prettier also drops the legacy `@` prefix from resource references. That's
-another change to what the code says rather than to its layout, so `rafiki`
-keeps it.
-
-```monkey-c
-// rafiki
-label.setText(@Rez.Strings.Title);
-
-// Prettier
-label.setText(Rez.Strings.Title);
-```
-
-> [!TIP]
-> The linter's [`redundant-resource-ref`][redundant-resource-ref] rule removes
-> the prefix with `--fix`.
 
 ## Number literals
 
@@ -130,42 +104,10 @@ var ratio = 0.8;
 var tiny = 3.5e-7f;
 ```
 
-## Nullable types
-
-Prettier shortens `or Null` and `| Null` in a type to `?`. `rafiki` keeps the
-type as written.
-
-```monkey-c
-// rafiki
-function f(value as Number or Null) as String | Null {
-
-// Prettier
-function f(value as Number?) as String? {
-```
-
-> [!TIP]
-> The linter's [`null-union`][null-union] rule shortens it to `?` with `--fix`.
-
-## Union types
-
-Prettier writes every `|` in a union type as `or`. `rafiki` keeps whichever
-was written.
-
-```monkey-c
-// rafiki
-typedef Numeric as Number | Float;
-
-// Prettier
-typedef Numeric as Number or Float;
-```
-
-> [!TIP]
-> The linter's [`pipe-union`][pipe-union] rule rewrites `|` to `or` with `--fix`.
-
 ## Annotations
 
-Prettier adds a comma between annotations separated only by a space, without a
-space after it. `rafiki` keeps the group as written.
+Prettier separates annotations with a comma and no space. `rafiki` separates
+them with a [space][annotation-separator], the only form Garmin documents.
 
 ```monkey-c
 // rafiki
@@ -215,7 +157,9 @@ string +=
 
 A parenthesised expression keeps its `(` next to the first operand and its `)`
 after the last one. Prettier moves the expression inside the parentheses, as it
-does for [conditions](#conditions).
+does for [conditions](#conditions). The example is formatted with
+[`parens = "preserve"`][parens], since `rafiki` otherwise drops parentheses
+around a returned value.
 
 ```monkey-c
 // rafiki
@@ -485,13 +429,11 @@ var a = 1;
 var b = 2;
 ```
 
+[annotation-separator]: ../../configuration/settings#annotation-separator
 [column-alignment]: ..#column-alignment
 [filling-short-arrays]: ..#filling-short-arrays
 [short-array-element-width]: ../../configuration/settings#short-array-element-width
 [comments]: ..#comments
 [magic-trailing-comma]: ..#the-magic-trailing-comma
-[null-union]: ../../linter/rules/null-union
-[pipe-union]: ../../linter/rules/pipe-union
 [prettier-plugin-monkeyc]: https://github.com/markw65/prettier-plugin-monkeyc
-[redundant-resource-ref]: ../../linter/rules/redundant-resource-ref
-[unneeded-parens]: ../../linter/rules/unneeded-parens
+[parens]: ../../configuration/settings#parens

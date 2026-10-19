@@ -7,5 +7,5 @@ function f() {
     var y = 8 >> 1;
     x <<= 3;
     y >>= 2;
-    var z = (a << b) | c;
+    var z = a << b | c;
 }

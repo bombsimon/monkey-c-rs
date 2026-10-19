@@ -26,9 +26,9 @@ is still reported and the comment looks like it should work.
 ## Example
 
 ```monkey-c
-// rafiki: ignore[unneeded-paren]
-var ready = (count > 0);
+// rafiki: ignore[bool-comparisons]
+var ready = isReady == true;
 ```
 
-`unneeded-paren` is flagged, since the rule is called `unneeded-parens`. There's
+`bool-comparisons` is flagged, since the rule is called `bool-comparison`. There's
 no fix, since rafiki can't know what was meant.

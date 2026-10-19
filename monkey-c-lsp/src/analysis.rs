@@ -1,7 +1,6 @@
 //! Bridges the parser/linter/formatter to LSP results for a single document.
 
 use gen_lsp_types::{Code, Diagnostic, DiagnosticSeverity};
-use monkey_c_formatter::Formatter;
 use monkey_c_linter::lint_selected;
 use monkey_c_parser::ast::Span;
 use monkey_c_parser::parser::{ParseOutput, Parser};
@@ -71,11 +70,7 @@ pub fn lint_diagnostic(
 pub fn format(text: &str, settings: &FormatSettings) -> Option<String> {
     let output = Parser::new(text).parse().ok()?;
 
-    let formatted = Formatter::new(text)
-        .with_line_width(settings.line_width)
-        .with_alignment(settings.alignment)
-        .with_short_array_element_width(settings.short_array_element_width)
-        .format(&output);
+    let formatted = settings.formatter(text).format(&output);
 
     Some(formatted)
 }

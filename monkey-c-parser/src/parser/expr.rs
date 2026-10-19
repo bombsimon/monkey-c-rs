@@ -105,7 +105,12 @@ impl Parser<'_> {
             token::Type::AndKeyword => BinaryOperator::AndKeyword,
             _ => unreachable!(),
         };
-        let right = self.parse_logical_and()?;
+
+        // The next tighter level, so a chain of the same operator groups from the left.
+        let right = match operator {
+            BinaryOperator::Or | BinaryOperator::OrKeyword => self.parse_logical_and()?,
+            _ => self.parse_comparison()?,
+        };
         let end = right.span().end;
         Ok(Expr::Binary(BinaryExpr {
             left: Box::new(left),

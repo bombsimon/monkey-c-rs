@@ -1,0 +1,18 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(ANNOTATIONS.trim(), |formatter|\nformatter.with_annotation_separator(AnnotationSeparator::Preserve),)"
+---
+(:first, :second :third, :fourth)
+function a() {}
+
+(:foo(1, 2), :bar(:sym))
+function b() {}
+
+(:first, /* second */ :second)
+function c() {}
+
+(
+    :first, // second
+    :second
+)
+function d() {}

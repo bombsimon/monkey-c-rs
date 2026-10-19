@@ -232,13 +232,13 @@ mod tests {
 
     #[test]
     fn an_unknown_rule_name_is_rejected() {
-        let error = validate_rule_names(settings(&["import-ordering"], &[]).named_rules())
+        let error = validate_rule_names(settings(&["bool-comparisons"], &[]).named_rules())
             .expect_err("a misspelled rule is rejected");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
-        assert!(error.to_string().contains("import-ordering"), "{error}");
+        assert!(error.to_string().contains("bool-comparisons"), "{error}");
         // The message lists what the user could have meant.
-        assert!(error.to_string().contains("import-order"), "{error}");
+        assert!(error.to_string().contains("  bool-comparison\n"), "{error}");
     }
 
     #[test]

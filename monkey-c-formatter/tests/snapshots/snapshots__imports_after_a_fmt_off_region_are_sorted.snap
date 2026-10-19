@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"// rafiki: fmt off\\nimport  Zed;\\n// rafiki: fmt on\\nimport Bee;\\nimport Ant;\\n\",\n|formatter| formatter,)"
+---
+// rafiki: fmt off
+import  Zed;
+// rafiki: fmt on
+import Ant;
+import Bee;

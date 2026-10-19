@@ -12,10 +12,10 @@ public module M {
     class W {
         private class C {}
 
-        static hidden enum {
+        hidden static enum {
             Y
         }
-        static private class D extends A {
+        private static class D extends A {
             protected enum E {
                 Z
             }
@@ -26,7 +26,7 @@ public module M {
 }
 
 class V {
-    static public var a;
+    public static var a;
     public static var b;
     static /* why */ private function c() {}
 

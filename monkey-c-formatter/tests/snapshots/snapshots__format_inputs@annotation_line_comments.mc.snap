@@ -9,7 +9,7 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/annotation_line_comments.mc
 function spaceSeparated() as Void {}
 
 (
-    :debug,     // only in debug builds
+    :debug      // only in debug builds
     :background // runs in the background
 )
 function commaSeparated() as Void {}
