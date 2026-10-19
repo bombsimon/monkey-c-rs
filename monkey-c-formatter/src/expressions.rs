@@ -388,6 +388,8 @@ pub(crate) fn format_double_lit(lit: &DoubleLit) -> String {
     format!("{body}{}", lit.suffix)
 }
 
+/// Collects the operands of a run of operators sharing one precedence level, so `a + b - c` wraps
+/// at every operator while `a + b * c` keeps `b * c` as a tight inner group.
 fn collect_binary_chain<'a>(
     expr: &'a Expr,
     chain_op: &BinaryOperator,
@@ -395,7 +397,7 @@ fn collect_binary_chain<'a>(
     ops: &mut Vec<(&'a BinaryOperator, usize)>,
 ) {
     if let Expr::Binary(be) = expr
-        && operators::precedence_group(&be.operator) == operators::precedence_group(chain_op)
+        && be.operator.precedence() == chain_op.precedence()
     {
         collect_binary_chain(&be.left, chain_op, operands, ops);
         ops.push((&be.operator, be.op_pos));

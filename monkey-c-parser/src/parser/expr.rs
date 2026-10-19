@@ -127,7 +127,7 @@ impl Parser<'_> {
     }
 
     fn parse_logical_and(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_bitwise_or()?;
+        let mut expr = self.parse_comparison()?;
         while matches!(
             self.current_token,
             token::Type::And | token::Type::AndKeyword
@@ -139,106 +139,18 @@ impl Parser<'_> {
         Ok(expr)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_bitwise_xor()?;
-        self.handle_binary_operator(expr, &[token::Type::BitOr], Self::parse_bitwise_xor)
-    }
-
-    fn parse_bitwise_xor(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_bitwise_and()?;
-        self.handle_binary_operator(expr, &[token::Type::BitXor], Self::parse_bitwise_and)
-    }
-
-    fn parse_bitwise_and(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_equality()?;
-        self.handle_binary_operator(expr, &[token::Type::BitAnd], Self::parse_equality)
-    }
-
-    fn handle_equality_operator(
-        &mut self,
-        left: Expr,
-        operator_token: token::Type,
-    ) -> Result<Expr, ParserError> {
-        let start = left.span().start;
-        let op_pos = self.current_token_start;
-        self.next_token_span();
-        let operator = match operator_token {
-            token::Type::EqualEqual => BinaryOperator::Eq,
-            token::Type::BangEqual => BinaryOperator::NotEq,
-            _ => unreachable!(),
-        };
-
-        let right = self.parse_comparison()?;
-        let end = right.span().end;
-
-        Ok(Expr::Binary(BinaryExpr {
-            left: Box::new(left),
-            operator,
-            op_pos,
-            right: Box::new(right),
-            span: Span { start, end },
-        }))
-    }
-
-    fn parse_equality(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_comparison()?;
-        while matches!(
-            self.current_token,
-            token::Type::EqualEqual | token::Type::BangEqual
-        ) {
-            let operator_token = self.current_token.clone();
-            expr = self.handle_equality_operator(expr, operator_token)?;
-        }
-
-        Ok(expr)
-    }
-
     fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_shift()?;
-        while matches!(
-            self.current_token,
-            token::Type::Less
-                | token::Type::LessEqual
-                | token::Type::Greater
-                | token::Type::GreaterEqual
-                | token::Type::InstanceOf
-                | token::Type::Has
-        ) {
-            let operator_token = self.current_token.clone();
-            let start = expr.span().start;
-            let op_pos = self.current_token_start;
-            self.next_token_span();
-
-            let operator = match operator_token {
-                token::Type::Less => BinaryOperator::Lt,
-                token::Type::LessEqual => BinaryOperator::LtEq,
-                token::Type::Greater => BinaryOperator::Gt,
-                token::Type::GreaterEqual => BinaryOperator::GtEq,
-                token::Type::InstanceOf => BinaryOperator::InstanceOf,
-                token::Type::Has => BinaryOperator::Has,
-                _ => unreachable!(),
-            };
-
-            let right = self.parse_shift()?;
-            let end = right.span().end;
-
-            expr = Expr::Binary(BinaryExpr {
-                left: Box::new(expr),
-                operator,
-                op_pos,
-                right: Box::new(right),
-                span: Span { start, end },
-            });
-        }
-
-        Ok(expr)
-    }
-
-    fn parse_shift(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_term()?;
         self.handle_binary_operator(
             expr,
-            &[token::Type::LeftShift, token::Type::RightShift],
+            &[
+                token::Type::EqualEqual,
+                token::Type::BangEqual,
+                token::Type::Less,
+                token::Type::LessEqual,
+                token::Type::Greater,
+                token::Type::GreaterEqual,
+            ],
             Self::parse_term,
         )
     }
@@ -261,16 +173,24 @@ impl Parser<'_> {
             self.next_token_span();
 
             let operator = match operator_token {
+                token::Type::EqualEqual => BinaryOperator::Eq,
+                token::Type::BangEqual => BinaryOperator::NotEq,
+                token::Type::Less => BinaryOperator::Lt,
+                token::Type::LessEqual => BinaryOperator::LtEq,
+                token::Type::Greater => BinaryOperator::Gt,
+                token::Type::GreaterEqual => BinaryOperator::GtEq,
                 token::Type::Plus => BinaryOperator::Add,
                 token::Type::Minus => BinaryOperator::Sub,
+                token::Type::BitOr => BinaryOperator::BitOr,
+                token::Type::BitXor => BinaryOperator::BitXor,
                 token::Type::Star => BinaryOperator::Mul,
                 token::Type::Slash => BinaryOperator::Div,
                 token::Type::Percent => BinaryOperator::Mod,
-                token::Type::BitOr => BinaryOperator::BitOr,
-                token::Type::BitXor => BinaryOperator::BitXor,
-                token::Type::BitAnd => BinaryOperator::BitAnd,
                 token::Type::LeftShift => BinaryOperator::LeftShift,
                 token::Type::RightShift => BinaryOperator::RightShift,
+                token::Type::BitAnd => BinaryOperator::BitAnd,
+                token::Type::InstanceOf => BinaryOperator::InstanceOf,
+                token::Type::Has => BinaryOperator::Has,
                 _ => unreachable!(),
             };
 
@@ -293,7 +213,12 @@ impl Parser<'_> {
         let expr = self.parse_factor()?;
         self.handle_binary_operator(
             expr,
-            &[token::Type::Plus, token::Type::Minus],
+            &[
+                token::Type::Plus,
+                token::Type::Minus,
+                token::Type::BitOr,
+                token::Type::BitXor,
+            ],
             Self::parse_factor,
         )
     }
@@ -302,7 +227,16 @@ impl Parser<'_> {
         let expr = self.parse_unary()?;
         self.handle_binary_operator(
             expr,
-            &[token::Type::Star, token::Type::Slash, token::Type::Percent],
+            &[
+                token::Type::Star,
+                token::Type::Slash,
+                token::Type::Percent,
+                token::Type::LeftShift,
+                token::Type::RightShift,
+                token::Type::BitAnd,
+                token::Type::InstanceOf,
+                token::Type::Has,
+            ],
             Self::parse_unary,
         )
     }
