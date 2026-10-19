@@ -465,22 +465,33 @@ fn test_complex_expressions_parse() {
     }
 }
 
-/// Pin down precedence between adjacent levels: an outer operator with a
-/// tighter operator on the RHS should nest the tighter one inside. Together
-/// with the existing `1 + 2 * 3` case in `test_operator_precedence`, this
-/// covers each adjacent pair in the Java-style chain.
+/// Pin down precedence between adjacent levels: an outer operator with a tighter operator on the
+/// RHS should nest the tighter one inside. Monkey C groups the bitwise and shift operators with the
+/// arithmetic ones and `instanceof` and `has` with `*`, confirmed by running each in the simulator.
 #[test]
 fn test_operator_precedence_chain() {
     let cases = [
         // (src, outer op, inner op)
         ("a + b * c", BinaryOperator::Add, BinaryOperator::Mul),
-        ("a << b + c", BinaryOperator::LeftShift, BinaryOperator::Add),
-        ("a > b << c", BinaryOperator::Gt, BinaryOperator::LeftShift),
-        ("a == b > c", BinaryOperator::Eq, BinaryOperator::Gt),
-        ("a & b == c", BinaryOperator::BitAnd, BinaryOperator::Eq),
+        ("a + b << c", BinaryOperator::Add, BinaryOperator::LeftShift),
+        (
+            "a - b >> c",
+            BinaryOperator::Sub,
+            BinaryOperator::RightShift,
+        ),
+        ("a + b & c", BinaryOperator::Add, BinaryOperator::BitAnd),
+        ("a | b & c", BinaryOperator::BitOr, BinaryOperator::BitAnd),
         ("a ^ b & c", BinaryOperator::BitXor, BinaryOperator::BitAnd),
-        ("a | b ^ c", BinaryOperator::BitOr, BinaryOperator::BitXor),
-        ("a && b | c", BinaryOperator::And, BinaryOperator::BitOr),
+        (
+            "a + b instanceof C",
+            BinaryOperator::Add,
+            BinaryOperator::InstanceOf,
+        ),
+        ("a + b has :c", BinaryOperator::Add, BinaryOperator::Has),
+        ("a == b | c", BinaryOperator::Eq, BinaryOperator::BitOr),
+        ("a < b ^ c", BinaryOperator::Lt, BinaryOperator::BitXor),
+        ("a > b + c", BinaryOperator::Gt, BinaryOperator::Add),
+        ("a && b == c", BinaryOperator::And, BinaryOperator::Eq),
         ("a || b && c", BinaryOperator::Or, BinaryOperator::And),
     ];
 
@@ -494,6 +505,54 @@ fn test_operator_precedence_chain() {
             panic!("`{src}`: expected RHS Binary");
         };
         assert_eq!(rhs.operator, inner_op, "inner op for `{src}`");
+    }
+}
+
+/// Operators sharing a level apply left to right, so the leftmost pair nests deepest even when the
+/// operators differ.
+#[test]
+fn test_shared_precedence_levels() {
+    let cases = [
+        // (src, outer op, inner op)
+        (
+            "a * b >> c",
+            BinaryOperator::RightShift,
+            BinaryOperator::Mul,
+        ),
+        (
+            "a >> b * c",
+            BinaryOperator::Mul,
+            BinaryOperator::RightShift,
+        ),
+        ("a & b * c", BinaryOperator::Mul, BinaryOperator::BitAnd),
+        (
+            "a * b instanceof C",
+            BinaryOperator::InstanceOf,
+            BinaryOperator::Mul,
+        ),
+        (
+            "a instanceof B & c",
+            BinaryOperator::BitAnd,
+            BinaryOperator::InstanceOf,
+        ),
+        ("a has :b & c", BinaryOperator::BitAnd, BinaryOperator::Has),
+        ("a | b ^ c", BinaryOperator::BitXor, BinaryOperator::BitOr),
+        ("a - b | c", BinaryOperator::BitOr, BinaryOperator::Sub),
+        ("a ^ b + c", BinaryOperator::Add, BinaryOperator::BitXor),
+        ("a == b < c", BinaryOperator::Lt, BinaryOperator::Eq),
+        ("a < b == c", BinaryOperator::Eq, BinaryOperator::Lt),
+    ];
+
+    for (src, outer_op, inner_op) in cases {
+        let expr = parse_expr(src);
+        let Expr::Binary(outer) = &expr else {
+            panic!("`{src}`: expected outer Binary");
+        };
+        assert_eq!(outer.operator, outer_op, "outer op for `{src}`");
+        let Expr::Binary(lhs) = &*outer.left else {
+            panic!("`{src}`: expected LHS Binary");
+        };
+        assert_eq!(lhs.operator, inner_op, "inner op for `{src}`");
     }
 }
 

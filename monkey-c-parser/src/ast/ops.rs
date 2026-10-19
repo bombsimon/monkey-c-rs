@@ -29,26 +29,33 @@ pub enum BinaryOperator {
 }
 
 impl BinaryOperator {
-    /// Relative binding strength (higher binds tighter).
+    /// Relative binding strength (higher binds tighter). Unlike C, the bitwise and shift operators
+    /// share levels with the arithmetic ones, and `instanceof` and `has` bind as tight as `*`. The
+    /// reference doesn't list this, so it was confirmed by running expressions in the simulator.
     ///
     /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#operator-precedence>
     pub fn precedence(&self) -> u8 {
         match self {
             BinaryOperator::Or | BinaryOperator::OrKeyword => 1,
             BinaryOperator::And | BinaryOperator::AndKeyword => 2,
-            BinaryOperator::BitOr => 3,
-            BinaryOperator::BitXor => 4,
-            BinaryOperator::BitAnd => 5,
-            BinaryOperator::Eq | BinaryOperator::NotEq => 6,
-            BinaryOperator::Lt
+            BinaryOperator::Eq
+            | BinaryOperator::NotEq
+            | BinaryOperator::Lt
             | BinaryOperator::LtEq
             | BinaryOperator::Gt
-            | BinaryOperator::GtEq
+            | BinaryOperator::GtEq => 3,
+            BinaryOperator::Add
+            | BinaryOperator::Sub
+            | BinaryOperator::BitOr
+            | BinaryOperator::BitXor => 4,
+            BinaryOperator::Mul
+            | BinaryOperator::Div
+            | BinaryOperator::Mod
+            | BinaryOperator::LeftShift
+            | BinaryOperator::RightShift
+            | BinaryOperator::BitAnd
             | BinaryOperator::InstanceOf
-            | BinaryOperator::Has => 7,
-            BinaryOperator::LeftShift | BinaryOperator::RightShift => 8,
-            BinaryOperator::Add | BinaryOperator::Sub => 9,
-            BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => 10,
+            | BinaryOperator::Has => 5,
         }
     }
 }
