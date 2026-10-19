@@ -1,0 +1,14 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"// for the menu\\nimport Toybox.WatchUi;\\nimport Toybox.Lang;\\n\\nvar x;\\n\\n// the header\\n\\nimport Bee;\\nimport Ant;\\n\",\n|formatter| formatter,)"
+---
+// for the menu
+import Toybox.WatchUi;
+import Toybox.Lang;
+
+var x;
+
+// the header
+
+import Ant;
+import Bee;

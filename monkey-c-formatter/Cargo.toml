@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 monkey-c-parser.workspace = true
+serde.workspace = true
 unicode-width.workspace = true
 
 [dev-dependencies]

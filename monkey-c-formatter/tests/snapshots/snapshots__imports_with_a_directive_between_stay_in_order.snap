@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"import Toybox.WatchUi;\\n// rafiki: fmt on\\nimport Toybox.Lang;\\n\",\n|formatter| formatter,)"
+---
+import Toybox.WatchUi;
+// rafiki: fmt on
+import Toybox.Lang;

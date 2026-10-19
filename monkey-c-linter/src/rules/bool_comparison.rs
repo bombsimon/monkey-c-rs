@@ -13,12 +13,12 @@
 //! still binds the whole expression: `a < b == false` becomes `!(a < b)`.
 use monkey_c_parser::ast::{BinaryOperator, Expr, LiteralValue};
 
-use crate::visit::{ExprPosition, LintContext};
+use crate::visit::LintContext;
 use crate::{Diagnostic, Fix};
 
 pub const RULE: &str = "bool-comparison";
 
-pub fn check_expr(expr: &Expr, _pos: ExprPosition, ctx: &LintContext) -> Option<Diagnostic> {
+pub fn check_expr(expr: &Expr, ctx: &LintContext) -> Option<Diagnostic> {
     let Expr::Binary(binary) = expr else {
         return None;
     };

@@ -488,14 +488,14 @@ mod tests {
 
     #[test]
     fn offers_to_ignore_each_rule_after_the_fixes() {
-        let text = "var a = (b == true);\n";
+        let text = "function f() {\n    a = a + (b == true);\n}\n";
 
         assert_eq!(
-            quick_fix_titles(text, 0),
+            quick_fix_titles(text, 1),
             vec![
-                "Fix: unneeded parentheses around expression",
+                "Fix: `a = a + …` can be written as `a += (b == true)`",
                 "Fix: comparison to boolean literal — `b == true` can be written as `b`",
-                "Ignore `unneeded-parens` with a comment",
+                "Ignore `compound-assignment` with a comment",
                 "Ignore `bool-comparison` with a comment",
             ]
         );
@@ -520,12 +520,6 @@ mod tests {
             .filter(|title| title.starts_with("Ignore"))
             .collect();
 
-        assert_eq!(
-            ignores,
-            vec![
-                "Ignore `unneeded-parens` with a comment",
-                "Ignore `bool-comparison` with a comment",
-            ]
-        );
+        assert_eq!(ignores, vec!["Ignore `bool-comparison` with a comment"]);
     }
 }

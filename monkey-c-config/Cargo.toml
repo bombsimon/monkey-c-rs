@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 ignore.workspace = true
+monkey-c-formatter.workspace = true
 serde.workspace = true
 toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
 

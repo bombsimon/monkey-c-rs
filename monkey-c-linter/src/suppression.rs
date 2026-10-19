@@ -789,22 +789,24 @@ mod tests {
     #[test]
     fn trailing_comment_covers_its_line() {
         let src = r#"
-var a = (1); // rafiki: ignore[unneeded-parens]
-var b = (2);
+function f() {
+    a = a + 1; // rafiki: ignore[compound-assignment]
+    b = b + 1;
+}
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
     fn trailing_comment_only_covers_listed_rules() {
         let src = r#"
 function f() {
-    var x = (y == true); // rafiki: ignore[bool-comparison]
+    x = x + (y == true); // rafiki: ignore[bool-comparison]
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
@@ -812,13 +814,13 @@ function f() {
         let src = r#"
 function f() {
     var a = foo(
-        (x == true)
+        x == true
     ); // rafiki: ignore[bool-comparison]
-    var b = (y == true);
+    var b = y == true;
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens", "bool-comparison"]);
+        assert_eq!(rules(src), vec!["bool-comparison"]);
     }
 
     #[test]
@@ -826,18 +828,20 @@ function f() {
         let src = r#"
 function f() {
     if (a == true) { // rafiki: ignore[bool-comparison]
-        b = (c == true);
+        b = c == true;
     }
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens", "bool-comparison"]);
+        assert_eq!(rules(src), vec!["bool-comparison"]);
     }
 
     #[test]
     fn trailing_block_comment_covers_its_line() {
         let src = r#"
-var a = (1); /* rafiki: ignore[unneeded-parens] */
+function f() {
+    a = a + 1; /* rafiki: ignore[compound-assignment] */
+}
 "#;
 
         assert!(rules(src).is_empty());
@@ -847,13 +851,13 @@ var a = (1); /* rafiki: ignore[unneeded-parens] */
     fn own_line_comment_covers_the_next_statement() {
         let src = r#"
 function f() {
-    // rafiki: ignore[unneeded-parens]
-    var a = (1);
-    var b = (2);
+    // rafiki: ignore[compound-assignment]
+    a = a + 1;
+    b = b + 1;
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
@@ -874,17 +878,19 @@ function f() {
     #[test]
     fn own_line_comment_covers_a_whole_function() {
         let src = r#"
-// rafiki: ignore[unneeded-parens]
+// rafiki: ignore[compound-assignment]
 function f() {
-    var a = (1);
+    a = a + 1;
     if (a) {
-        a = (2);
+        a = a + 2;
     }
 }
-var b = (3);
+function g() {
+    b = b + 3;
+}
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
@@ -914,10 +920,12 @@ function Bar() {}
 
     #[test]
     fn own_line_comment_covers_modifiers() {
+        // The finding is on the name, a line below where the declaration starts.
         let src = r#"
 class Foo {
-    // rafiki: ignore[modifier-order]
-    static private var _x = 1;
+    // rafiki: ignore[naming-convention]
+    private static
+    var bad_name = 1;
 }
 "#;
 
@@ -929,14 +937,14 @@ class Foo {
         let src = r#"
 function f() {
     while (true) {
-        // rafiki: ignore[unneeded-parens]
-        var a = (1);
+        // rafiki: ignore[compound-assignment]
+        a = a + 1;
     }
-    var b = (2);
+    b = b + 2;
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
@@ -958,8 +966,8 @@ var a = [
 function f() {
     // rafiki: ignore[bool-comparison]
     // explains the next one
-    // rafiki: ignore[unneeded-parens]
-    var x = (y == true);
+    // rafiki: ignore[compound-assignment]
+    x = x + (y == true);
 }
 "#;
 
@@ -970,23 +978,27 @@ function f() {
     fn own_line_comment_before_a_closing_brace_covers_nothing() {
         let src = r#"
 function f() {
-    var a = (1);
-    // rafiki: ignore[unneeded-parens]
+    a = a + 1;
+    // rafiki: ignore[compound-assignment]
 }
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens", "unused-ignore"]);
+        assert_eq!(rules(src), vec!["compound-assignment", "unused-ignore"]);
     }
 
     #[test]
     fn comment_above_the_first_declaration_does_not_cover_the_file() {
         let src = r#"
-// rafiki: ignore[unneeded-parens]
-var a = (1);
-var b = (2);
+// rafiki: ignore[compound-assignment]
+function f() {
+    a = a + 1;
+}
+function g() {
+    b = b + 1;
+}
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
@@ -1016,33 +1028,35 @@ class B {}
     #[test]
     fn doc_comment_is_not_a_directive() {
         let src = r#"
-//! rafiki: ignore[unneeded-parens]
-var a = (1);
+//! rafiki: ignore[compound-assignment]
+function f() {
+    a = a + 1;
+}
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens"]);
+        assert_eq!(rules(src), vec!["compound-assignment"]);
     }
 
     #[test]
     fn reports_an_unused_rule() {
         let src = r#"
-var a = 1; // rafiki: ignore[unneeded-parens]
+var a = 1; // rafiki: ignore[compound-assignment]
 "#;
 
         assert_eq!(
             messages(src, unused_ignore::RULE),
-            vec!["`unneeded-parens` is never reported here, so ignoring it has no effect"]
+            vec!["`compound-assignment` is never reported here, so ignoring it has no effect"]
         );
     }
 
     #[test]
     fn does_not_report_rules_that_are_not_selected() {
         let src = r#"
-var a = 1; // rafiki: ignore[unneeded-parens]
+var a = 1; // rafiki: ignore[compound-assignment]
 "#;
         let output = Parser::new(src).parse().expect("parse");
 
-        let findings = crate::lint_selected(&output, src, |rule| rule != "unneeded-parens");
+        let findings = crate::lint_selected(&output, src, |rule| rule != "compound-assignment");
 
         assert!(findings.is_empty());
     }
@@ -1050,7 +1064,7 @@ var a = 1; // rafiki: ignore[unneeded-parens]
     #[test]
     fn unused_ignore_can_be_turned_off() {
         let src = r#"
-var a = 1; // rafiki: ignore[unneeded-parens]
+var a = 1; // rafiki: ignore[compound-assignment]
 "#;
         let output = Parser::new(src).parse().expect("parse");
 
@@ -1063,7 +1077,7 @@ var a = 1; // rafiki: ignore[unneeded-parens]
     fn fix_removes_an_own_line_comment_with_its_line() {
         let src = r#"
 function f() {
-    // rafiki: ignore[unneeded-parens] no longer needed
+    // rafiki: ignore[compound-assignment] no longer needed
     var a = 1;
 }
 "#;
@@ -1081,7 +1095,7 @@ function f() {
     #[test]
     fn fix_removes_a_trailing_comment_with_the_space_before_it() {
         let src = r#"
-var a = 1;   // rafiki: ignore[unneeded-parens]
+var a = 1;   // rafiki: ignore[compound-assignment]
 "#;
 
         assert_eq!(fixed(src), "\nvar a = 1;\n");
@@ -1090,7 +1104,9 @@ var a = 1;   // rafiki: ignore[unneeded-parens]
     #[test]
     fn fix_keeps_the_rules_still_in_use() {
         let src = r#"
-var a = (b == true); // rafiki: ignore[collapsible-if, unneeded-parens, compound-assignment, bool-comparison] reason
+function f() {
+    a = a + (b == true); // rafiki: ignore[collapsible-if, compound-assignment, naming-convention, bool-comparison] reason
+}
 "#;
 
         assert_eq!(
@@ -1101,7 +1117,9 @@ var a = (b == true); // rafiki: ignore[collapsible-if, unneeded-parens, compound
         assert_eq!(
             fixed(src),
             r#"
-var a = (b == true); // rafiki: ignore[unneeded-parens, bool-comparison] reason
+function f() {
+    a = a + (b == true); // rafiki: ignore[compound-assignment, bool-comparison] reason
+}
 "#
         );
     }
@@ -1109,13 +1127,17 @@ var a = (b == true); // rafiki: ignore[unneeded-parens, bool-comparison] reason
     #[test]
     fn fix_finds_the_rules_in_a_block_comment() {
         let src = r#"
-var a = (1); /* rafiki: ignore[unneeded-parens,bool-comparison] */
+function f() {
+    a = a + 1; /* rafiki: ignore[compound-assignment,bool-comparison] */
+}
 "#;
 
         assert_eq!(
             fixed(src),
             r#"
-var a = (1); /* rafiki: ignore[unneeded-parens] */
+function f() {
+    a = a + 1; /* rafiki: ignore[compound-assignment] */
+}
 "#
         );
     }
@@ -1123,13 +1145,15 @@ var a = (1); /* rafiki: ignore[unneeded-parens] */
     #[test]
     fn reports_an_unknown_rule() {
         let src = r#"
-var a = (1); // rafiki: ignore[unneeded-paren, unneeded-parens]
+function f() {
+    a = a + 1; // rafiki: ignore[compound-assignmen, compound-assignment]
+}
 "#;
 
         assert_eq!(rules(src), vec!["invalid-directive"]);
         assert_eq!(
             messages(src, invalid_directive::RULE),
-            vec!["unknown rule `unneeded-paren`"]
+            vec!["unknown rule `compound-assignmen`"]
         );
     }
 
@@ -1151,20 +1175,24 @@ var a = 1; // rafiki: ignore[unused-ignore, invalid-directive]
     #[test]
     fn reports_a_malformed_suppression() {
         let src = r#"
-var a = (1); // rafiki: ignore unneeded-parens
+function f() {
+    a = a + 1; // rafiki: ignore compound-assignment
+}
 "#;
 
-        assert_eq!(rules(src), vec!["unneeded-parens", "invalid-directive"]);
+        assert_eq!(rules(src), vec!["compound-assignment", "invalid-directive"]);
     }
 
     #[test]
     fn reports_an_unknown_directive() {
         let src = r#"
-// rafiki: ignroe[unneeded-parens]
-var a = (1);
+// rafiki: ignroe[compound-assignment]
+function f() {
+    a = a + 1;
+}
 "#;
 
-        assert_eq!(rules(src), vec!["invalid-directive", "unneeded-parens"]);
+        assert_eq!(rules(src), vec!["invalid-directive", "compound-assignment"]);
         assert_eq!(
             messages(src, invalid_directive::RULE),
             vec![
@@ -1317,18 +1345,18 @@ function g() {
         let src = r#"
 function f() {
     var a = 1;
-    var accentColorStart = (height / 6) * 5;
+    accentColorStart = accentColorStart * 5;
     var b = 2;
 }
 "#;
 
         assert_eq!(
-            ignored(src, "unneeded-parens").as_deref(),
+            ignored(src, "compound-assignment").as_deref(),
             Some(
                 r#"
 function f() {
     var a = 1;
-    var accentColorStart = (height / 6) * 5; // rafiki: ignore[unneeded-parens]
+    accentColorStart = accentColorStart * 5; // rafiki: ignore[compound-assignment]
     var b = 2;
 }
 "#
@@ -1340,17 +1368,17 @@ function f() {
     fn ignore_fix_goes_above_a_line_with_a_comment() {
         let src = r#"
 function f() {
-    var a = (1); // the answer
+    a = a + 1; // the answer
 }
 "#;
 
         assert_eq!(
-            ignored(src, "unneeded-parens").as_deref(),
+            ignored(src, "compound-assignment").as_deref(),
             Some(
                 r#"
 function f() {
-    // rafiki: ignore[unneeded-parens]
-    var a = (1); // the answer
+    // rafiki: ignore[compound-assignment]
+    a = a + 1; // the answer
 }
 "#
             )
@@ -1360,14 +1388,18 @@ function f() {
     #[test]
     fn ignore_fix_adds_to_the_comment_at_the_end_of_the_line() {
         let src = r#"
-var a = (b == true); // rafiki: ignore[unneeded-parens]
+function f() {
+    a = a + (b == true); // rafiki: ignore[compound-assignment]
+}
 "#;
 
         assert_eq!(
             ignored(src, "bool-comparison").as_deref(),
             Some(
                 r#"
-var a = (b == true); // rafiki: ignore[unneeded-parens, bool-comparison]
+function f() {
+    a = a + (b == true); // rafiki: ignore[compound-assignment, bool-comparison]
+}
 "#
             )
         );
@@ -1376,9 +1408,11 @@ var a = (b == true); // rafiki: ignore[unneeded-parens, bool-comparison]
     #[test]
     fn ignore_fix_covers_a_second_statement_on_the_line() {
         let src = r#"
-var a = 1; var b = (2);
+function f() {
+    a = 1; b = b + 2;
+}
 "#;
-        let silenced = ignored(src, "unneeded-parens").expect("a fix");
+        let silenced = ignored(src, "compound-assignment").expect("a fix");
 
         assert!(rules(&silenced).is_empty(), "{silenced}");
     }
@@ -1402,8 +1436,8 @@ function f() {
     fn ignore_fix_adds_to_the_comment_above() {
         let src = r#"
 function f() {
-    // rafiki: ignore[unneeded-parens] parens kept for clarity
-    var a = (b == true);
+    // rafiki: ignore[compound-assignment] kept for clarity
+    a = a + (b == true);
 }
 "#;
 
@@ -1412,8 +1446,8 @@ function f() {
             Some(
                 r#"
 function f() {
-    // rafiki: ignore[unneeded-parens, bool-comparison] parens kept for clarity
-    var a = (b == true);
+    // rafiki: ignore[compound-assignment, bool-comparison] kept for clarity
+    a = a + (b == true);
 }
 "#
             )
@@ -1422,12 +1456,12 @@ function f() {
 
     #[test]
     fn ignore_fix_keeps_crlf_line_endings() {
-        let src = "function f() {\r\n    var a = (1); // why\r\n}\r\n";
+        let src = "function f() {\r\n    a = a + 1; // why\r\n}\r\n";
 
         assert_eq!(
-            ignored(src, "unneeded-parens").as_deref(),
+            ignored(src, "compound-assignment").as_deref(),
             Some(
-                "function f() {\r\n    // rafiki: ignore[unneeded-parens]\r\n    var a = (1); // why\r\n}\r\n"
+                "function f() {\r\n    // rafiki: ignore[compound-assignment]\r\n    a = a + 1; // why\r\n}\r\n"
             )
         );
     }
@@ -1435,7 +1469,7 @@ function f() {
     #[test]
     fn ignore_fix_is_not_offered_for_rules_about_comments() {
         let src = r#"
-var a = 1; // rafiki: ignore[unneeded-parens]
+var a = 1; // rafiki: ignore[compound-assignment]
 "#;
 
         assert_eq!(ignored(src, unused_ignore::RULE), None);

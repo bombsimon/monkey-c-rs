@@ -8,6 +8,8 @@ use monkey_c_parser::ast::{
 
 use crate::Formatter;
 use crate::doc::{Doc, display_width};
+use crate::options::{AnnotationSeparator, ModifierOrder};
+use crate::verbatim::FmtDirective;
 
 impl Formatter {
     pub(crate) fn ast_to_doc(&self, ast: &Ast) -> Doc {
@@ -137,7 +139,7 @@ impl Formatter {
                 inner.push(Doc::text(")"));
             }
 
-            if next_entry.is_some_and(|next| next.preceding_comma_pos.is_some()) {
+            if next_entry.is_some_and(|next| self.comma_before_annotation(next)) {
                 inner.push(Doc::text(","));
             }
 
@@ -148,6 +150,14 @@ impl Formatter {
         }
 
         wrap_annotation(inner, multiline)
+    }
+
+    fn comma_before_annotation(&self, entry: &AnnotationEntry) -> bool {
+        match self.annotation_separator {
+            AnnotationSeparator::Space => false,
+            AnnotationSeparator::Comma => true,
+            AnnotationSeparator::Preserve => entry.preceding_comma_pos.is_some(),
+        }
     }
 
     /// Render a sequence of declarations interleaved with standalone comments,
@@ -166,7 +176,12 @@ impl Formatter {
         let mut prev_end: Option<usize> = None;
         let mut prev_is_block_decl = false;
         let spans: Vec<Span> = decls.iter().filter_map(Ast::span).copied().collect();
-        let mut verbatim_end = 0;
+        // The end of the declarations already rendered ahead of the one at hand, as written or
+        // as one sorted block of imports.
+        let mut rendered_end = 0;
+        // Where the run of imports last looked at ends, so one is only considered from its start.
+        // A run cut short by a `rafiki: fmt off` region starts again after it.
+        let mut import_run_end = 0;
 
         for (idx, decl) in decls.iter().enumerate() {
             let Some(decl_span) = decl.span() else {
@@ -174,7 +189,7 @@ impl Formatter {
             };
             let decl_span = *decl_span;
 
-            if decl_span.start < verbatim_end {
+            if decl_span.start < rendered_end {
                 continue;
             }
 
@@ -198,21 +213,58 @@ impl Formatter {
                 docs.push(self.verbatim_doc(region));
                 prev_end = Some(region.end);
                 prev_is_block_decl = false;
-                verbatim_end = region.end;
+                rendered_end = region.end;
+                continue;
+            }
+
+            let next_decl_start = |after: usize| {
+                decls[after + 1..]
+                    .iter()
+                    .find_map(|d| d.span().map(|s| s.start))
+                    .unwrap_or(container.end)
+            };
+
+            // An annotation applies to the declaration after it, so that one stays where it is
+            // and the imports after it are a run of their own.
+            let previous = idx.checked_sub(1).map(|previous| &decls[previous]);
+            let annotated = matches!(previous, Some(Ast::Annotation(..)));
+
+            let run = if self.sort_imports && idx >= import_run_end && !annotated {
+                let run = self.import_run(&decls[idx..]);
+                import_run_end = idx + run.len();
+
+                run
+            } else {
+                &[]
+            };
+
+            let above_start = previous
+                .and_then(Ast::span)
+                .map_or(container.start, |span| span.end);
+
+            if self.sorts_imports(run, above_start) {
+                let last = run.len() - 1;
+                let run_end = run[last].span().map_or(decl_span.end, |span| span.end);
+
+                docs.push(self.drain_leading_doc(decl_span.start));
+                docs.push(self.sorted_imports_to_doc(run));
+                docs.push(self.drain_trailing_doc(run_end, next_decl_start(idx + last)));
+
+                prev_end = Some(self.effective_end(Span {
+                    start: decl_span.start,
+                    end: run_end,
+                }));
+                prev_is_block_decl = false;
+                rendered_end = run_end;
                 continue;
             }
 
             // Bound the trailing drain at the next decl's start so that same-line
             // comments following a decl (e.g. after an annotation or var with `;`)
             // are not stolen by the current decl's trailing drain.
-            let next_decl_start = decls[idx + 1..]
-                .iter()
-                .find_map(|d| d.span().map(|s| s.start))
-                .unwrap_or(container.end);
-
             docs.push(self.drain_leading_doc(decl_span.start));
             docs.push(self.ast_to_doc(decl));
-            docs.push(self.drain_trailing_doc(decl_span.end, next_decl_start));
+            docs.push(self.drain_trailing_doc(decl_span.end, next_decl_start(idx)));
 
             prev_end = Some(self.effective_end(decl_span));
             prev_is_block_decl = is_block_decl;
@@ -222,6 +274,102 @@ impl Formatter {
         docs.push(self.drain_remaining_comments(prev_end, container.end));
 
         Doc::concat(docs)
+    }
+
+    /// Whether `run` should be written sorted. A comment between the imports, at the end of the
+    /// last one's line or right above the first could be about any one of them, so a run with one
+    /// is kept in the order written. A comment a blank line above is about the whole block, and
+    /// one above `above_start` is about an earlier declaration.
+    fn sorts_imports(&self, run: &[Ast], above_start: usize) -> bool {
+        let (Some(first), Some(last)) = (
+            run.first().and_then(Ast::span),
+            run.last().and_then(Ast::span),
+        ) else {
+            return false;
+        };
+
+        if !self.sort_imports || run.len() < 2 {
+            return false;
+        }
+
+        let line_end = self.source[last.end..]
+            .find('\n')
+            .map_or(self.source.len(), |offset| last.end + offset);
+        let cursor = self.comment_cursor.borrow();
+
+        // `rafiki: fmt` comments are about formatting, not about an import.
+        let comment_above = cursor
+            .written_in(above_start, first.start)
+            .last()
+            .is_some_and(|comment| {
+                self.line_index.starts_line(comment.span.start as u32)
+                    && self.own_line_directive(comment).is_none()
+                    && self
+                        .line_index
+                        .blank_lines_between(comment.span.end as u32, first.start as u32)
+                        == 0
+            });
+
+        // A directive between the imports has nowhere to go once they're sorted, so it counts too.
+        let comment_inside = cursor.written_in(first.start, line_end).next().is_some();
+
+        !comment_above && !comment_inside
+    }
+
+    /// The imports at the start of `decls`, up to a `rafiki: fmt off` comment between two of them.
+    /// The region it starts is kept as written, and the imports after it are a run of their own.
+    fn import_run<'a>(&self, decls: &'a [Ast]) -> &'a [Ast] {
+        let len = decls
+            .iter()
+            .take_while(|decl| import_name(decl).is_some())
+            .count();
+        let cursor = self.comment_cursor.borrow();
+        let turns_off = |previous: &Ast, next: &Ast| {
+            let (Some(previous), Some(next)) = (previous.span(), next.span()) else {
+                return false;
+            };
+
+            cursor
+                .written_in(previous.end, next.start)
+                .any(|comment| self.own_line_directive(comment) == Some(FmtDirective::Off))
+        };
+
+        let end = decls[..len]
+            .windows(2)
+            .position(|pair| turns_off(&pair[0], &pair[1]))
+            .map_or(len, |index| index + 1);
+
+        &decls[..end]
+    }
+
+    /// `run` in groups split by blank lines: `using Toybox`, `import Toybox`, then the other
+    /// `using`s and `import`s, each sorted by name.
+    fn sorted_imports_to_doc(&self, run: &[Ast]) -> Doc {
+        let mut sorted: Vec<(ImportGroup, &str, &Ast)> = run
+            .iter()
+            .filter_map(|decl| {
+                let (group, name) = import_name(decl)?;
+
+                Some((group, name, decl))
+            })
+            .collect();
+        sorted.sort_by_key(|(group, name, _)| (*group, *name));
+
+        let mut parts = Vec::new();
+        let mut previous_group = None;
+
+        for (group, _, decl) in sorted {
+            match previous_group {
+                Some(previous) if previous != group => parts.push(Doc::BlankLine),
+                Some(_) => parts.push(Doc::HardLine),
+                None => {}
+            }
+
+            parts.push(self.ast_to_doc(decl));
+            previous_group = Some(group);
+        }
+
+        Doc::concat(parts)
     }
 
     fn enum_to_doc(&self, decl: &EnumDecl) -> Doc {
@@ -456,7 +604,12 @@ impl Formatter {
         if let Some(init) = &b.initializer {
             let before_assign = b.type_.as_ref().map_or(b.name.span.end, |ty| ty.span.end);
             let assign_pos = b.assign_kw_start.unwrap_or(init.span().start);
-            parts.push(self.token_then_expr(before_assign, "=", assign_pos, init));
+            parts.push(self.token_then_expr(
+                before_assign,
+                "=",
+                assign_pos,
+                self.without_parens(init),
+            ));
         }
 
         Doc::Concat(parts)
@@ -478,13 +631,53 @@ impl Formatter {
             keywords.push((static_kw_start, "static "));
         }
 
-        keywords.sort_by_key(|(position, _)| *position);
+        // A comment between the keywords could be about either, so they stay as written.
+        let comment_between = match keywords.as_slice() {
+            [(visibility, _), (static_kw, _)] => self.has_written_comments_in(Span {
+                start: *visibility.min(static_kw),
+                end: *visibility.max(static_kw),
+            }),
+            _ => false,
+        };
+
+        if self.modifier_order == ModifierOrder::Preserve || comment_between {
+            keywords.sort_by_key(|(position, _)| *position);
+        }
 
         keywords
             .into_iter()
             .flat_map(|(position, keyword)| [self.drain_leading_doc(position), Doc::text(keyword)])
             .collect()
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ImportGroup {
+    ToyboxUsing,
+    ToyboxImport,
+    OtherUsing,
+    OtherImport,
+}
+
+fn import_name(decl: &Ast) -> Option<(ImportGroup, &str)> {
+    let (name, toybox_group, other_group) = match decl {
+        Ast::Using(decl) => (
+            &decl.name.node,
+            ImportGroup::ToyboxUsing,
+            ImportGroup::OtherUsing,
+        ),
+        Ast::Import(decl) => (
+            &decl.name.node,
+            ImportGroup::ToyboxImport,
+            ImportGroup::OtherImport,
+        ),
+        _ => return None,
+    };
+
+    let is_toybox = name == "Toybox" || name.starts_with("Toybox.");
+    let group = if is_toybox { toybox_group } else { other_group };
+
+    Some((group, name))
 }
 
 fn wrap_annotation(inner: Vec<Doc>, multiline: bool) -> Doc {

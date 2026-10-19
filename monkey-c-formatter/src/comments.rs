@@ -174,6 +174,17 @@ impl Formatter {
             .has_comment_in(span.start, span.end)
     }
 
+    /// Whether a comment is written in `span`, including one an earlier node already emitted. A
+    /// rewrite asks this rather than [`Self::has_comments_in`], so whether it's safe doesn't depend
+    /// on which node took the comment.
+    pub(crate) fn has_written_comments_in(&self, span: Span) -> bool {
+        self.comment_cursor
+            .borrow()
+            .written_in(span.start, span.end)
+            .next()
+            .is_some()
+    }
+
     /// True when any same-line comment immediately after `brace_pos` (up to
     /// `close_pos`) is a `//` line comment — used to decide whether a list
     /// must be forced multi-line.

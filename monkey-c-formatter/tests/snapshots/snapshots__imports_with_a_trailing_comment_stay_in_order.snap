@@ -1,0 +1,6 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"import Toybox.WatchUi;\\nimport Toybox.Lang; // needed for Number\\n\",\n|formatter| formatter,)"
+---
+import Toybox.WatchUi;
+import Toybox.Lang; // needed for Number

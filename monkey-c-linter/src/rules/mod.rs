@@ -1,20 +1,13 @@
 //! Individual lint rules. Each rule walks the AST and pushes any findings
 //! into a `Vec<Diagnostic>` provided by the top-level [`crate::lint`] driver.
-pub mod annotation_comma;
 pub mod bool_comparison;
 pub mod collapsible_if;
 pub mod compound_assignment;
 pub mod ifs_same_cond;
-pub mod import_order;
 pub mod invalid_directive;
-pub mod modifier_order;
 pub mod naming_convention;
-pub mod null_union;
 pub mod one_class_per_file;
-pub mod pipe_union;
-pub mod redundant_resource_ref;
 pub mod super_initializer_call;
-pub mod unneeded_parens;
 pub mod unused_ignore;
 
 /// A lint rule as presented to users, in `--list-rules` and in the rule documentation.
@@ -36,11 +29,6 @@ pub enum FixAvailability {
 /// Every rule, in alphabetical order. The single source of truth for the
 /// `--enable`/`--disable` flags, their help listing and the rules table in the docs.
 pub const ALL: &[Rule] = &[
-    Rule {
-        name: annotation_comma::RULE,
-        summary: "A comma between annotations",
-        fix: FixAvailability::Always,
-    },
     Rule {
         name: bool_comparison::RULE,
         summary: "Comparing with `true` or `false`",
@@ -67,19 +55,9 @@ pub const ALL: &[Rule] = &[
         fix: FixAvailability::Never,
     },
     Rule {
-        name: import_order::RULE,
-        summary: "Imports that aren't sorted and grouped",
-        fix: FixAvailability::Sometimes,
-    },
-    Rule {
         name: invalid_directive::RULE,
         summary: "A `rafiki:` comment that isn't a valid directive",
         fix: FixAvailability::Never,
-    },
-    Rule {
-        name: modifier_order::RULE,
-        summary: "`static` written before the visibility",
-        fix: FixAvailability::Sometimes,
     },
     Rule {
         name: naming_convention::RULE,
@@ -87,34 +65,14 @@ pub const ALL: &[Rule] = &[
         fix: FixAvailability::Never,
     },
     Rule {
-        name: null_union::RULE,
-        summary: "`T or Null` instead of `T?`",
-        fix: FixAvailability::Always,
-    },
-    Rule {
         name: one_class_per_file::RULE,
         summary: "More than one class in a file",
         fix: FixAvailability::Never,
     },
     Rule {
-        name: pipe_union::RULE,
-        summary: "`|` instead of `or` in a union type",
-        fix: FixAvailability::Always,
-    },
-    Rule {
-        name: redundant_resource_ref::RULE,
-        summary: "The legacy `@` before a resource reference",
-        fix: FixAvailability::Always,
-    },
-    Rule {
         name: super_initializer_call::RULE,
         summary: "An `initialize` that doesn't call the parent's",
         fix: FixAvailability::Never,
-    },
-    Rule {
-        name: unneeded_parens::RULE,
-        summary: "Parentheses that can't change how the code is read",
-        fix: FixAvailability::Always,
     },
     Rule {
         name: unused_ignore::RULE,

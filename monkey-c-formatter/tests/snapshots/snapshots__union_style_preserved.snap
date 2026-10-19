@@ -1,0 +1,15 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(UNIONS.trim(), |formatter|\nformatter.with_union_style(UnionStyle::Preserve),)"
+---
+typedef Pipe as Number | Float;
+typedef Mixed as String or Number | Float;
+typedef Tight as Number | Float;
+var nested as Array<Number | String> | Boolean;
+var shapes as {:a as Number | Float} | [Number | String] | Method(b as Long | Float);
+
+function f(value as Number or String) {
+    var cast = value as Number | String;
+    var grouped = value as Number or (Method() as Boolean);
+    var bitwise = 0x00 as Number | 0xFF;
+}

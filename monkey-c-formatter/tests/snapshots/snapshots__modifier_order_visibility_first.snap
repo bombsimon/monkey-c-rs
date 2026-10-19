@@ -1,0 +1,13 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(MODIFIERS.trim(), |formatter| formatter)"
+---
+public static module M {
+    private static const MAX = 10;
+    public static function create() as Void {}
+
+    hidden static var count = 0;
+    static // why
+    protected var other = 0;
+    private static var kept = 0;
+}

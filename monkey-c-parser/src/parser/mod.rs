@@ -107,38 +107,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub(crate) fn is_expr_start(tok: &token::Type) -> bool {
-        matches!(
-            tok,
-            token::Type::Bang
-                | token::Type::Bling
-                | token::Type::Boolean(_)
-                | token::Type::Char(_)
-                | token::Type::Colon
-                | token::Type::Double(_)
-                | token::Type::Float(_)
-                | token::Type::Hex(_)
-                | token::Type::HexLong(_)
-                | token::Type::Identifier(_)
-                | token::Type::LBrace
-                | token::Type::LBracket
-                | token::Type::LParen
-                | token::Type::Long(_)
-                | token::Type::Me
-                | token::Type::Minus
-                | token::Type::MinusMinus
-                | token::Type::NaN
-                | token::Type::New
-                | token::Type::Null
-                | token::Type::Number(_)
-                | token::Type::Plus
-                | token::Type::PlusPlus
-                | token::Type::Self_
-                | token::Type::String(_)
-                | token::Type::Tilde
-        )
-    }
-
     pub(crate) fn assert_next_token(
         &mut self,
         expect: &[token::Type],

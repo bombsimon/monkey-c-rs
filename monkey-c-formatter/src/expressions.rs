@@ -1,12 +1,20 @@
 //! Expressions, including binary chains that break before their operators.
 
 use monkey_c_parser::ast::{
-    BinaryOperator, DoubleLit, Expr, FloatLit, LiteralValue, UnaryOperator,
+    BinaryOperator, DoubleLit, Expr, FloatLit, LiteralValue, ParenExpr, UnaryOperator,
 };
 
 use crate::Formatter;
 use crate::doc::Doc;
 use crate::operators;
+use crate::options::{self, ResourceRef};
+
+/// Which side of a binary operator an operand is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperandSide {
+    Left,
+    Right,
+}
 
 impl Formatter {
     fn binary_chain_parts(
@@ -83,7 +91,7 @@ impl Formatter {
     ) -> Doc {
         let mut operands: Vec<&Expr> = Vec::new();
         let mut ops: Vec<(&BinaryOperator, usize)> = Vec::new();
-        collect_binary_chain(expr, op, &mut operands, &mut ops);
+        self.collect_binary_chain(expr, op, &mut operands, &mut ops);
 
         let inner = self.binary_chain_parts(&operands, &ops, outer_max_pos);
 
@@ -94,11 +102,97 @@ impl Formatter {
         }
     }
 
+    /// Operators that bind as tight share one chain, so `a + b - c + d` wraps at every `+` and
+    /// `-`, while `b * c` in `a + b * c` stays a tight group of its own and keeps the grouping
+    /// visible after wrapping.
+    fn collect_binary_chain<'a>(
+        &self,
+        expr: &'a Expr,
+        chain_op: &BinaryOperator,
+        operands: &mut Vec<&'a Expr>,
+        ops: &mut Vec<(&'a BinaryOperator, usize)>,
+    ) {
+        if let Expr::Binary(be) = expr
+            && be.operator.precedence() == chain_op.precedence()
+        {
+            let left = self.operand_without_parens(&be.left, be.operator, OperandSide::Left);
+            self.collect_binary_chain(left, chain_op, operands, ops);
+            ops.push((&be.operator, be.op_pos));
+
+            if ends_with_cast(&be.left) {
+                self.after_cast.borrow_mut().insert(be.right.span().start);
+            }
+
+            let right = self.operand_without_parens(&be.right, be.operator, OperandSide::Right);
+            self.collect_binary_chain(right, chain_op, operands, ops);
+
+            return;
+        }
+
+        operands.push(expr);
+    }
+
+    /// `expr` without the parentheses around it, in a place where any expression reads the same.
+    /// An assignment keeps them, since `x = y = 1` isn't one.
+    pub(crate) fn without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
+        let mut current = expr;
+        while let Expr::Paren(p) = current
+            && self.drops_parens(p)
+            && !matches!(*p.inner, Expr::Assign(_))
+        {
+            current = &p.inner;
+        }
+
+        current
+    }
+
+    /// `operand` of a `parent` operator without parentheses that can't change how it groups:
+    /// around an operator that binds tighter, or one that binds as tight on the left, since every
+    /// operator is left-associative.
+    fn operand_without_parens<'a>(
+        &self,
+        operand: &'a Expr,
+        parent: BinaryOperator,
+        side: OperandSide,
+    ) -> &'a Expr {
+        let mut current = operand;
+        while let Expr::Paren(p) = current
+            && self.drops_parens(p)
+        {
+            let redundant = match p.inner.as_ref() {
+                Expr::Paren(_) => true,
+                Expr::Binary(inner) => {
+                    let inner_precedence = inner.operator.precedence();
+                    let parent_precedence = parent.precedence();
+                    let groups = inner_precedence > parent_precedence
+                        || (inner_precedence == parent_precedence && side == OperandSide::Left);
+
+                    groups && !ends_with_cast(&p.inner)
+                }
+                _ => false,
+            };
+
+            if !redundant {
+                break;
+            }
+
+            current = &p.inner;
+        }
+
+        current
+    }
+
+    fn drops_parens(&self, paren: &ParenExpr) -> bool {
+        self.parens == options::Parens::Drop
+            && !self.has_written_comments_in(paren.span)
+            && !self.after_cast.borrow().contains(&paren.span.start)
+    }
+
     pub(crate) fn condition_to_doc(&self, expr: &Expr) -> Doc {
         if let Expr::Binary(e) = expr {
             let mut operands: Vec<&Expr> = Vec::new();
             let mut ops: Vec<(&BinaryOperator, usize)> = Vec::new();
-            collect_binary_chain(expr, &e.operator, &mut operands, &mut ops);
+            self.collect_binary_chain(expr, &e.operator, &mut operands, &mut ops);
 
             // Cap at cond.span.end so the last operand cannot drain trailing
             // comments that sit outside the condition (i.e. after the `)`
@@ -183,6 +277,9 @@ impl Formatter {
                 UnaryOperator::PostDec => {
                     Doc::concat(vec![self.expr_with_leading(&e.operand), Doc::text("--")])
                 }
+                UnaryOperator::ResourceRef if self.resource_ref == ResourceRef::Bare => {
+                    self.expr_with_leading(&e.operand)
+                }
                 _ => Doc::concat(vec![
                     Doc::text(operators::unary_prefix_op(&e.operator)),
                     self.expr_with_leading(&e.operand),
@@ -224,7 +321,7 @@ impl Formatter {
                     e.target.span().end,
                     operators::assign_op(&e.operator),
                     e.op_pos,
-                    &e.value,
+                    self.without_parens(&e.value),
                 ),
             ]),
             Expr::Call(e) => {
@@ -327,7 +424,7 @@ impl Formatter {
             Expr::TypeCast(e) => Doc::concat(vec![
                 self.expr_with_leading(&e.expr),
                 Doc::text(" as "),
-                self.type_to_doc(&e.target_type),
+                self.cast_type_to_doc(&e.target_type, &self.source[e.target_type.span.end..]),
             ]),
             Expr::Array(e) => self.format_array(e),
             Expr::Dict(e) => self.format_dict(e),
@@ -388,23 +485,18 @@ pub(crate) fn format_double_lit(lit: &DoubleLit) -> String {
     format!("{body}{}", lit.suffix)
 }
 
-/// Collects the operands of a run of operators sharing one precedence level, so `a + b - c` wraps
-/// at every operator while `a + b * c` keeps `b * c` as a tight inner group.
-fn collect_binary_chain<'a>(
-    expr: &'a Expr,
-    chain_op: &BinaryOperator,
-    operands: &mut Vec<&'a Expr>,
-    ops: &mut Vec<(&'a BinaryOperator, usize)>,
-) {
-    if let Expr::Binary(be) = expr
-        && be.operator.precedence() == chain_op.precedence()
-    {
-        collect_binary_chain(&be.left, chain_op, operands, ops);
-        ops.push((&be.operator, be.op_pos));
-        collect_binary_chain(&be.right, chain_op, operands, ops);
-
-        return;
+/// Whether the rightmost part of `expr` is a cast, whose type would take a `|` or `or` after it
+/// as one more union member.
+fn ends_with_cast(expr: &Expr) -> bool {
+    match expr {
+        Expr::TypeCast(_) => true,
+        Expr::Binary(e) => ends_with_cast(&e.right),
+        Expr::Unary(e) => {
+            !matches!(e.operator, UnaryOperator::PostInc | UnaryOperator::PostDec)
+                && ends_with_cast(&e.operand)
+        }
+        Expr::Ternary(e) => ends_with_cast(&e.else_expr),
+        Expr::Assign(e) => ends_with_cast(&e.value),
+        _ => false,
     }
-
-    operands.push(expr);
 }

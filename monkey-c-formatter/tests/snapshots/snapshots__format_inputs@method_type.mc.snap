@@ -16,7 +16,7 @@ typedef Cb as Method(x as Number, y as Number) as Boolean;
 
 typedef Optional as Method(s as String)?;
 
-function unionReturn(cb as Method(x as Number) as Number or Null) {}
+function unionReturn(cb as Method(x as Number) as Number?) {}
 
 class C {
     function attach(handler as Method(event as Object) as Void) {}

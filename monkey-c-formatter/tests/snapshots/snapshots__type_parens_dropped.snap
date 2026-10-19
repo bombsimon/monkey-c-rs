@@ -1,0 +1,14 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nvar a as (Method(x as Number))?;\nvar b as (Method() as Boolean)?;\nvar c as (Method() as Boolean) or Number;\nvar d as Number or (Method() as Boolean) or String;\nvar e as Array<(Method() as Boolean)>;\nvar f as (Method(x as Number)) or Number;\n\nfunction g() as (Method() as Boolean) {\n    var h = x as (Method() as Boolean);\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+var a as Method(x as Number)?;
+var b as (Method() as Boolean)?;
+var c as (Method() as Boolean) or Number;
+var d as Number or (Method() as Boolean) or String;
+var e as Array<Method() as Boolean>;
+var f as Method(x as Number) or Number;
+
+function g() as Method() as Boolean {
+    var h = x as (Method() as Boolean);
+}

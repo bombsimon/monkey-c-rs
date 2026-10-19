@@ -524,6 +524,7 @@ impl Formatter {
             Stmt::Return(s) => match &s.value {
                 None => Doc::text("return;"),
                 Some(v) => {
+                    let v = self.without_parens(v);
                     let keyword_end = s.span.start + "return".len();
                     let mut parts = vec![
                         Doc::text("return"),
@@ -541,7 +542,7 @@ impl Formatter {
                 let mut parts = vec![
                     Doc::text("throw"),
                     self.after_token(keyword_end, s.value.span().start, || {
-                        self.expr_with_leading(&s.value)
+                        self.expr_with_leading(self.without_parens(&s.value))
                     }),
                 ];
                 self.push_before_semi(&mut parts, s.semi_pos);

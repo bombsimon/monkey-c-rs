@@ -122,6 +122,49 @@ pub enum Type {
     Illegal,
 }
 
+impl Type {
+    /// Whether an expression can start with this token.
+    pub fn starts_expression(&self) -> bool {
+        matches!(
+            self,
+            Type::Bang
+                | Type::Bling
+                | Type::Boolean(_)
+                | Type::Char(_)
+                | Type::Colon
+                | Type::Double(_)
+                | Type::Float(_)
+                | Type::Hex(_)
+                | Type::HexLong(_)
+                | Type::Identifier(_)
+                | Type::LBrace
+                | Type::LBracket
+                | Type::LParen
+                | Type::Long(_)
+                | Type::Me
+                | Type::Minus
+                | Type::MinusMinus
+                | Type::NaN
+                | Type::New
+                | Type::Null
+                | Type::Number(_)
+                | Type::Plus
+                | Type::PlusPlus
+                | Type::Self_
+                | Type::String(_)
+                | Type::Tilde
+        )
+    }
+
+    /// Whether a `?` right after the type of an `as` cast makes the type nullable when this token
+    /// follows it, rather than starting a ternary. A ternary needs an expression after its `?`,
+    /// and a following `:` is read as nullable since `cond ? x as T? : y` is far more common than
+    /// a ternary between two symbols.
+    pub fn follows_nullable_cast(&self) -> bool {
+        *self == Type::Colon || !self.starts_expression()
+    }
+}
+
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

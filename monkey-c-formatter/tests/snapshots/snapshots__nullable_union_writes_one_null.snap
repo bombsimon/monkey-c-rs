@@ -1,0 +1,6 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"var x as Number? or String?;\\nvar y as Number? or String? or Null;\\n\",\n|formatter| formatter.with_nullable(Nullable::Union),)"
+---
+var x as Number or Null or String;
+var y as Number or String or Null;

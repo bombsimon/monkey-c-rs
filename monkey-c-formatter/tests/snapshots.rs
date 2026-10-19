@@ -7,8 +7,12 @@
 //! Snapshots live under `tests/snapshots/`. See <https://insta.rs/> for the
 //! snapshot tooling.
 mod common;
-use common::{format, format_aligned, run};
+use common::{format, format_aligned, preserving, run};
 use monkey_c_formatter::Formatter;
+use monkey_c_formatter::options::{
+    AnnotationSeparator, ModifierOrder, Nullable, Parens, ResourceRef, UnionStyle,
+};
+use monkey_c_parser::parser::Parser;
 
 // Configurations only the snapshot tests need. Shared helpers live in `common`, which every test
 // binary compiles, so anything there must be used by all of them.
@@ -24,6 +28,16 @@ fn format_short_array_element_width(src: &str, element_width: usize) -> String {
             .with_line_width(40)
             .with_short_array_element_width(element_width),
     )
+}
+
+/// Formats with the settings `configure` picks, and checks the result is already formatted, since a
+/// rewrite that's undone or redone by the next run would make the output flip between two forms.
+fn format_with(src: &str, configure: impl Fn(Formatter) -> Formatter) -> String {
+    let formatted = run(src, configure(Formatter::new(src)));
+    let again = run(&formatted, configure(Formatter::new(&formatted)));
+    assert_eq!(formatted, again, "formatting again changed the output");
+
+    formatted
 }
 
 fn format_aligned_width(src: &str, width: usize) -> String {
@@ -366,7 +380,7 @@ fn ternary_wraps_when_too_long() {
 
 #[test]
 fn parens_preserved() {
-    insta::assert_snapshot!(format(
+    insta::assert_snapshot!(format_with(
         r#"
 function f() {
     var required = (a + b) * c;
@@ -374,7 +388,8 @@ function f() {
     var nested = (((a.b) * 91 / 360) * c);
 }
 "#
-        .trim()
+        .trim(),
+        |formatter| formatter.with_parens(Parens::Preserve),
     ));
 }
 
@@ -1035,6 +1050,14 @@ fn resource_ref() {
 }
 
 #[test]
+fn resource_ref_preserved() {
+    insta::assert_snapshot!(format_with(
+        "function f() { statusLabel.setText(@Rez.Strings.cpr_string); }",
+        |formatter| formatter.with_resource_ref(ResourceRef::Preserve),
+    ));
+}
+
+#[test]
 fn throw_new_exception() {
     insta::assert_snapshot!(format("function f() { throw new Lang.Exception(); }"));
 }
@@ -1109,5 +1132,428 @@ function f() {
 }
 "#
         .trim()
+    ));
+}
+
+const UNIONS: &str = r#"
+typedef Pipe as Number | Float;
+typedef Mixed as String or Number | Float;
+typedef Tight as Number|Float;
+var nested as Array<Number | String> | Boolean;
+var shapes as { :a as Number | Float } | [Number | String] | Method(b as Long | Float);
+
+function f(value as Number or String) {
+    var cast = value as Number | String;
+    var grouped = value as Number or (Method() as Boolean);
+    var bitwise = 0x00 as Number | 0xFF;
+}
+"#;
+
+#[test]
+fn union_style_or() {
+    insta::assert_snapshot!(format_with(UNIONS.trim(), |formatter| formatter));
+}
+
+#[test]
+fn union_style_pipe() {
+    // A cast only reads `|` as a union when a type name follows, so the grouped member keeps `or`.
+    insta::assert_snapshot!(format_with(UNIONS.trim(), |formatter| formatter
+        .with_union_style(UnionStyle::Pipe),));
+}
+
+#[test]
+fn union_style_preserved() {
+    insta::assert_snapshot!(format_with(UNIONS.trim(), |formatter| formatter
+        .with_union_style(UnionStyle::Preserve),));
+}
+
+const NULLABLES: &str = r#"
+typedef A as Number or Null;
+typedef B as Null or Number;
+typedef C as Number | Toybox.Lang.Null;
+typedef D as Number? or Null;
+typedef E as Dictionary<String, Number> or Null;
+typedef F as Array<Number or Null>;
+typedef G as { :flag as Boolean } or Null;
+typedef H as [Number, String] or Null;
+typedef I as Method(x as Number) or Null;
+typedef J as (Method() as Boolean) or Null;
+typedef K as Null or Method() as Boolean;
+typedef L as String or Number or Null;
+typedef M as Number? or String;
+typedef N as Number? | Null;
+typedef O as Null;
+typedef P as Number or /* why */ Null;
+typedef Q as (Method() as Boolean)?;
+typedef R as Method() as Boolean?;
+
+function f(x as Number?) as String? {
+    var a = y as Number or Null;
+    var b = c ? y as Number or Null : z;
+    var d = y as Number or Null == null;
+    var e = y as Number?;
+}
+"#;
+
+#[test]
+fn nullable_shorthand() {
+    // `K` has no shorthand without parentheses and `P` keeps its comment where it was written.
+    insta::assert_snapshot!(format_with(NULLABLES.trim(), |formatter| formatter));
+}
+
+#[test]
+fn nullable_union() {
+    insta::assert_snapshot!(format_with(NULLABLES.trim(), |formatter| formatter
+        .with_nullable(Nullable::Union),));
+}
+
+#[test]
+fn nullable_union_with_pipes() {
+    insta::assert_snapshot!(format_with(
+        "function f(x as Number?) { var y = x as String?; }",
+        |formatter| formatter
+            .with_nullable(Nullable::Union)
+            .with_union_style(UnionStyle::Pipe),
+    ));
+}
+
+#[test]
+fn nullable_preserved() {
+    insta::assert_snapshot!(format_with(NULLABLES.trim(), |formatter| formatter
+        .with_nullable(Nullable::Preserve),));
+}
+
+#[test]
+fn nullable_shorthand_in_cast_before_an_expression() {
+    // `+` could start an expression after a `?`, which would make it a ternary.
+    insta::assert_snapshot!(format_with(
+        "function f() { var x = y as Number or Null + 1; }",
+        |formatter| formatter,
+    ));
+}
+
+const ANNOTATIONS: &str = r#"
+(:first, :second :third,   :fourth)
+function a() {}
+
+(:foo(1, 2), :bar(:sym))
+function b() {}
+
+(:first, /* second */ :second)
+function c() {}
+
+(:first, // second
+    :second)
+function d() {}
+"#;
+
+#[test]
+fn annotation_separator_space() {
+    insta::assert_snapshot!(format_with(ANNOTATIONS.trim(), |formatter| formatter));
+}
+
+#[test]
+fn annotation_separator_comma() {
+    insta::assert_snapshot!(format_with(ANNOTATIONS.trim(), |formatter| formatter
+        .with_annotation_separator(AnnotationSeparator::Comma),));
+}
+
+#[test]
+fn annotation_separator_preserved() {
+    insta::assert_snapshot!(format_with(ANNOTATIONS.trim(), |formatter| formatter
+        .with_annotation_separator(AnnotationSeparator::Preserve),));
+}
+
+const MODIFIERS: &str = r#"
+static public module M {
+    static private const MAX = 10;
+    static public function create() as Void {}
+    static
+        hidden var count = 0;
+    static // why
+        protected var other = 0;
+    private static var kept = 0;
+}
+"#;
+
+#[test]
+fn modifier_order_visibility_first() {
+    insta::assert_snapshot!(format_with(MODIFIERS.trim(), |formatter| formatter));
+}
+
+#[test]
+fn modifier_order_preserved() {
+    insta::assert_snapshot!(format_with(MODIFIERS.trim(), |formatter| formatter
+        .with_modifier_order(ModifierOrder::Preserve),));
+}
+
+#[test]
+fn parens_dropped() {
+    insta::assert_snapshot!(format_with(
+        r#"
+const X = (42);
+var initializer = (((1 + 2)));
+
+function f() {
+    x = (1 + 2);
+    x = (y = 1);
+    var required = (a + b) * c;
+    var leftAssociative = ((1 + 2) - 3) + 4;
+    var rightAssociative = a - (b + c);
+    var tighter = a + (b * c);
+    var negated = a-(-b*c);
+    var member = (x + 1).foo;
+    var doubled = a - ((b + c));
+    var commented = (1 + 2 /* sum */);
+    var leading = (/* width */ 2 + margin);
+    var castBefore = a as Number | (b & c);
+    var castInside = (a | b as Number) | c;
+    if (failed) {
+        throw (error);
+    }
+    return (foo());
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+/// `&&` used to group from the right, so dropping the first parens here read as a different tree.
+#[test]
+fn parens_dropped_in_an_and_chain() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    if ((a <= 7.0 && a >= 4.5) && (b >= 0.0 && b <= 1.5)) {
+        x = true;
+    }
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+/// A `(` right after a cast and `|` keeps the cast's type from reading on, however deep in the
+/// operand it is.
+#[test]
+fn parens_kept_after_a_cast_at_any_depth() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var masked = b as Number | (hi << 8) & mask;
+    var scaled = x as Number | (a * b) / c;
+    var nested = x as Number | (a * b) * c & d;
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+/// Monkey C groups the bitwise and shift operators with the arithmetic ones, unlike C, so parens
+/// that would be redundant in C can be needed here and the other way around.
+#[test]
+fn parens_follow_monkey_c_precedence() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var shiftSum = (a + b) << c;
+    var sumShift = a + (b << c);
+    var maskEquals = (a & b) == c;
+    var maskOfEquals = a & (b == c);
+    var orThenAdd = (a | b) + c;
+    var addOr = a + (b | c);
+    var equalsLess = (a == b) < c;
+    var lessOfEquals = a == (b < c);
+    var instanceAnd = (a instanceof B) & c;
+    var sumInstance = (a + b) instanceof C;
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn type_parens_dropped() {
+    insta::assert_snapshot!(format_with(
+        r#"
+var a as (Method(x as Number))?;
+var b as (Method() as Boolean)?;
+var c as (Method() as Boolean) or Number;
+var d as Number or (Method() as Boolean) or String;
+var e as Array<(Method() as Boolean)>;
+var f as (Method(x as Number)) or Number;
+
+function g() as (Method() as Boolean) {
+    var h = x as (Method() as Boolean);
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+const IMPORTS: &str = r#"
+using Toybox.WatchUi;
+import ModuleB;
+
+using ModuleA;
+import Toybox.Lang;
+using Toybox.Graphics as Gfx;
+
+var x;
+
+// leading
+using Toybox.B;
+using Toybox.A; // trailing
+
+module M {
+    using Toybox.D;
+    using Toybox.C;
+    // between
+    using Toybox.B;
+    using Toybox.A;
+}
+
+module N {
+    using Toybox.B; // after B
+    using Toybox.A;
+}
+"#;
+
+#[test]
+fn imports_sorted() {
+    // A comment between two imports could be about either, so that run stays as written.
+    insta::assert_snapshot!(format_with(IMPORTS.trim(), |formatter| formatter));
+}
+
+#[test]
+fn imports_kept_in_order() {
+    insta::assert_snapshot!(format_with(IMPORTS.trim(), |formatter| formatter
+        .with_sort_imports(false),));
+}
+
+#[test]
+fn every_rewrite_preserved() {
+    insta::assert_snapshot!(format_with(
+        r#"
+using Toybox.B;
+using Toybox.A;
+
+(:first, :second)
+static private var x as Number | Null = (1);
+
+function f() as (Method() as Boolean) {
+    return @Rez.Strings.name;
+}
+"#
+        .trim(),
+        preserving,
+    ));
+}
+
+#[test]
+fn imports_with_a_trailing_comment_stay_in_order() {
+    // The comment is about `Toybox.Lang`, so sorting would leave it on `Toybox.WatchUi`.
+    insta::assert_snapshot!(format_with(
+        "import Toybox.WatchUi;\nimport Toybox.Lang; // needed for Number\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn imports_with_a_comment_right_above_stay_in_order() {
+    insta::assert_snapshot!(format_with(
+        "// for the menu\nimport Toybox.WatchUi;\nimport Toybox.Lang;\n\nvar x;\n\n// the header\n\nimport Bee;\nimport Ant;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn imports_sorted_below_a_commented_declaration() {
+    insta::assert_snapshot!(format_with(
+        "// about x\nvar x = 1;\nimport Bee;\nimport Ant;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn imports_with_a_directive_between_stay_in_order() {
+    // Sorting would leave the directive inside an import.
+    insta::assert_snapshot!(format_with(
+        "import Toybox.WatchUi;\n// rafiki: fmt on\nimport Toybox.Lang;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn imports_sorted_after_an_annotated_import() {
+    insta::assert_snapshot!(format_with(
+        "(:test)\nimport Bee;\nimport Cat;\nimport Ant;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn imports_after_a_fmt_off_region_are_sorted() {
+    insta::assert_snapshot!(format_with(
+        "// rafiki: fmt off\nimport  Zed;\n// rafiki: fmt on\nimport Bee;\nimport Ant;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn modifiers_with_a_comment_between_stay_in_order() {
+    insta::assert_snapshot!(format_with(
+        "class C {\n    static /* why */ private var x = 1;\n}\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn annotated_imports_stay_in_order() {
+    // The annotation is written for `Z`, so sorting would move it onto `A`.
+    insta::assert_snapshot!(format_with(
+        "(:debug)\nimport Z;\nimport A;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn imports_around_a_fmt_off_region_are_sorted_apart() {
+    insta::assert_snapshot!(format_with(
+        "import Zed;\nimport Yak;\n// rafiki: fmt off\nimport  Kept;\n// rafiki: fmt on\nimport Bee;\nimport Ant;\n",
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn nullable_union_writes_one_null() {
+    insta::assert_snapshot!(format_with(
+        "var x as Number? or String?;\nvar y as Number? or String? or Null;\n",
+        |formatter| formatter.with_nullable(Nullable::Union),
+    ));
+}
+
+#[test]
+fn parens_keep_a_comment_an_earlier_statement_takes() {
+    // The first statement's trailing drain takes the comment inside the `return`'s parens, which
+    // moves it even with every rewrite off, so this can't go through `run`. The parens still count
+    // the comment as theirs and stay.
+    let src = "function f() { x = (a) /* c */; return (/* c */ a); }";
+    let output = Parser::new(src).parse().expect("should parse");
+    let formatted = Formatter::new(src).format(&output);
+
+    assert!(formatted.contains("return (a);"), "{formatted}");
+}
+
+#[test]
+fn nullable_shorthand_in_cast_looks_past_whitespace_and_comments() {
+    insta::assert_snapshot!(format_with(
+        "function f() {\n    var a = y as Number or Null == null;\n    var b = y as Number or Null /* c */ - 1;\n}\n",
+        |formatter| formatter,
     ));
 }

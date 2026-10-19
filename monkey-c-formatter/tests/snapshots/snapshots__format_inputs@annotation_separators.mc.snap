@@ -5,10 +5,10 @@ input_file: monkey-c-formatter/tests/snapshot_inputs/annotation_separators.mc
 (:debug :background)
 function spaceSeparated() as Void {}
 
-(:debug, :background)
+(:debug :background)
 function commaSeparated() as Void {}
 
-(:test :debug, :background)
+(:test :debug :background)
 function mixedSeparators() as Void {}
 
 (:a /* first */ :b)

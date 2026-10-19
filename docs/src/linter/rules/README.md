@@ -5,23 +5,16 @@ it exists. The examples show the code after `rafiki lint --fix` followed by
 `rafiki fmt`.
 
 <!-- begin rules -->
-| Rule                                                 | Flags                                                        | Fix    |
-| ---------------------------------------------------- | ------------------------------------------------------------ | ------ |
-| [`annotation-comma`](./annotation-comma)             | A comma between annotations                                  | Yes    |
-| [`bool-comparison`](./bool-comparison)               | Comparing with `true` or `false`                             | Yes    |
-| [`collapsible-else-if`](./collapsible-else-if)       | An `else` block that only contains an `if`                   | Yes    |
-| [`collapsible-if`](./collapsible-if)                 | An `if` that only contains another `if`                      | Yes    |
-| [`compound-assignment`](./compound-assignment)       | `x = x + n` instead of `x += n`                              | Yes    |
-| [`ifs-same-cond`](./ifs-same-cond)                   | Two branches of an `if` chain with the same condition        | No     |
-| [`import-order`](./import-order)                     | Imports that aren't sorted and grouped                       | Mostly |
-| [`invalid-directive`](./invalid-directive)           | A `rafiki:` comment that isn't a valid directive             | No     |
-| [`modifier-order`](./modifier-order)                 | `static` written before the visibility                       | Mostly |
-| [`naming-convention`](./naming-convention)           | Names that don't follow Garmin's coding conventions          | No     |
-| [`null-union`](./null-union)                         | `T or Null` instead of `T?`                                  | Yes    |
-| [`one-class-per-file`](./one-class-per-file)         | More than one class in a file                                | No     |
-| [`pipe-union`](./pipe-union)                         | `\|` instead of `or` in a union type                         | Yes    |
-| [`redundant-resource-ref`](./redundant-resource-ref) | The legacy `@` before a resource reference                   | Yes    |
-| [`super-initializer-call`](./super-initializer-call) | An `initialize` that doesn't call the parent's               | No     |
-| [`unneeded-parens`](./unneeded-parens)               | Parentheses that can't change how the code is read           | Yes    |
-| [`unused-ignore`](./unused-ignore)                   | A rule in a `rafiki: ignore` comment with nothing to silence | Yes    |
+| Rule                                                 | Flags                                                        | Fix |
+| ---------------------------------------------------- | ------------------------------------------------------------ | --- |
+| [`bool-comparison`](./bool-comparison)               | Comparing with `true` or `false`                             | Yes |
+| [`collapsible-else-if`](./collapsible-else-if)       | An `else` block that only contains an `if`                   | Yes |
+| [`collapsible-if`](./collapsible-if)                 | An `if` that only contains another `if`                      | Yes |
+| [`compound-assignment`](./compound-assignment)       | `x = x + n` instead of `x += n`                              | Yes |
+| [`ifs-same-cond`](./ifs-same-cond)                   | Two branches of an `if` chain with the same condition        | No  |
+| [`invalid-directive`](./invalid-directive)           | A `rafiki:` comment that isn't a valid directive             | No  |
+| [`naming-convention`](./naming-convention)           | Names that don't follow Garmin's coding conventions          | No  |
+| [`one-class-per-file`](./one-class-per-file)         | More than one class in a file                                | No  |
+| [`super-initializer-call`](./super-initializer-call) | An `initialize` that doesn't call the parent's               | No  |
+| [`unused-ignore`](./unused-ignore)                   | A rule in a `rafiki: ignore` comment with nothing to silence | Yes |
 <!-- end rules -->

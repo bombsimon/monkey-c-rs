@@ -22,12 +22,12 @@ anything anyway. A suppression for them stays valid if they're turned back on.
 
 ```monkey-c
 // Before
-var total = count + 1; // rafiki: ignore[unneeded-parens]
-var ready = (count > 0); // rafiki: ignore[unneeded-parens, bool-comparison]
+var total = count + 1; // rafiki: ignore[bool-comparison]
+var ready = isReady == true; // rafiki: ignore[bool-comparison, naming-convention]
 
 // After
 var total = count + 1;
-var ready = (count > 0); // rafiki: ignore[unneeded-parens]
+var ready = isReady == true; // rafiki: ignore[bool-comparison]
 ```
 
 When some of a comment's rules are still in use, the fix keeps those and drops

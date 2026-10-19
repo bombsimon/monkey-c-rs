@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"(:test)\\nimport Bee;\\nimport Cat;\\nimport Ant;\\n\", |formatter|\nformatter,)"
+---
+(:test)
+import Bee;
+import Ant;
+import Cat;

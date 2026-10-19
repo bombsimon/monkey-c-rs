@@ -101,6 +101,7 @@ fn find_config_file(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use monkey_c_formatter::options::{ModifierOrder, UnionStyle};
 
     #[test]
     fn an_empty_file_is_all_defaults() {
@@ -116,13 +117,16 @@ mod tests {
             line-width = 80
 
             [lint]
-            disable = ["import-order"]
+            disable = ["bool-comparison"]
             "#,
         )
         .expect("config parses");
 
         assert_eq!(config.format.line_width, Some(80));
-        assert_eq!(config.lint.disable, Some(vec!["import-order".to_string()]));
+        assert_eq!(
+            config.lint.disable,
+            Some(vec!["bool-comparison".to_string()])
+        );
         assert_eq!(config.files, FilesConfig::default());
     }
 
@@ -132,6 +136,27 @@ mod tests {
             toml::from_str("[format]\nshort-array-element-width = 0\n").expect("config parses");
 
         assert_eq!(config.format.short_array_element_width, Some(0));
+    }
+
+    #[test]
+    fn rewrite_values_are_kebab_case() {
+        let config: Config = toml::from_str(
+            "[format]\nunion-style = \"pipe\"\nmodifier-order = \"visibility-first\"\n",
+        )
+        .expect("config parses");
+
+        assert_eq!(config.format.union_style, Some(UnionStyle::Pipe));
+        assert_eq!(
+            config.format.modifier_order,
+            Some(ModifierOrder::VisibilityFirst)
+        );
+    }
+
+    #[test]
+    fn an_unknown_rewrite_value_is_an_error() {
+        let error = toml::from_str::<Config>("[format]\nnullable = \"short\"\n")
+            .expect_err("unknown value is rejected");
+        assert!(error.to_string().contains("shorthand"), "{error}");
     }
 
     #[test]

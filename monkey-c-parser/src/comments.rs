@@ -129,16 +129,23 @@ impl CommentCursor {
 
     /// True if there is any undrained comment with `span.start` in `[start, end)`.
     pub fn has_comment_in(&self, start: usize, end: usize) -> bool {
-        self.comments[self.next..]
+        self.peek_in(start, end).next().is_some()
+    }
+
+    /// The comments written with `span.start` in `[start, end)`, drained or not. For questions
+    /// about the source rather than about what's left to emit, so the answer doesn't depend on
+    /// which comments an earlier node already took.
+    pub fn written_in(&self, start: usize, end: usize) -> impl Iterator<Item = &CommentStmt> {
+        let first = self.comments.partition_point(|c| c.span.start < start);
+
+        self.comments[first..]
             .iter()
-            .any(|c| c.span.start >= start && c.span.start < end)
+            .take_while(move |c| c.span.start < end)
     }
 
     /// True if there is any undrained line comment (`//`) with `span.start` in `[start, end)`.
     pub fn has_line_comment_in(&self, start: usize, end: usize) -> bool {
-        self.comments[self.next..]
-            .iter()
-            .any(|c| !c.is_block && c.span.start >= start && c.span.start < end)
+        self.peek_in(start, end).any(|c| !c.is_block)
     }
 
     /// True if there is an undrained line comment (`//`) on source line `line`.

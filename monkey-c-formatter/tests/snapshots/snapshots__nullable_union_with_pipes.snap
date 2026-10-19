@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"function f(x as Number?) { var y = x as String?; }\", |formatter|\nformatter.with_nullable(Nullable::Union).with_union_style(UnionStyle::Pipe),)"
+---
+function f(x as Number | Null) {
+    var y = x as String | Null;
+}

@@ -20,7 +20,7 @@ pub struct Type {
 }
 
 /// One peer of a union together with the separator written before it. `or` and `|` mean the
-/// same thing, but the one written is kept so the formatter never rewrites it.
+/// same thing, but the one written is kept so the formatter can keep it.
 #[derive(Debug, PartialEq)]
 pub struct UnionAlternative {
     pub separator: Spanned<UnionSeparator>,
@@ -85,8 +85,8 @@ pub enum TypeKind {
     /// grouping, which matters when the `?` or `or` suffix would otherwise bind to a sub-part,
     /// `(Method(x) as Void)?` is the whole callable being nullable, not the return type.
     ///
-    /// The [`Parens`] wrapper carries the open/close byte offsets so the linter can replace just
-    /// the parens (not the inner text) when the grouping is redundant.
+    /// The [`Parens`] wrapper carries the open/close byte offsets so the formatter can tell whether
+    /// a comment sits inside them before dropping a redundant grouping.
     Group(Parens<Box<Type>>),
 }
 

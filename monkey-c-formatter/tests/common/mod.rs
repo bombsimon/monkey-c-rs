@@ -1,14 +1,66 @@
+mod meaning;
+
 use monkey_c_formatter::Formatter;
+use monkey_c_formatter::options::{
+    AnnotationSeparator, ModifierOrder, Nullable, Parens, ResourceRef, UnionStyle,
+};
+use monkey_c_parser::ast::CommentStmt;
 use monkey_c_parser::lexer::Lexer;
-use monkey_c_parser::parser::Parser;
+use monkey_c_parser::parser::{ParseOutput, Parser};
 use monkey_c_parser::token;
 
-/// Run `formatter` over `src` and enforce the invariants every output must hold: the code keeps
-/// the same tokens with every comment in the same place between them, and no line ends in
-/// whitespace.
+use crate::common::meaning::meaning;
+
+/// Run `formatter` over `src` and enforce the invariants every output must hold: the code means the
+/// same with every comment kept in order, no line ends in whitespace, and with every rewrite turned
+/// off the tokens are the same with every comment in the same place between them.
 pub fn run(src: &str, formatter: Formatter) -> String {
     let output = Parser::new(src).parse().expect("should parse");
     let formatted = formatter.format(&output);
+
+    let reparsed = Parser::new(&formatted)
+        .parse()
+        .unwrap_or_else(|error| panic!("formatted output should parse: {error:?}\n{formatted}"));
+
+    assert_eq!(
+        comments(&output.comments.comments),
+        comments(&reparsed.comments.comments),
+        "formatting moved, added or dropped a comment:\n{formatted}",
+    );
+
+    let before = meaning(Parser::new(src).parse().expect("should parse").ast);
+    let after = meaning(reparsed.ast);
+    if let Some(index) = before.chars().zip(after.chars()).position(|(a, b)| a != b) {
+        panic!(
+            "formatting changed what the code means:\n  source: {}\n  output: {}\n{formatted}",
+            excerpt(&before, index),
+            excerpt(&after, index),
+        );
+    }
+
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "formatting changed what the code means:\n{formatted}",
+    );
+
+    let trailing_whitespace: Vec<&str> = formatted
+        .lines()
+        .filter(|line| line.ends_with(char::is_whitespace))
+        .collect();
+    assert!(
+        trailing_whitespace.is_empty(),
+        "lines end in whitespace:\n{trailing_whitespace:#?}",
+    );
+
+    assert_same_tokens(src, &output);
+
+    formatted
+}
+
+/// Formatting with every rewrite turned off only changes whitespace.
+fn assert_same_tokens(src: &str, output: &ParseOutput) {
+    let formatted = preserving(Formatter::new(src)).format(output);
 
     let before = tokens(src);
     let after = tokens(&formatted);
@@ -26,17 +78,32 @@ pub fn run(src: &str, formatter: Formatter) -> String {
         after.len(),
         "formatting added or dropped tokens or comments:\n{formatted}",
     );
+}
 
-    let trailing_whitespace: Vec<&str> = formatted
-        .lines()
-        .filter(|line| line.ends_with(char::is_whitespace))
-        .collect();
-    assert!(
-        trailing_whitespace.is_empty(),
-        "lines end in whitespace:\n{trailing_whitespace:#?}",
-    );
+fn excerpt(text: &str, index: usize) -> String {
+    text.chars()
+        .skip(index.saturating_sub(80))
+        .take(160)
+        .collect()
+}
 
-    formatted
+fn comments(comments: &[CommentStmt]) -> Vec<(bool, String)> {
+    comments
+        .iter()
+        .map(|comment| (comment.is_block, words(&comment.text)))
+        .collect()
+}
+
+/// `formatter` with every rewrite turned off, so only whitespace and line breaks change.
+pub fn preserving(formatter: Formatter) -> Formatter {
+    formatter
+        .with_union_style(UnionStyle::Preserve)
+        .with_nullable(Nullable::Preserve)
+        .with_annotation_separator(AnnotationSeparator::Preserve)
+        .with_resource_ref(ResourceRef::Preserve)
+        .with_modifier_order(ModifierOrder::Preserve)
+        .with_parens(Parens::Preserve)
+        .with_sort_imports(false)
 }
 
 pub fn format(src: &str) -> String {

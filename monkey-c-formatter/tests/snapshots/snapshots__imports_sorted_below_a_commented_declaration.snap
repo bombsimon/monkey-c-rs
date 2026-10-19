@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"// about x\\nvar x = 1;\\nimport Bee;\\nimport Ant;\\n\", |formatter|\nformatter,)"
+---
+// about x
+var x = 1;
+import Ant;
+import Bee;

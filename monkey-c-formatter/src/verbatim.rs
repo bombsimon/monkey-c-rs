@@ -13,7 +13,7 @@ use crate::doc::Doc;
 const PREFIX: &str = "rafiki:";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FmtDirective {
+pub(crate) enum FmtDirective {
     Off,
     On,
 }
@@ -120,7 +120,7 @@ impl Formatter {
 
     /// The directive in `comment` when nothing else shares its line, since a region can only start
     /// or end between items.
-    fn own_line_directive(&self, comment: &CommentStmt) -> Option<FmtDirective> {
+    pub(crate) fn own_line_directive(&self, comment: &CommentStmt) -> Option<FmtDirective> {
         let rest_of_line = self.source[comment.span.end..].split('\n').next()?;
 
         if !self.line_index.starts_line(comment.span.start as u32)

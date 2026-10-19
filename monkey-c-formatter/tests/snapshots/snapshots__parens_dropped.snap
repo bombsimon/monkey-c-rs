@@ -1,0 +1,26 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nconst X = (42);\nvar initializer = (((1 + 2)));\n\nfunction f() {\n    x = (1 + 2);\n    x = (y = 1);\n    var required = (a + b) * c;\n    var leftAssociative = ((1 + 2) - 3) + 4;\n    var rightAssociative = a - (b + c);\n    var tighter = a + (b * c);\n    var negated = a-(-b*c);\n    var member = (x + 1).foo;\n    var doubled = a - ((b + c));\n    var commented = (1 + 2 /* sum */);\n    var leading = (/* width */ 2 + margin);\n    var castBefore = a as Number | (b & c);\n    var castInside = (a | b as Number) | c;\n    if (failed) {\n        throw (error);\n    }\n    return (foo());\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+const X = 42;
+var initializer = 1 + 2;
+
+function f() {
+    x = 1 + 2;
+    x = (y = 1);
+    var required = (a + b) * c;
+    var leftAssociative = 1 + 2 - 3 + 4;
+    var rightAssociative = a - (b + c);
+    var tighter = a + b * c;
+    var negated = a - -b * c;
+    var member = (x + 1).foo;
+    var doubled = a - (b + c);
+    var commented = (1 + 2 /* sum */);
+    var leading = (/* width */ 2 + margin);
+    var castBefore = a as Number | (b & c);
+    var castInside = (a | b as Number) | c;
+    if (failed) {
+        throw error;
+    }
+    return foo();
+}

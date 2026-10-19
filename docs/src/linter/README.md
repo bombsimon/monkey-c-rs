@@ -4,19 +4,22 @@ The linter finds code that is likely a mistake or harder to read than it needs
 to be. Each finding names the rule behind it, and every rule has a page under
 [Rules](rules) explaining what it looks for and why.
 
+How code is spelled when every spelling means the same, like `or` or `|` in a
+union type, is up to the [formatter](../formatter#rewrites) instead.
+
 ```sh
 rafiki lint
 ```
 
 ```text
-[unneeded-parens] Warning: unneeded parentheses around expression
+[bool-comparison] Warning: comparison to boolean literal — `isPm == true` can be written as `isPm`
    ╭─[ source/Clock.mc:4:21 ]
    │
- 4 │     var afternoon = (hour >= 12);
+ 4 │     var afternoon = isPm == true;
    │                     ──────┬─────
-   │                           ╰─────── unneeded parentheses around expression
+   │                           ╰─────── comparison to boolean literal — `isPm == true` can be written as `isPm`
    │
-   │ Note: fix: replace with `hour >= 12`
+   │ Note: fix: replace with `isPm`
 ───╯
 ```
 
@@ -52,7 +55,7 @@ with the rules to skip. Anything after `]` is an optional reason.
 ```monkey-c
 // rafiki: ignore[naming-convention] name comes from the SDK callback
 function onUpdate_legacy(dc as Dc) as Void {
-    var ok = (a == true); // rafiki: ignore[bool-comparison, unneeded-parens]
+    var ok = a == true; // rafiki: ignore[bool-comparison]
 }
 ```
 

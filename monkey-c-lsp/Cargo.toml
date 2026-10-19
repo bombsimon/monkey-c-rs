@@ -10,7 +10,6 @@ repository.workspace = true
 gen-lsp-types = "0.11"
 lsp-server = "0.10"
 monkey-c-config.workspace = true
-monkey-c-formatter.workspace = true
 monkey-c-linter.workspace = true
 monkey-c-parser.workspace = true
 percent-encoding = "2"

@@ -1,0 +1,7 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(\"(:debug)\\nimport Z;\\nimport A;\\n\", |formatter| formatter,)"
+---
+(:debug)
+import Z;
+import A;

@@ -1,0 +1,13 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nusing Toybox.B;\nusing Toybox.A;\n\n(:first, :second)\nstatic private var x as Number | Null = (1);\n\nfunction f() as (Method() as Boolean) {\n    return @Rez.Strings.name;\n}\n\"#.trim(),\npreserving,)"
+---
+using Toybox.B;
+using Toybox.A;
+
+(:first, :second)
+static private var x as Number | Null = (1);
+
+function f() as (Method() as Boolean) {
+    return @Rez.Strings.name;
+}

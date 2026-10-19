@@ -8,7 +8,7 @@ class C {}
 (:test)
 function bare() {}
 
-(:foo(1, 2), :bar(:sym))
+(:foo(1, 2) :bar(:sym))
 class D {}
 
 (:debug(true))

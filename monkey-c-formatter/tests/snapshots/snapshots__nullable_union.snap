@@ -1,0 +1,29 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(NULLABLES.trim(), |formatter|\nformatter.with_nullable(Nullable::Union),)"
+---
+typedef A as Number or Null;
+typedef B as Null or Number;
+typedef C as Number or Toybox.Lang.Null;
+typedef D as Number or Null;
+typedef E as Dictionary<String, Number> or Null;
+typedef F as Array<Number or Null>;
+typedef G as {:flag as Boolean} or Null;
+typedef H as [Number, String] or Null;
+typedef I as Method(x as Number) or Null;
+typedef J as (Method() as Boolean) or Null;
+typedef K as Null or Method() as Boolean;
+typedef L as String or Number or Null;
+typedef M as Number or Null or String;
+typedef N as Number or Null;
+typedef O as Null;
+typedef P as Number or /* why */ Null;
+typedef Q as (Method() as Boolean) or Null;
+typedef R as Method() as Boolean or Null;
+
+function f(x as Number or Null) as String or Null {
+    var a = y as Number or Null;
+    var b = c ? y as Number or Null : z;
+    var d = y as Number or Null == null;
+    var e = y as Number or Null;
+}
