@@ -86,16 +86,18 @@ var scaled = 10 / (360).toFloat();
 
 ## Number literals
 
-Prettier rewrites number literals into one form: lowercase hex digits and
-exponents, a leading zero before the decimal point and no trailing zeros after
-it. `rafiki` keeps literals as written.
+Both rewrite number literals with lowercase exponents and a leading zero before
+the decimal point. Prettier also lowercases hex digits and drops trailing zeros
+after the decimal point, where `rafiki` uppercases hex digits and keeps trailing
+zeros. Setting [`hex-digit-case = "lower"`][numbers] and
+[`trailing-zeros = "trim"`][numbers] matches Prettier.
 
 ```monkey-c
 // rafiki
 var color = 0xFFAA00;
-var half = .5;
+var half = 0.5;
 var ratio = 0.80;
-var tiny = 3.5E-7f;
+var tiny = 3.5e-7f;
 
 // Prettier
 var color = 0xffaa00;
@@ -437,3 +439,4 @@ var b = 2;
 [magic-trailing-comma]: ..#the-magic-trailing-comma
 [prettier-plugin-monkeyc]: https://github.com/markw65/prettier-plugin-monkeyc
 [parens]: ../../configuration/settings#parens
+[numbers]: ../../configuration/settings#formatnumbers

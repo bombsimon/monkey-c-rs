@@ -51,7 +51,7 @@ rafiki: rafiki.toml: TOML parse error at line 2, column 1
   |
 2 | line_width = 40
   | ^^^^^^^^^^
-unknown field `line_width`, expected one of `line-width`, `alignment`, `short-array-element-width`, `union-style`, `nullable`, `annotation-separator`, `resource-ref`, `modifier-order`, `parens`, `sort-imports`, `exclude`
+unknown field `line_width`, expected one of `line-width`, `alignment`, `short-array-element-width`, `union-style`, `nullable`, `annotation-separator`, `resource-ref`, `modifier-order`, `parens`, `sort-imports`, `exclude`, `numbers`
 ```
 
 On the command line that stops the run with exit code `2`. The language server

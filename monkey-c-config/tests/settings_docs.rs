@@ -3,6 +3,7 @@
 
 use monkey_c_config::{
     Config, FilesConfig, FilesSettings, FormatConfig, FormatSettings, LintConfig, LintSettings,
+    NumbersConfig,
 };
 
 use std::fs;
@@ -43,7 +44,19 @@ fn every_setting_is_documented_at_its_default() {
         parens,
         sort_imports,
         exclude: format_exclude,
+        numbers,
     } = format.clone();
+    let NumbersConfig {
+        hex_prefix_case,
+        hex_digit_case,
+        exponent_case,
+        exponent_padding,
+        float_suffix_case,
+        double_suffix_case,
+        long_suffix_case,
+        leading_zero,
+        trailing_zeros,
+    } = numbers;
     let LintConfig {
         enable,
         disable,
@@ -59,6 +72,10 @@ fn every_setting_is_documented_at_its_default() {
     assert!(union_style.is_some() && nullable.is_some() && annotation_separator.is_some());
     assert!(resource_ref.is_some() && modifier_order.is_some() && parens.is_some());
     assert!(sort_imports.is_some());
+    assert!(hex_prefix_case.is_some() && hex_digit_case.is_some() && exponent_case.is_some());
+    assert!(exponent_padding.is_some() && float_suffix_case.is_some());
+    assert!(double_suffix_case.is_some() && long_suffix_case.is_some());
+    assert!(leading_zero.is_some() && trailing_zeros.is_some());
     assert!(enable.is_some() && disable.is_some() && respect_gitignore.is_some());
     assert_eq!(format_exclude, Some(Vec::new()));
     assert_eq!(lint_exclude, Some(Vec::new()));

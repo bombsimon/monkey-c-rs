@@ -10,7 +10,8 @@ mod common;
 use common::{format, format_aligned, preserving, run};
 use monkey_c_formatter::Formatter;
 use monkey_c_formatter::options::{
-    AnnotationSeparator, ModifierOrder, Nullable, Parens, ResourceRef, UnionStyle,
+    AnnotationSeparator, Case, ExponentPadding, LeadingZero, ModifierOrder, Nullable, Numbers,
+    Parens, ResourceRef, TrailingZeros, UnionStyle,
 };
 use monkey_c_parser::parser::Parser;
 
@@ -453,13 +454,6 @@ function f() {
 }
 "#
         .trim()
-    ));
-}
-
-#[test]
-fn hex_literals_preserve_casing() {
-    insta::assert_snapshot!(format(
-        "var a = 0xFFCC00; var b = 0xffcc00; var c = 0xAbCdEf;"
     ));
 }
 
@@ -1556,4 +1550,53 @@ fn nullable_shorthand_in_cast_looks_past_whitespace_and_comments() {
         "function f() {\n    var a = y as Number or Null == null;\n    var b = y as Number or Null /* c */ - 1;\n}\n",
         |formatter| formatter,
     ));
+}
+
+const NUMBERS: &str = r#"
+var number = 007;
+var hex = [0xff, 0XAbC, 0xffl, 0X10L];
+var long = [10l, 10L, .50l, 1E+05l];
+var float = [.5, 1.50, 1.0, 2F, 1E5, 2.5e+07, 1e-007, .50E+00f];
+var double = [.5d, 1.50D, 6371e03d, 10.000d];
+"#;
+
+#[test]
+fn numbers_normalized() {
+    insta::assert_snapshot!(format_with(NUMBERS.trim(), |formatter| formatter));
+}
+
+#[test]
+fn numbers_preserved() {
+    insta::assert_snapshot!(format_with(NUMBERS.trim(), |formatter| formatter
+        .with_numbers(Numbers::preserve())));
+}
+
+#[test]
+fn numbers_in_the_other_case_with_trailing_zeros_trimmed() {
+    insta::assert_snapshot!(format_with(NUMBERS.trim(), |formatter| formatter
+        .with_numbers(Numbers {
+            hex_prefix_case: Case::Upper,
+            hex_digit_case: Case::Lower,
+            exponent_case: Case::Upper,
+            exponent_padding: ExponentPadding::Preserve,
+            float_suffix_case: Case::Upper,
+            double_suffix_case: Case::Upper,
+            long_suffix_case: Case::Lower,
+            leading_zero: LeadingZero::Preserve,
+            trailing_zeros: TrailingZeros::Trim,
+        })));
+}
+
+#[test]
+fn numbers_align_by_their_rewritten_width() {
+    // `.5` grows to `0.5`, so the arrows are aligned to the key as it's written out.
+    insta::assert_snapshot!(format_aligned(
+        "var d = {\n    .5 => :half,\n    1.0 => :one,\n    0xffl => :mask,\n};"
+    ));
+}
+
+#[test]
+fn leading_dot_long() {
+    // The lexer used to panic on a `.` followed by digits that didn't end up a float or double.
+    insta::assert_snapshot!(format("var c = .5l;"));
 }

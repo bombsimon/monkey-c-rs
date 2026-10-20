@@ -64,15 +64,16 @@ function title() {
 }
 ```
 
-| Setting                                         | Default              | Rewrites                                         |
-| ----------------------------------------------- | -------------------- | ------------------------------------------------ |
-| [`union-style`][union-style]                    | `"or"`               | `Number \| Float` to `Number or Float`           |
-| [`nullable`][nullable]                          | `"shorthand"`        | `String or Null` to `String?`                    |
-| [`annotation-separator`][annotation-separator]  | `"space"`            | `(:debug, :background)` to `(:debug :background)` |
-| [`resource-ref`][resource-ref]                  | `"bare"`             | `@Rez.Strings.Title` to `Rez.Strings.Title`      |
-| [`modifier-order`][modifier-order]              | `"visibility-first"` | `static private` to `private static`             |
-| [`parens`][parens]                              | `"drop"`             | `return (a + b);` to `return a + b;`             |
-| [`sort-imports`][sort-imports]                  | `true`               | Imports sorted into groups                       |
+| Setting                                        | Default              | Rewrites                                          |
+| ---------------------------------------------- | -------------------- | ------------------------------------------------- |
+| [`union-style`][union-style]                   | `"or"`               | `Number \| Float` to `Number or Float`            |
+| [`nullable`][nullable]                         | `"shorthand"`        | `String or Null` to `String?`                     |
+| [`annotation-separator`][annotation-separator] | `"space"`            | `(:debug, :background)` to `(:debug :background)` |
+| [`resource-ref`][resource-ref]                 | `"bare"`             | `@Rez.Strings.Title` to `Rez.Strings.Title`       |
+| [`modifier-order`][modifier-order]             | `"visibility-first"` | `static private` to `private static`              |
+| [`parens`][parens]                             | `"drop"`             | `return (a + b);` to `return a + b;`              |
+| [`sort-imports`][sort-imports]                 | `true`               | Imports sorted into groups                        |
+| [`[format.numbers]`][numbers]                  | See settings         | `0Xff` to `0xFF`, `.5` to `0.5`, `1E+05` to `1e5` |
 
 A rewrite is skipped wherever it would read differently, or where a comment
 inside the code it changes could end up next to the wrong part. To keep one spot
@@ -251,6 +252,7 @@ whole is indented to match the code around it. A line indented less than the
 [settings]: ../configuration/settings
 [short-array-element-width]: ../configuration/settings#short-array-element-width
 [sort-imports]: ../configuration/settings#sort-imports
+[numbers]: ../configuration/settings#formatnumbers
 [union-style]: ../configuration/settings#union-style
 [Wadler]: https://homepages.inf.ed.ac.uk/wadler/papers/prettier/prettier.pdf
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new

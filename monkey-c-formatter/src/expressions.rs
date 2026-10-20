@@ -1,13 +1,11 @@
 //! Expressions, including binary chains that break before their operators.
 
-use monkey_c_parser::ast::{
-    BinaryOperator, DoubleLit, Expr, FloatLit, LiteralValue, ParenExpr, UnaryOperator,
-};
+use monkey_c_parser::ast::{BinaryOperator, Expr, LiteralValue, ParenExpr, UnaryOperator};
 
 use crate::Formatter;
 use crate::doc::Doc;
 use crate::operators;
-use crate::options::{self, ResourceRef};
+use crate::options::{self, Numbers, ResourceRef};
 
 /// Which side of a binary operator an operand is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -428,20 +426,7 @@ impl Formatter {
             ]),
             Expr::Array(e) => self.format_array(e),
             Expr::Dict(e) => self.format_dict(e),
-            Expr::Lit(e) => Doc::text(match &e.value {
-                LiteralValue::Number(v)
-                | LiteralValue::Long(v)
-                | LiteralValue::Hex(v)
-                | LiteralValue::HexLong(v) => v.clone(),
-                LiteralValue::Float(lit) => format_float_lit(lit),
-                LiteralValue::Double(lit) => format_double_lit(lit),
-                LiteralValue::String(v) => format!("\"{v}\""),
-                LiteralValue::Char(v) => format!("'{v}'"),
-                LiteralValue::Boolean(v) => v.to_string(),
-                LiteralValue::Symbol(v) => format!(":{v}"),
-                LiteralValue::Null => "null".to_string(),
-                LiteralValue::NaN => "NaN".to_string(),
-            }),
+            Expr::Lit(e) => Doc::text(literal_text(&e.value, &self.numbers)),
             Expr::Ident(e) => Doc::text(&e.name),
             Expr::Paren(e) => {
                 let inner_end = e.inner.span().end;
@@ -460,29 +445,21 @@ impl Formatter {
     }
 }
 
-/// Re-emit a [`FloatLit`] in the exact source form recorded by the lexer.
-pub(crate) fn format_float_lit(lit: &FloatLit) -> String {
-    let body = if let Some(exp) = &lit.exponent {
-        format!("{}{exp}", lit.digits)
-    } else {
-        lit.digits.clone()
-    };
-
-    match lit.suffix {
-        Some(suffix) => format!("{body}{suffix}"),
-        None => body,
+/// A literal as the formatter writes it.
+pub(crate) fn literal_text(value: &LiteralValue, numbers: &Numbers) -> String {
+    match value {
+        LiteralValue::Number(v) => v.clone(),
+        LiteralValue::Long(v) => numbers.long(v),
+        LiteralValue::Hex(v) | LiteralValue::HexLong(v) => numbers.hex(v),
+        LiteralValue::Float(lit) => numbers.float(lit),
+        LiteralValue::Double(lit) => numbers.double(lit),
+        LiteralValue::String(v) => format!("\"{v}\""),
+        LiteralValue::Char(v) => format!("'{v}'"),
+        LiteralValue::Boolean(v) => v.to_string(),
+        LiteralValue::Symbol(v) => format!(":{v}"),
+        LiteralValue::Null => "null".to_string(),
+        LiteralValue::NaN => "NaN".to_string(),
     }
-}
-
-/// Re-emit a [`DoubleLit`] preserving its source style.
-pub(crate) fn format_double_lit(lit: &DoubleLit) -> String {
-    let body = if let Some(exp) = &lit.exponent {
-        format!("{}{exp}", lit.digits)
-    } else {
-        lit.digits.clone()
-    };
-
-    format!("{body}{}", lit.suffix)
 }
 
 /// Whether the rightmost part of `expr` is a cast, whose type would take a `|` or `or` after it

@@ -3,7 +3,7 @@ source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/numeric_literal_suffixes.mc
 ---
 var int32 = 5;
-var int64 = 9000l;
+var int64 = 9000L;
 var float32 = 6.0;
 var float64 = 2.718281828459045d;
 var hex = 0xFFCC00;

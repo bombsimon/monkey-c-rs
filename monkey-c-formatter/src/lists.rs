@@ -8,7 +8,8 @@ use monkey_c_parser::ast::{
 
 use crate::Formatter;
 use crate::doc::{Alignment, Doc, display_width, render_flat};
-use crate::expressions::{format_double_lit, format_float_lit};
+use crate::expressions::literal_text;
+use crate::options::Numbers;
 
 /// An item in a delimited list (array entry, dict pair, call arg, etc.) along
 /// with any comments that trail it inside the bracketed list. Used by
@@ -561,7 +562,7 @@ impl Formatter {
             .filter(|comment| self.line_index.line(comment.span.start as u32) == key_line);
         let before_arrow = cursor.peek_in(key_span.end, entry.arrow_pos);
 
-        let mut width = expr_key_width(&entry.key)?;
+        let mut width = expr_key_width(&entry.key, &self.numbers)?;
         for comment in leading.chain(before_arrow) {
             if !comment.is_block || comment.text.contains('\n') {
                 return None;
@@ -822,27 +823,16 @@ fn is_number_literal(expr: &Expr) -> bool {
 ///
 /// Returns `None` when the expression cannot be represented as a single flat
 /// token sequence (e.g. a call or binary expression as a key).
-fn expr_key_width(expr: &Expr) -> Option<usize> {
+fn expr_key_width(expr: &Expr, numbers: &Numbers) -> Option<usize> {
     match expr {
         Expr::Ident(e) => Some(display_width(&e.name)),
         Expr::Me(_) => Some("me".len()),
         Expr::Self_(_) => Some("self".len()),
         Expr::Bling(_) => Some(1),
-        Expr::Member(e) => Some(expr_key_width(&e.object)? + 1 + display_width(&e.property)),
-        Expr::Lit(e) => Some(match &e.value {
-            LiteralValue::Number(v)
-            | LiteralValue::Long(v)
-            | LiteralValue::Hex(v)
-            | LiteralValue::HexLong(v) => v.len(),
-            LiteralValue::Float(lit) => format_float_lit(lit).len(),
-            LiteralValue::Double(lit) => format_double_lit(lit).len(),
-            LiteralValue::String(v) => 2 + display_width(v),
-            LiteralValue::Char(v) => 3 + display_width(v),
-            LiteralValue::Boolean(v) => v.to_string().len(),
-            LiteralValue::Symbol(v) => 1 + display_width(v),
-            LiteralValue::Null => "null".len(),
-            LiteralValue::NaN => "NaN".len(),
-        }),
+        Expr::Member(e) => {
+            Some(expr_key_width(&e.object, numbers)? + 1 + display_width(&e.property))
+        }
+        Expr::Lit(e) => Some(display_width(&literal_text(&e.value, numbers))),
         _ => None,
     }
 }

@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(NUMBERS.trim(), |formatter|\nformatter.with_numbers(Numbers\n{\n    hex_prefix_case: Case::Upper, hex_digit_case: Case::Lower, exponent_case:\n    Case::Upper, exponent_padding: ExponentPadding::Preserve,\n    float_suffix_case: Case::Upper, double_suffix_case: Case::Upper,\n    long_suffix_case: Case::Lower, leading_zero: LeadingZero::Preserve,\n    trailing_zeros: TrailingZeros::Trim,\n}))"
+---
+var number = 007;
+var hex = [0Xff, 0Xabc, 0Xffl, 0X10l];
+var long = [10l, 10l, .5l, 1E+05l];
+var float = [.5, 1.5, 1.0, 2F, 1E5, 2.5E+07, 1E-007, .5E+00F];
+var double = [.5D, 1.5D, 6371E03D, 10.0D];

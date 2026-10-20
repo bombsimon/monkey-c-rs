@@ -1,6 +1,7 @@
 use monkey_c_formatter::Formatter;
 use monkey_c_formatter::options::{
-    self, AnnotationSeparator, ModifierOrder, Nullable, ResourceRef, UnionStyle,
+    self, AnnotationSeparator, Case, ExponentPadding, LeadingZero, ModifierOrder, Nullable,
+    Numbers, ResourceRef, TrailingZeros, UnionStyle,
 };
 use serde::Deserialize;
 
@@ -19,6 +20,7 @@ pub struct FormatSettings {
     pub modifier_order: ModifierOrder,
     pub parens: options::Parens,
     pub sort_imports: bool,
+    pub numbers: Numbers,
 }
 
 impl Default for FormatSettings {
@@ -34,6 +36,7 @@ impl Default for FormatSettings {
             modifier_order: ModifierOrder::default(),
             parens: options::Parens::default(),
             sort_imports: true,
+            numbers: Numbers::default(),
         }
     }
 }
@@ -53,6 +56,7 @@ impl FormatSettings {
             .with_modifier_order(self.modifier_order)
             .with_parens(self.parens)
             .with_sort_imports(self.sort_imports)
+            .with_numbers(self.numbers)
     }
 
     /// Overlay the keys `config` sets, leaving the rest untouched. Apply layers
@@ -98,6 +102,8 @@ impl FormatSettings {
             self.sort_imports = sort_imports;
         }
 
+        self.numbers = config.numbers.overlay(self.numbers);
+
         self
     }
 }
@@ -124,6 +130,43 @@ pub struct FormatConfig {
     pub parens: Option<options::Parens>,
     pub sort_imports: Option<bool>,
     pub exclude: Option<Vec<String>>,
+
+    #[serde(default)]
+    pub numbers: NumbersConfig,
+}
+
+/// The `[format.numbers]` table. A table of its own since every part of a literal has a setting,
+/// and the names read better without a `number-` prefix on each.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct NumbersConfig {
+    pub hex_prefix_case: Option<Case>,
+    pub hex_digit_case: Option<Case>,
+    pub exponent_case: Option<Case>,
+    pub exponent_padding: Option<ExponentPadding>,
+    pub float_suffix_case: Option<Case>,
+    pub double_suffix_case: Option<Case>,
+    pub long_suffix_case: Option<Case>,
+    pub leading_zero: Option<LeadingZero>,
+    pub trailing_zeros: Option<TrailingZeros>,
+}
+
+impl NumbersConfig {
+    fn overlay(&self, numbers: Numbers) -> Numbers {
+        Numbers {
+            hex_prefix_case: self.hex_prefix_case.unwrap_or(numbers.hex_prefix_case),
+            hex_digit_case: self.hex_digit_case.unwrap_or(numbers.hex_digit_case),
+            exponent_case: self.exponent_case.unwrap_or(numbers.exponent_case),
+            exponent_padding: self.exponent_padding.unwrap_or(numbers.exponent_padding),
+            float_suffix_case: self.float_suffix_case.unwrap_or(numbers.float_suffix_case),
+            double_suffix_case: self
+                .double_suffix_case
+                .unwrap_or(numbers.double_suffix_case),
+            long_suffix_case: self.long_suffix_case.unwrap_or(numbers.long_suffix_case),
+            leading_zero: self.leading_zero.unwrap_or(numbers.leading_zero),
+            trailing_zeros: self.trailing_zeros.unwrap_or(numbers.trailing_zeros),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -180,6 +223,29 @@ mod tests {
                 nullable: Nullable::Preserve,
                 sort_imports: false,
                 ..FormatSettings::default()
+            }
+        );
+    }
+
+    #[test]
+    fn a_number_setting_overlays_only_itself() {
+        let config: FormatConfig = toml::from_str(
+            r#"
+            [numbers]
+            hex-digit-case = "lower"
+            trailing-zeros = "trim"
+            "#,
+        )
+        .expect("numbers table parses");
+
+        let settings = FormatSettings::default().with_overrides(&config);
+
+        assert_eq!(
+            settings.numbers,
+            Numbers {
+                hex_digit_case: Case::Lower,
+                trailing_zeros: TrailingZeros::Trim,
+                ..Numbers::default()
             }
         );
     }

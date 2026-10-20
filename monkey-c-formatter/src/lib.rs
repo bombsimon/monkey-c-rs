@@ -5,6 +5,7 @@ pub mod doc;
 mod expressions;
 mod lists;
 mod member_chain;
+mod numbers;
 mod operators;
 pub mod options;
 mod statements;
@@ -19,7 +20,9 @@ use monkey_c_parser::parser::ParseOutput;
 use monkey_c_parser::token;
 
 use crate::alignment::align_trailing_comments;
-use crate::options::{AnnotationSeparator, ModifierOrder, Nullable, ResourceRef, UnionStyle};
+use crate::options::{
+    AnnotationSeparator, ModifierOrder, Nullable, Numbers, ResourceRef, UnionStyle,
+};
 use doc::render;
 
 use std::cell::RefCell;
@@ -51,6 +54,7 @@ pub struct Formatter {
     modifier_order: ModifierOrder,
     parens: options::Parens,
     sort_imports: bool,
+    numbers: Numbers,
     /// Where operands written right after a cast start. A `(` there has to stay, or the cast's
     /// type would take what follows as one more union member.
     after_cast: RefCell<HashSet<usize>>,
@@ -78,6 +82,7 @@ impl Formatter {
             modifier_order: ModifierOrder::default(),
             parens: options::Parens::default(),
             sort_imports: true,
+            numbers: Numbers::default(),
             after_cast: RefCell::default(),
             comment_cursor: RefCell::new(CommentCursor::default()),
         }
@@ -142,6 +147,12 @@ impl Formatter {
     /// Sort each run of `using` and `import` declarations into groups (default: on).
     pub fn with_sort_imports(mut self, sort_imports: bool) -> Self {
         self.sort_imports = sort_imports;
+        self
+    }
+
+    /// Set how each part of a number literal is written (default: see [`Numbers`]).
+    pub fn with_numbers(mut self, numbers: Numbers) -> Self {
+        self.numbers = numbers;
         self
     }
 

@@ -255,6 +255,23 @@ fn test_float_suffix() {
 }
 
 #[test]
+fn test_leading_dot_with_any_suffix() {
+    assert_eq!(
+        tokens(".5d .5l"),
+        vec![
+            Type::Double(DoubleLit {
+                digits: ".5".into(),
+                has_dot: true,
+                leading_dot: true,
+                exponent: None,
+                suffix: 'd',
+            }),
+            Type::Long(".5l".into()),
+        ]
+    );
+}
+
+#[test]
 fn test_leading_dot_float() {
     assert_eq!(
         tokens(".978 .5f"),
