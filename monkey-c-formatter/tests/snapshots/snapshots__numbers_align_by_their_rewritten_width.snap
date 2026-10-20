@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_aligned(\"var d = {\\n    .5 => :half,\\n    1.0 => :one,\\n    0xffl => :mask,\\n};\")"
+---
+var d = {
+    0.5   => :half,
+    1.0   => :one,
+    0xFFL => :mask,
+};

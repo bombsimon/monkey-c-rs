@@ -2,7 +2,7 @@ mod meaning;
 
 use monkey_c_formatter::Formatter;
 use monkey_c_formatter::options::{
-    AnnotationSeparator, ModifierOrder, Nullable, Parens, ResourceRef, UnionStyle,
+    AnnotationSeparator, ModifierOrder, Nullable, Numbers, Parens, ResourceRef, UnionStyle,
 };
 use monkey_c_parser::ast::CommentStmt;
 use monkey_c_parser::lexer::Lexer;
@@ -104,6 +104,7 @@ pub fn preserving(formatter: Formatter) -> Formatter {
         .with_modifier_order(ModifierOrder::Preserve)
         .with_parens(Parens::Preserve)
         .with_sort_imports(false)
+        .with_numbers(Numbers::preserve())
 }
 
 pub fn format(src: &str) -> String {

@@ -1,0 +1,9 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(NUMBERS.trim(), |formatter|\nformatter.with_numbers(Numbers::preserve()))"
+---
+var number = 007;
+var hex = [0xff, 0XAbC, 0xffl, 0X10L];
+var long = [10l, 10L, .50l, 1E+05l];
+var float = [.5, 1.50, 1.0, 2F, 1E5, 2.5e+07, 1e-007, .50E+00f];
+var double = [.5d, 1.50D, 6371e03d, 10.000d];

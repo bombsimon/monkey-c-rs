@@ -1,0 +1,5 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(\"var c = .5l;\")"
+---
+var c = 0.5L;

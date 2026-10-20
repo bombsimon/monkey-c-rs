@@ -4,8 +4,8 @@
 //! compare.
 
 use monkey_c_parser::ast::{
-    Ast, BlockStmt, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, InterfaceMember, Parameter,
-    Separated, Span, Spanned, Stmt, Type, TypeKind, UnaryOperator, UnionAlternative,
+    Ast, BlockStmt, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, InterfaceMember, LiteralValue,
+    Parameter, Separated, Span, Spanned, Stmt, Type, TypeKind, UnaryOperator, UnionAlternative,
     UnionSeparator, VarDecl,
 };
 
@@ -278,12 +278,8 @@ fn normalize_expr(expr: &mut Expr) {
                 normalize_expr(&mut entry.value);
             }
         }
-        Expr::Lit(_)
-        | Expr::Ident(_)
-        | Expr::Paren(_)
-        | Expr::Me(_)
-        | Expr::Self_(_)
-        | Expr::Bling(_) => {}
+        Expr::Lit(e) => normalize_literal(&mut e.value),
+        Expr::Ident(_) | Expr::Paren(_) | Expr::Me(_) | Expr::Self_(_) | Expr::Bling(_) => {}
     }
 }
 
@@ -395,4 +391,71 @@ fn placeholder_kind() -> TypeKind {
     TypeKind::Tuple {
         elements: Vec::new(),
     }
+}
+
+/// Number literals in one spelling per value: lowercase, with a leading zero, no trailing zeros
+/// past the first after the `.` and no padding in the exponent. Whether there's a `.`, an exponent
+/// or a suffix at all is left alone, since that's the type.
+fn normalize_literal(value: &mut LiteralValue) {
+    match value {
+        LiteralValue::Hex(text) | LiteralValue::HexLong(text) => {
+            *text = text.to_ascii_lowercase();
+        }
+        LiteralValue::Long(text) => *text = normalize_long(text),
+        LiteralValue::Float(lit) => {
+            lit.digits = normalize_fraction(&lit.digits);
+            lit.leading_dot = false;
+            lit.exponent = lit.exponent.as_deref().map(normalize_exponent);
+            lit.suffix = lit.suffix.map(|suffix| suffix.to_ascii_lowercase());
+        }
+        LiteralValue::Double(lit) => {
+            lit.digits = normalize_fraction(&lit.digits);
+            lit.leading_dot = false;
+            lit.exponent = lit.exponent.as_deref().map(normalize_exponent);
+            lit.suffix = lit.suffix.to_ascii_lowercase();
+        }
+        _ => {}
+    }
+}
+
+/// A long keeps its text whole, so its fraction and exponent are split out like a float's.
+fn normalize_long(text: &str) -> String {
+    let body = &text[..text.len() - 1];
+    let (digits, exponent) = match body.find(['e', 'E']) {
+        Some(index) => (&body[..index], normalize_exponent(&body[index..])),
+        None => (body, String::new()),
+    };
+
+    format!("{}{exponent}l", normalize_fraction(digits))
+}
+
+fn normalize_fraction(digits: &str) -> String {
+    let digits = match digits.strip_prefix('.') {
+        Some(fraction) => format!("0.{fraction}"),
+        None => digits.to_string(),
+    };
+
+    let Some((whole, fraction)) = digits.split_once('.') else {
+        return digits;
+    };
+
+    let fraction = fraction.trim_end_matches('0');
+    let fraction = if fraction.is_empty() { "0" } else { fraction };
+
+    format!("{whole}.{fraction}")
+}
+
+fn normalize_exponent(exponent: &str) -> String {
+    let exponent = exponent.to_ascii_lowercase();
+    let digits = exponent[1..].trim_start_matches('+');
+    let (sign, digits) = match digits.strip_prefix('-') {
+        Some(digits) => ("-", digits),
+        None => ("", digits),
+    };
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return "e0".to_string();
+    }
+
+    format!("e{sign}{digits}")
 }

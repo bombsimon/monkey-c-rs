@@ -20,6 +20,17 @@ parens = "drop"
 sort-imports = true
 exclude = []
 
+[format.numbers]
+hex-prefix-case = "lower"
+hex-digit-case = "upper"
+exponent-case = "lower"
+exponent-padding = "trim"
+float-suffix-case = "lower"
+double-suffix-case = "lower"
+long-suffix-case = "upper"
+leading-zero = "add"
+trailing-zeros = "preserve"
+
 [lint]
 enable = []
 disable = []
@@ -148,6 +159,78 @@ of hand-aligned tables that's still linted. Uses the same globs, relative to
 `rafiki.toml`.
 
 - **Default:** `[]`
+
+## `[format.numbers]`
+
+How number literals are spelled, one setting per part of the literal. Like the
+settings above they're only read from `rafiki.toml`, and none of them changes a
+literal's type or value: whether it has a `.`, an exponent or a suffix stays as
+written, and so do the digits of a decimal integer.
+
+The casing settings take `"lower"`, `"upper"` or `"preserve"`.
+
+### `hex-prefix-case`
+
+The casing of the `0x` in front of a hex literal: `0XFF` to `0xFF`.
+
+- **Default:** `"lower"`
+
+### `hex-digit-case`
+
+The casing of the digits of a hex literal: `0xff` to `0xFF`. Uppercase is what
+Garmin's documentation uses, and it sets the digits apart from the lowercase
+`x`.
+
+- **Default:** `"upper"`
+
+### `exponent-case`
+
+The casing of the `e` in scientific notation: `1E5` to `1e5`.
+
+- **Default:** `"lower"`
+
+### `exponent-padding`
+
+Whether to drop the `+` and leading zeros of an exponent: `"trim"` writes
+`2.5e+07` as `2.5e7`, `"preserve"` keeps it.
+
+- **Default:** `"trim"`
+
+### `float-suffix-case`
+
+The casing of the `f` that makes a literal a `Float`: `1.0F` to `1.0f`.
+
+- **Default:** `"lower"`
+
+### `double-suffix-case`
+
+The casing of the `d` that makes a literal a `Double`: `1.0D` to `1.0d`.
+
+- **Default:** `"lower"`
+
+### `long-suffix-case`
+
+The casing of the `l` that makes a literal a `Long`, in decimal and hex alike:
+`5l` to `5L` and `0xFFl` to `0xFFL`. Uppercase is the default since `10l` is
+easy to misread as `101`.
+
+- **Default:** `"upper"`
+
+### `leading-zero`
+
+Whether to write the `0` in front of a fraction: `"add"` writes `.5` as `0.5`
+and `.5d` as `0.5d`, `"preserve"` keeps it.
+
+- **Default:** `"add"`
+
+### `trailing-zeros`
+
+Whether to drop zeros at the end of a fraction: `"trim"` writes `1.50` as `1.5`,
+`"preserve"` keeps it. One digit always stays after the `.`, so `1.0` is never
+written as `1`, which would be a `Number`. Kept by default, since trailing zeros
+are often there on purpose, like lining up a table of values by precision.
+
+- **Default:** `"preserve"`
 
 ## `[lint]`
 

@@ -20,7 +20,7 @@ mod source;
 
 pub use crate::error::Error;
 pub use crate::files::{FilesConfig, FilesSettings};
-pub use crate::format::{FormatConfig, FormatSettings};
+pub use crate::format::{FormatConfig, FormatSettings, NumbersConfig};
 pub use crate::lint::{LintConfig, LintSettings};
 pub use crate::paths::{PathMatcher, PathRules};
 pub use crate::source::{ConfigSource, ResolvedConfig};

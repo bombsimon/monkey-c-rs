@@ -1,15 +1,6 @@
 use crate::ast::{DoubleLit, FloatLit};
 use crate::token;
 
-enum NumberLiteral {
-    Number(String),
-    Long(String),
-    Float(FloatLit),
-    Double(DoubleLit),
-    Hex(String),
-    HexLong(String),
-}
-
 pub struct Lexer<'a> {
     input: &'a str,
     position: usize,
@@ -104,7 +95,7 @@ impl<'a> Lexer<'a> {
         self.input[position..self.position].to_string()
     }
 
-    fn read_number(&mut self) -> NumberLiteral {
+    fn read_number(&mut self) -> token::Type {
         let start_position = self.position;
         let leading_dot = self.ch == b'.';
 
@@ -116,12 +107,10 @@ impl<'a> Lexer<'a> {
 
             if matches!(self.ch, b'l' | b'L') {
                 self.read_char();
-                return NumberLiteral::HexLong(
-                    self.input[start_position..self.position].to_string(),
-                );
+                return token::Type::HexLong(self.input[start_position..self.position].to_string());
             }
 
-            return NumberLiteral::Hex(self.input[start_position..self.position].to_string());
+            return token::Type::Hex(self.input[start_position..self.position].to_string());
         }
 
         let mut has_dot = false;
@@ -172,11 +161,11 @@ impl<'a> Lexer<'a> {
         match self.ch {
             b'l' | b'L' => {
                 self.read_char();
-                NumberLiteral::Long(self.input[start_position..self.position].to_string())
+                token::Type::Long(self.input[start_position..self.position].to_string())
             }
             suffix @ (b'd' | b'D') => {
                 self.read_char();
-                NumberLiteral::Double(DoubleLit {
+                token::Type::Double(DoubleLit {
                     digits,
                     has_dot,
                     leading_dot,
@@ -186,7 +175,7 @@ impl<'a> Lexer<'a> {
             }
             suffix @ (b'f' | b'F') => {
                 self.read_char();
-                NumberLiteral::Float(FloatLit {
+                token::Type::Float(FloatLit {
                     digits,
                     has_dot,
                     leading_dot,
@@ -194,14 +183,14 @@ impl<'a> Lexer<'a> {
                     exponent,
                 })
             }
-            _ if has_dot || exponent.is_some() => NumberLiteral::Float(FloatLit {
+            _ if has_dot || exponent.is_some() => token::Type::Float(FloatLit {
                 digits,
                 has_dot,
                 leading_dot,
                 suffix: None,
                 exponent,
             }),
-            _ => NumberLiteral::Number(text),
+            _ => token::Type::Number(text),
         }
     }
 
@@ -427,15 +416,12 @@ impl<'a> Lexer<'a> {
             b';' => (token::Type::Semicolon, 1),
             b',' => (token::Type::Comma, 1),
             b'.' => {
-                // `.978` — leading-zero-omitted float literal. `read_number`
+                // `.978` — leading-zero-omitted literal. `read_number`
                 // sets the `leading_dot` flag from `self.ch == b'.'` so we
-                // re-use the same path here.
+                // re-use the same path here, which also lexes the suffix of
+                // `.5d` or `.5l`.
                 if self.peek_char().is_ascii_digit() {
-                    let token_type = match self.read_number() {
-                        NumberLiteral::Float(lit) => token::Type::Float(lit),
-                        NumberLiteral::Double(lit) => token::Type::Double(lit),
-                        _ => unreachable!("leading `.` always produces a float-class literal"),
-                    };
+                    let token_type = self.read_number();
                     return (start, token_type, self.position);
                 }
                 (token::Type::Dot, 1)
@@ -469,15 +455,7 @@ impl<'a> Lexer<'a> {
                         (token::Type::Identifier(ident), 0)
                     }
                 } else if self.ch.is_ascii_digit() {
-                    let token_type = match self.read_number() {
-                        NumberLiteral::Number(s) => token::Type::Number(s),
-                        NumberLiteral::Long(s) => token::Type::Long(s),
-                        NumberLiteral::Float(lit) => token::Type::Float(lit),
-                        NumberLiteral::Double(lit) => token::Type::Double(lit),
-                        NumberLiteral::Hex(s) => token::Type::Hex(s),
-                        NumberLiteral::HexLong(s) => token::Type::HexLong(s),
-                    };
-                    (token_type, 0)
+                    (self.read_number(), 0)
                 } else {
                     // Consume the character so `next_token` will advance.
                     (token::Type::Illegal, first.len_utf8())

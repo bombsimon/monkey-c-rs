@@ -3,8 +3,8 @@ source: monkey-c-formatter/tests/snapshots.rs
 input_file: monkey-c-formatter/tests/snapshot_inputs/long_literal_forms.mc
 ---
 function f() {
-    var lowerSuffix = 9000l;
+    var lowerSuffix = 9000L;
     var upperSuffix = 9000L;
-    var hexLong = 0xFFl;
-    var overflowLong = 99999999999999999999l;
+    var hexLong = 0xFFL;
+    var overflowLong = 99999999999999999999L;
 }
