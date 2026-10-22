@@ -1,0 +1,25 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var argument = Math.floor((no / 2), (y));\n    var index = values[(i + 1)];\n    var element = [(a + b), (c)];\n    var entries = {(key) => (a + b)};\n    var size = new [(count + 1)];\n    var created = new Foo((a + b));\n    var condition = (i == 1) ? 4 : 4 + no;\n    var branches = ready ? (a + 1) : (b - 1);\n    var chained = ready ? a : (other ? b : c);\n    var simple = xx + (width) / (foo()) * (values[0]);\n    var negated = !(ready) && -(count) < 0;\n    var receiver = (Math.floor(x)).toNumber() + (foo).bar[(i)] + (values[0]).abs();\n    if ((ready)) {\n        x = 1;\n    }\n\n    while (((busy))) {\n        x = 2;\n    }\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    var argument = Math.floor(no / 2, y);
+    var index = values[i + 1];
+    var element = [a + b, c];
+    var entries = {key => a + b};
+    var size = new [count + 1];
+    var created = new Foo(a + b);
+    var condition = i == 1 ? 4 : 4 + no;
+    var branches = ready ? a + 1 : b - 1;
+    var chained = ready ? a : other ? b : c;
+    var simple = xx + width / foo() * values[0];
+    var negated = !ready && -count < 0;
+    var receiver = Math.floor(x).toNumber() + foo.bar[i] + values[0].abs();
+    if (ready) {
+        x = 1;
+    }
+
+    while (busy) {
+        x = 2;
+    }
+}

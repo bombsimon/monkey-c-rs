@@ -6,5 +6,5 @@ function f() {
     var simple = true ? 1 : 2;
     var nested = a ? b : c ? d : e;
     var short = a ? b : c;
-    var in_dict = {"k" => (a == null) ? "default" : a};
+    var in_dict = {"k" => a == null ? "default" : a};
 }

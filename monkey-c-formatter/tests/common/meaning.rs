@@ -4,9 +4,9 @@
 //! compare.
 
 use monkey_c_parser::ast::{
-    Ast, BlockStmt, CaseLabel, ElseBranch, Expr, ForInit, IfStmt, InterfaceMember, LiteralValue,
-    Parameter, Separated, Span, Spanned, Stmt, Type, TypeKind, UnaryOperator, UnionAlternative,
-    UnionSeparator, VarDecl,
+    Ast, BinaryExpr, BinaryOperator, BlockStmt, CaseLabel, ElseBranch, Expr, ForInit, IfStmt,
+    InterfaceMember, LiteralValue, Parameter, Separated, Span, Spanned, Stmt, Type, TypeKind,
+    UnaryOperator, UnionAlternative, UnionSeparator, VarDecl,
 };
 
 use std::mem;
@@ -228,6 +228,7 @@ fn normalize_expr(expr: &mut Expr) {
         Expr::Binary(e) => {
             normalize_expr(&mut e.left);
             normalize_expr(&mut e.right);
+            regroup_left(expr);
         }
         Expr::Unary(e) => normalize_expr(&mut e.operand),
         Expr::Ternary(e) => {
@@ -381,6 +382,60 @@ fn is_null(ty: &Type) -> bool {
     };
 
     generic_params.is_empty() && matches!(ident.as_str(), "Null" | "Lang.Null" | "Toybox.Lang.Null")
+}
+
+/// `a || (b || c)` as `(a || b) || c`, since the formatter drops parens that only regroup an
+/// associative operator and both group the same way when read.
+fn regroup_left(expr: &mut Expr) {
+    loop {
+        let Expr::Binary(outer) = &*expr else {
+            return;
+        };
+
+        let Expr::Binary(inner) = outer.right.as_ref() else {
+            return;
+        };
+
+        if associative(outer.operator).is_none()
+            || associative(outer.operator) != associative(inner.operator)
+        {
+            return;
+        }
+
+        let Expr::Binary(outer) = mem::replace(expr, placeholder_expr()) else {
+            unreachable!()
+        };
+
+        let Expr::Binary(inner) = *outer.right else {
+            unreachable!()
+        };
+
+        let mut left = Expr::Binary(BinaryExpr {
+            left: outer.left,
+            operator: outer.operator,
+            op_pos: outer.op_pos,
+            right: inner.left,
+            span: outer.span,
+        });
+        regroup_left(&mut left);
+
+        *expr = Expr::Binary(BinaryExpr {
+            left: Box::new(left),
+            operator: inner.operator,
+            op_pos: inner.op_pos,
+            right: inner.right,
+            span: inner.span,
+        });
+    }
+}
+
+fn associative(op: BinaryOperator) -> Option<BinaryOperator> {
+    match op {
+        BinaryOperator::And | BinaryOperator::AndKeyword => Some(BinaryOperator::And),
+        BinaryOperator::Or | BinaryOperator::OrKeyword => Some(BinaryOperator::Or),
+        BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor => Some(op),
+        _ => None,
+    }
 }
 
 fn placeholder_expr() -> Expr {

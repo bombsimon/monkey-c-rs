@@ -207,8 +207,10 @@ impl Formatter {
             .enumerate()
             .map(|(i, a)| {
                 let next_arg_start = args.get(i + 1).map(|next| next.value.span().start);
-                let content =
-                    self.expr_with_leading_bounded(&a.value, next_arg_start.unwrap_or(args_close));
+                let content = self.expr_with_leading_bounded(
+                    self.without_parens(&a.value),
+                    next_arg_start.unwrap_or(args_close),
+                );
 
                 self.list_item(
                     content,
@@ -252,7 +254,7 @@ impl Formatter {
             |entry| entry.value.span().start,
             |entry| entry.value.span().end,
             |_, entry, next_entry_start| {
-                self.expr_with_leading_bounded(&entry.value, next_entry_start)
+                self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start)
             },
         )
     }
@@ -278,7 +280,7 @@ impl Formatter {
 
             // Measured as printed, so a string with wide characters or an item split over lines
             // in the source counts what it will take up.
-            let item = render_flat(&self.expr_inner_to_doc(&entry.value));
+            let item = render_flat(&self.expr_inner_to_doc(self.without_parens(&entry.value)));
 
             !after_blank_line
                 && !item.contains('\n')
@@ -295,7 +297,7 @@ impl Formatter {
             .iter()
             .enumerate()
             .map(|(index, entry)| {
-                let content = self.expr_inner_to_doc(&entry.value);
+                let content = self.expr_inner_to_doc(self.without_parens(&entry.value));
 
                 if index == last_index && !trailing_comma {
                     return content;
@@ -351,7 +353,7 @@ impl Formatter {
             |entry| entry.value.span().start,
             |entry| entry.value.span().end,
             |_, entry, next_entry_start| {
-                self.expr_with_leading_bounded(&entry.value, next_entry_start)
+                self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start)
             },
         )
     }
@@ -468,9 +470,9 @@ impl Formatter {
             // draining trailing comments that belong to the outer context (e.g.
             // a `// comment` after `}` in an enclosing array entry).
             flat_inner.push(Doc::concat(vec![
-                self.expr_inner_to_doc(&entry.key),
+                self.expr_inner_to_doc(self.without_parens(&entry.key)),
                 Doc::text(" => "),
-                self.expr_inner_to_doc(&entry.value),
+                self.expr_inner_to_doc(self.without_parens(&entry.value)),
             ]));
         }
         let flat_doc = Doc::concat(vec![
@@ -562,7 +564,7 @@ impl Formatter {
             .filter(|comment| self.line_index.line(comment.span.start as u32) == key_line);
         let before_arrow = cursor.peek_in(key_span.end, entry.arrow_pos);
 
-        let mut width = expr_key_width(&entry.key, &self.numbers)?;
+        let mut width = expr_key_width(self.without_parens(&entry.key), &self.numbers)?;
         for comment in leading.chain(before_arrow) {
             if !comment.is_block || comment.text.contains('\n') {
                 return None;
@@ -577,14 +579,14 @@ impl Formatter {
     /// A `key => value` pair with the comments around it, `padding` going between the key and
     /// `=>`.
     fn dict_entry_to_doc(&self, entry: &DictEntry, next_entry_start: usize, padding: Doc) -> Doc {
-        let key = self.expr_with_leading(&entry.key);
+        let key = self.expr_with_leading(self.without_parens(&entry.key));
         let key_end = entry.key.span().end;
         let arrow_breaks = self.token_starts_new_line(key_end, entry.arrow_pos);
         let before_arrow = self.drain_before_token(key_end, entry.arrow_pos);
         let value = self.after_token(
             entry.arrow_pos + "=>".len(),
             entry.value.span().start,
-            || self.expr_with_leading_bounded(&entry.value, next_entry_start),
+            || self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start),
         );
 
         if arrow_breaks {
@@ -777,9 +779,9 @@ impl Formatter {
                 // path is taken — use expr_inner_to_doc to avoid draining
                 // trailing comments that belong to the outer context.
                 content: Doc::concat(vec![
-                    self.expr_inner_to_doc(&entry.key),
+                    self.expr_inner_to_doc(self.without_parens(&entry.key)),
                     Doc::text(" => "),
-                    self.expr_inner_to_doc(&entry.value),
+                    self.expr_inner_to_doc(self.without_parens(&entry.value)),
                 ]),
                 before_separator: Doc::Empty,
                 trailing: Doc::Empty,

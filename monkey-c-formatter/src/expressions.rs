@@ -144,9 +144,91 @@ impl Formatter {
         current
     }
 
+    /// A ternary's condition without parentheses, unless it's a ternary itself, which would read
+    /// as a chain, or ends in a cast, whose type would take the `?` as nullable.
+    fn condition_without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
+        let mut current = expr;
+        while let Expr::Paren(p) = current
+            && self.drops_parens(p)
+            && !matches!(*p.inner, Expr::Assign(_) | Expr::Ternary(_))
+            && !ends_with_cast(&p.inner)
+        {
+            current = &p.inner;
+        }
+
+        current
+    }
+
+    /// A ternary branch without parentheses. A nested ternary keeps them in the `then` branch,
+    /// where it's hard to tell which `:` belongs to which `?`, and a cast keeps them in the
+    /// `else` branch, where whatever follows the ternary could extend its type.
+    fn branch_without_parens<'a>(&self, expr: &'a Expr, branch: Branch) -> &'a Expr {
+        let mut current = expr;
+        while let Expr::Paren(p) = current
+            && self.drops_parens(p)
+            && !matches!(*p.inner, Expr::Assign(_))
+        {
+            let keeps = match branch {
+                Branch::Then => matches!(*p.inner, Expr::Ternary(_)),
+                Branch::Else => ends_with_cast(&p.inner),
+            };
+
+            if keeps {
+                break;
+            }
+
+            current = &p.inner;
+        }
+
+        current
+    }
+
+    /// The operand of a prefix operator like `!` or `-` without parentheses around a name,
+    /// literal, call or other operand that precedence can't split. Another prefix operator keeps
+    /// them, since `-(-x)` would otherwise become the decrement `--x`.
+    fn simple_without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
+        let mut current = expr;
+        while let Expr::Paren(p) = current
+            && self.drops_parens(p)
+            && is_simple(&p.inner)
+            && !is_prefix_unary(&p.inner)
+        {
+            current = &p.inner;
+        }
+
+        current
+    }
+
+    /// What a member access, index or call is applied to, without parentheses around a name, call,
+    /// member access or index. A literal keeps them, since `(360).toFloat()` reads more clearly
+    /// than `360.toFloat()`, and so does `new`, where `new Foo().bar()` would hide which part
+    /// `new` applies to.
+    pub(crate) fn receiver_without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
+        let mut current = expr;
+        while let Expr::Paren(p) = current
+            && self.drops_parens(p)
+            && matches!(
+                *p.inner,
+                Expr::Paren(_)
+                    | Expr::Call(_)
+                    | Expr::Member(_)
+                    | Expr::Index(_)
+                    | Expr::Ident(_)
+                    | Expr::Me(_)
+                    | Expr::Self_(_)
+                    | Expr::Bling(_)
+            )
+        {
+            current = &p.inner;
+        }
+
+        current
+    }
+
     /// `operand` of a `parent` operator without parentheses that can't change how it groups:
     /// around an operator that binds tighter, or one that binds as tight on the left, since every
-    /// operator is left-associative.
+    /// operator is left-associative. On the right, the same associative operator regroups freely
+    /// too, so `a || (b || c)` is `a || b || c`.
     fn operand_without_parens<'a>(
         &self,
         operand: &'a Expr,
@@ -158,12 +240,15 @@ impl Formatter {
             && self.drops_parens(p)
         {
             let redundant = match p.inner.as_ref() {
-                Expr::Paren(_) => true,
+                inner if is_simple(inner) => true,
                 Expr::Binary(inner) => {
                     let inner_precedence = inner.operator.precedence();
                     let parent_precedence = parent.precedence();
                     let groups = inner_precedence > parent_precedence
-                        || (inner_precedence == parent_precedence && side == OperandSide::Left);
+                        || (inner_precedence == parent_precedence && side == OperandSide::Left)
+                        || (side == OperandSide::Right
+                            && associative(inner.operator).is_some()
+                            && associative(inner.operator) == associative(parent));
 
                     groups && !ends_with_cast(&p.inner)
                 }
@@ -280,23 +365,25 @@ impl Formatter {
                 }
                 _ => Doc::concat(vec![
                     Doc::text(operators::unary_prefix_op(&e.operator)),
-                    self.expr_with_leading(&e.operand),
+                    self.expr_with_leading(self.simple_without_parens(&e.operand)),
                 ]),
             },
             Expr::Ternary(e) => {
-                let condition = self.expr_with_leading(&e.condition);
+                let condition = self.expr_with_leading(self.condition_without_parens(&e.condition));
                 let condition_end = e.condition.span().end;
                 let question_break = self.line_before_token(condition_end, e.question_pos);
                 let before_question = self.drain_before_token(condition_end, e.question_pos);
                 let then_expr =
                     self.after_token(e.question_pos + 1, e.then_expr.span().start, || {
-                        self.expr_with_leading(&e.then_expr)
+                        self.expr_with_leading(
+                            self.branch_without_parens(&e.then_expr, Branch::Then),
+                        )
                     });
                 let then_end = e.then_expr.span().end;
                 let colon_break = self.line_before_token(then_end, e.colon_pos);
                 let before_colon = self.drain_before_token(then_end, e.colon_pos);
                 let else_expr = self.after_token(e.colon_pos + 1, e.else_expr.span().start, || {
-                    self.expr_with_leading(&e.else_expr)
+                    self.expr_with_leading(self.branch_without_parens(&e.else_expr, Branch::Else))
                 });
 
                 Doc::Group(vec![
@@ -327,7 +414,7 @@ impl Formatter {
                     return chain;
                 }
 
-                let callee = self.expr_with_leading(&e.callee);
+                let callee = self.expr_with_leading(self.receiver_without_parens(&e.callee));
 
                 Doc::concat(vec![callee, self.call_arguments_to_doc(e)])
             }
@@ -337,15 +424,15 @@ impl Formatter {
                 }
 
                 Doc::concat(vec![
-                    self.expr_with_leading(&e.object),
+                    self.expr_with_leading(self.receiver_without_parens(&e.object)),
                     Doc::text(format!(".{}", e.property)),
                 ])
             }
             Expr::Index(e) => {
                 let mut parts = vec![
-                    self.expr_with_leading(&e.object),
+                    self.expr_with_leading(self.receiver_without_parens(&e.object)),
                     Doc::text("["),
-                    self.expr_with_leading(&e.index),
+                    self.expr_with_leading(self.without_parens(&e.index)),
                 ];
                 parts.push(self.drain_before_close_doc(e.span.end - 1));
                 parts.push(Doc::text("]"));
@@ -412,7 +499,7 @@ impl Formatter {
                     parts.push(Doc::text(" "));
                 }
                 parts.push(Doc::text("["));
-                parts.push(self.expr_with_leading(&e.size));
+                parts.push(self.expr_with_leading(self.without_parens(&e.size)));
                 let close_pos = e.span.end - if e.is_byte_array { 2 } else { 1 };
                 parts.push(self.drain_before_close_doc(close_pos));
                 parts.push(Doc::text(if e.is_byte_array { "]b" } else { "]" }));
@@ -460,6 +547,49 @@ pub(crate) fn literal_text(value: &LiteralValue, numbers: &Numbers) -> String {
         LiteralValue::Null => "null".to_string(),
         LiteralValue::NaN => "NaN".to_string(),
     }
+}
+
+#[derive(Clone, Copy)]
+enum Branch {
+    Then,
+    Else,
+}
+
+/// Whether `expr` holds together as one operand whatever operator is around it.
+fn is_simple(expr: &Expr) -> bool {
+    match expr {
+        Expr::Unary(_)
+        | Expr::Paren(_)
+        | Expr::Call(_)
+        | Expr::Member(_)
+        | Expr::Index(_)
+        | Expr::New(_)
+        | Expr::NewArray(_)
+        | Expr::Array(_)
+        | Expr::Dict(_)
+        | Expr::Lit(_)
+        | Expr::Ident(_)
+        | Expr::Me(_)
+        | Expr::Self_(_)
+        | Expr::Bling(_) => true,
+        Expr::Binary(_) | Expr::Ternary(_) | Expr::Assign(_) | Expr::TypeCast(_) => false,
+    }
+}
+
+/// The operator `op` is the same as for regrouping, for those where `a op (b op c)` always equals
+/// `a op b op c`. `+` and `*` aren't among them, since `"x" + (1 + 2)` is `"x3"` and floats round
+/// differently when regrouped.
+fn associative(op: BinaryOperator) -> Option<BinaryOperator> {
+    match op {
+        BinaryOperator::And | BinaryOperator::AndKeyword => Some(BinaryOperator::And),
+        BinaryOperator::Or | BinaryOperator::OrKeyword => Some(BinaryOperator::Or),
+        BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor => Some(op),
+        _ => None,
+    }
+}
+
+fn is_prefix_unary(expr: &Expr) -> bool {
+    matches!(expr, Expr::Unary(e) if !matches!(e.operator, UnaryOperator::PostInc | UnaryOperator::PostDec))
 }
 
 /// Whether the rightmost part of `expr` is a cast, whose type would take a `|` or `or` after it

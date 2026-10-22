@@ -25,7 +25,7 @@ impl Formatter {
             self.drain_leading_doc(condition.open),
             Doc::text("("),
         ]);
-        let cond = &condition.inner;
+        let cond = self.without_parens(&condition.inner);
         let paren_close = condition.close;
         let cond_start = cond.span().start;
         let cond_end = cond.span().end;
