@@ -1313,6 +1313,82 @@ function f() {
     ));
 }
 
+/// Commas, brackets, `?` and `:` already end the expression in each of these positions, so the
+/// parens around it can't change how it reads.
+#[test]
+fn parens_dropped_in_delimited_positions() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var argument = Math.floor((no / 2), (y));
+    var index = values[(i + 1)];
+    var element = [(a + b), (c)];
+    var entries = {(key) => (a + b)};
+    var size = new [(count + 1)];
+    var created = new Foo((a + b));
+    var condition = (i == 1) ? 4 : 4 + no;
+    var branches = ready ? (a + 1) : (b - 1);
+    var chained = ready ? a : (other ? b : c);
+    var simple = xx + (width) / (foo()) * (values[0]);
+    var negated = !(ready) && -(count) < 0;
+    var receiver = (Math.floor(x)).toNumber() + (foo).bar[(i)] + (values[0]).abs();
+    if ((ready)) {
+        x = 1;
+    }
+
+    while (((busy))) {
+        x = 2;
+    }
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+/// Regrouping the same associative operator on the right gives the same result, while `-`, `+`
+/// and `*` can't regroup, since `"x" + (1 + 2)` is `"x3"` and floats round differently.
+#[test]
+fn parens_dropped_for_associative_operators() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var orChain = a || (b || c);
+    var andChain = a && (b and c);
+    var bits = (a | (b | c)) & (d & e) ^ (g ^ h);
+    var mixedLevel = a + (b | c);
+    var andOfOr = a && (b || c);
+    var minus = a - (b - c);
+    var plus = "x" + (1 + 2);
+    var times = a * (b * c);
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+/// Parens stay where dropping them would read differently or let a cast's type run on.
+#[test]
+fn parens_kept_where_they_matter() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var doubleNegation = -(-x);
+    var nestedThen = ready ? (a ? b : c) : d;
+    var nestedCondition = (a ? b : c) ? d : e;
+    var castCondition = (x as Boolean) ? 1 : 2;
+    var castElse = ready ? 1 : (x as Number);
+    var castOperand = (x as Number) + 1;
+    var member = (360).toFloat() + (a + b).abs() + (new Foo()).bar();
+    var commented = values[(i /* next */ + 1)];
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
 /// `&&` used to group from the right, so dropping the first parens here read as a different tree.
 #[test]
 fn parens_dropped_in_an_and_chain() {

@@ -1,0 +1,14 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var orChain = a || (b || c);\n    var andChain = a && (b and c);\n    var bits = (a | (b | c)) & (d & e) ^ (g ^ h);\n    var mixedLevel = a + (b | c);\n    var andOfOr = a && (b || c);\n    var minus = a - (b - c);\n    var plus = \"x\" + (1 + 2);\n    var times = a * (b * c);\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    var orChain = a || b || c;
+    var andChain = a && b and c;
+    var bits = (a | b | c) & d & e ^ g ^ h;
+    var mixedLevel = a + (b | c);
+    var andOfOr = a && (b || c);
+    var minus = a - (b - c);
+    var plus = "x" + (1 + 2);
+    var times = a * (b * c);
+}

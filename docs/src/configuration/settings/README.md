@@ -132,10 +132,17 @@ written.
 ### `parens`
 
 Whether to drop parentheses that can't change how the code is read: `"drop"` or
-`"preserve"`. That's around the value of an assignment, initializer or `return`,
-around an operand whose operator binds tighter than the one around it, or as
-tight on the left, and around a `Method(…)` type that nothing follows. A pair
-with a comment inside is kept.
+`"preserve"`. That's around a whole expression where something else already ends
+it: the value of an assignment, initializer or `return`, a call argument, array
+element, dictionary key or value, index, condition, and a ternary's condition or
+branches. It's also around an operand whose operator binds tighter than the one
+around it, or as tight on the left, around the same `&&`, `||`, `&`, `|` or `^`
+on the right, so `a || (b || c)` becomes `a || b || c`, around a name, literal,
+call or other single operand, and around a `Method(…)` type that nothing follows.
+
+A pair with a comment inside is kept, and so are pairs whose removal would change
+how the code reads: around a cast that something follows, a ternary inside a
+ternary's condition or `then` branch, and `-(-x)`. Parentheses are never added.
 
 - **Default:** `"drop"`
 

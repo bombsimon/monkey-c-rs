@@ -1,0 +1,14 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var doubleNegation = -(-x);\n    var nestedThen = ready ? (a ? b : c) : d;\n    var nestedCondition = (a ? b : c) ? d : e;\n    var castCondition = (x as Boolean) ? 1 : 2;\n    var castElse = ready ? 1 : (x as Number);\n    var castOperand = (x as Number) + 1;\n    var member = (360).toFloat() + (a + b).abs() + (new Foo()).bar();\n    var commented = values[(i /* next */ + 1)];\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    var doubleNegation = -(-x);
+    var nestedThen = ready ? (a ? b : c) : d;
+    var nestedCondition = (a ? b : c) ? d : e;
+    var castCondition = (x as Boolean) ? 1 : 2;
+    var castElse = ready ? 1 : (x as Number);
+    var castOperand = (x as Number) + 1;
+    var member = (360).toFloat() + (a + b).abs() + (new Foo()).bar();
+    var commented = values[(i /* next */ + 1)];
+}

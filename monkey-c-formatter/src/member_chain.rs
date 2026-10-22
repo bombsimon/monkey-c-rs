@@ -26,7 +26,7 @@ impl Formatter {
             .collect();
         let layout = chain.layout(&commented_groups)?;
 
-        let mut head = vec![self.expr_with_leading(chain.head)];
+        let mut head = vec![self.expr_with_leading(self.receiver_without_parens(chain.head))];
         head.extend(
             chain
                 .head_links
