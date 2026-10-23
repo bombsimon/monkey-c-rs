@@ -650,10 +650,13 @@ fn associative(op: BinaryOperator) -> Option<BinaryOperator> {
 }
 
 /// Whether `inner` right under `parent` needs parentheses to read right, even where precedence
-/// doesn't. That's `*`, `/` and `%` mixed, as in Prettier, and every mix where Monkey C groups
-/// differently from C, like `a + b << c` meaning `a + (b << c)`.
+/// doesn't. That's `*`, `/` and `%` mixed and `&&` inside `||`, as in Prettier, and every mix
+/// where Monkey C groups differently from C, like `a + b << c` meaning `a + (b << c)`.
 fn needs_clarifying_parens(inner: BinaryOperator, parent: BinaryOperator) -> bool {
     match (operator_family(inner), operator_family(parent)) {
+        (OperatorFamily::Logical, OperatorFamily::Logical) => {
+            associative(inner) != associative(parent)
+        }
         (OperatorFamily::Logical, _)
         | (_, OperatorFamily::Logical)
         | (OperatorFamily::Additive, OperatorFamily::Additive) => false,

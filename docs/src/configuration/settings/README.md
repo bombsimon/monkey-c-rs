@@ -148,15 +148,16 @@ how the code reads: around a cast that something follows, a ternary inside a
 ternary's condition or `then` branch, and `-(-x)`.
 
 They're added, or kept, where operators mix in a way that's easy to misread: `*`,
-`/` and `%` with each other, as Prettier does, and every mix where Monkey C groups
-differently from C. Monkey C puts `<<`, `>>`, `&`, `instanceof` and `has` on the
-same level as `*`, and `|` and `^` with `+`, so `a + b << c` means `a + (b << c)`,
-and that's how it's written.
+`/` and `%` with each other and `&&` inside `||`, as Prettier does, and every mix
+where Monkey C groups differently from C. Monkey C puts `<<`, `>>`, `&`,
+`instanceof` and `has` on the same level as `*`, and `|` and `^` with `+`, so
+`a + b << c` means `a + (b << c)`, and that's how it's written.
 
 ```monkey-c
 var thirds = width / 3 * 2;      // var thirds = (width / 3) * 2;
 var sumShift = a + b << c;       // var sumShift = a + (b << c);
 var maskEquals = x & mask == 0;  // var maskEquals = (x & mask) == 0;
+var either = a || b && c;        // var either = a || (b && c);
 ```
 
 - **Default:** `"normalize"`
