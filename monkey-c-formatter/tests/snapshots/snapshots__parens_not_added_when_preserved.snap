@@ -1,0 +1,8 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var thirds = width / 3 * 2;\n    var sumShift = a + b << c;\n}\n\"#.trim(),\n|formatter| formatter.with_parens(Parens::Preserve),)"
+---
+function f() {
+    var thirds = width / 3 * 2;
+    var sumShift = a + b << c;
+}

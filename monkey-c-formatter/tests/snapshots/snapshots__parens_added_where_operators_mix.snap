@@ -1,0 +1,16 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var thirds = settings.fieldXY[loc][0] + settings.fieldWidth / 3 * 2 - 1 + 4;\n    var scaled = a * b / c * d;\n    var remainder = a * b % c;\n    var sumShift = a + b << c;\n    var shiftProduct = a << b * c;\n    var shifts = a << b >> c;\n    var masked = flags | mask & bit;\n    var maskEquals = x & mask == 0;\n    var hasAnd = a has :b & c;\n    var equalsLess = a == b < c;\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    var thirds = settings.fieldXY[loc][0] + (settings.fieldWidth / 3) * 2 - 1 + 4;
+    var scaled = ((a * b) / c) * d;
+    var remainder = (a * b) % c;
+    var sumShift = a + (b << c);
+    var shiftProduct = (a << b) * c;
+    var shifts = (a << b) >> c;
+    var masked = flags | (mask & bit);
+    var maskEquals = (x & mask) == 0;
+    var hasAnd = (a has :b) & c;
+    var equalsLess = (a == b) < c;
+}

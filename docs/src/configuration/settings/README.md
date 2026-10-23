@@ -16,7 +16,7 @@ nullable = "shorthand"
 annotation-separator = "space"
 resource-ref = "bare"
 modifier-order = "visibility-first"
-parens = "drop"
+parens = "normalize"
 sort-imports = true
 exclude = []
 
@@ -131,20 +131,35 @@ written.
 
 ### `parens`
 
-Whether to drop parentheses that can't change how the code is read: `"drop"` or
-`"preserve"`. That's around a whole expression where something else already ends
+Whether the formatter decides where parentheses go: `"normalize"` or
+`"preserve"`. Normalizing drops the ones that can't change how the code is read
+and adds the ones that make it easier to read.
+
+They're dropped around a whole expression where something else already ends
 it: the value of an assignment, initializer or `return`, a call argument, array
 element, dictionary key or value, index, condition, and a ternary's condition or
-branches. It's also around an operand whose operator binds tighter than the one
+branches. They're also dropped around an operand whose operator binds tighter than the one
 around it, or as tight on the left, around the same `&&`, `||`, `&`, `|` or `^`
 on the right, so `a || (b || c)` becomes `a || b || c`, around a name, literal,
 call or other single operand, and around a `Method(…)` type that nothing follows.
 
 A pair with a comment inside is kept, and so are pairs whose removal would change
 how the code reads: around a cast that something follows, a ternary inside a
-ternary's condition or `then` branch, and `-(-x)`. Parentheses are never added.
+ternary's condition or `then` branch, and `-(-x)`.
 
-- **Default:** `"drop"`
+They're added, or kept, where operators mix in a way that's easy to misread: `*`,
+`/` and `%` with each other, as Prettier does, and every mix where Monkey C groups
+differently from C. Monkey C puts `<<`, `>>`, `&`, `instanceof` and `has` on the
+same level as `*`, and `|` and `^` with `+`, so `a + b << c` means `a + (b << c)`,
+and that's how it's written.
+
+```monkey-c
+var thirds = width / 3 * 2;      // var thirds = (width / 3) * 2;
+var sumShift = a + b << c;       // var sumShift = a + (b << c);
+var maskEquals = x & mask == 0;  // var maskEquals = (x & mask) == 0;
+```
+
+- **Default:** `"normalize"`
 
 ### `sort-imports`
 

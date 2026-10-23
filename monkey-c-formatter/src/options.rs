@@ -62,14 +62,14 @@ pub enum ModifierOrder {
     Preserve,
 }
 
-/// Whether to drop parentheses that can't change how the code is read, like those around a
-/// returned value or a call argument. Parentheses are never added, since a formatter only needs
-/// the ones the code's meaning depends on, and those are already in the source.
+/// Whether the formatter decides where parentheses go: dropped where they can't change how the
+/// code is read, like around a returned value, and added where operators mix in a way that's easy
+/// to misread, so the output doesn't depend on whether the author happened to write them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Parens {
     #[default]
-    Drop,
+    Normalize,
     Preserve,
 }
 

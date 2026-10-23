@@ -1423,7 +1423,8 @@ function f() {
 }
 
 /// Monkey C groups the bitwise and shift operators with the arithmetic ones, unlike C, so parens
-/// that would be redundant in C can be needed here and the other way around.
+/// that would be redundant in C can be needed here. The ones only redundant here stay, so the code
+/// doesn't read as it would in C.
 #[test]
 fn parens_follow_monkey_c_precedence() {
     insta::assert_snapshot!(format_with(
@@ -1443,6 +1444,65 @@ function f() {
 "#
         .trim(),
         |formatter| formatter,
+    ));
+}
+
+/// `*`, `/` and `%` mixed, and any mix where Monkey C groups differently from C, get parentheses
+/// whether the source had them or not.
+#[test]
+fn parens_added_where_operators_mix() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var thirds = settings.fieldXY[loc][0] + settings.fieldWidth / 3 * 2 - 1 + 4;
+    var scaled = a * b / c * d;
+    var remainder = a * b % c;
+    var sumShift = a + b << c;
+    var shiftProduct = a << b * c;
+    var shifts = a << b >> c;
+    var masked = flags | mask & bit;
+    var maskEquals = x & mask == 0;
+    var hasAnd = a has :b & c;
+    var equalsLess = a == b < c;
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+/// Mixes that read the same in Monkey C and C are left bare.
+#[test]
+fn parens_not_added_where_operators_read_alike() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var sum = a + b * c - d / e;
+    var product = a * b * c;
+    var quotient = a / b / c;
+    var mask = a & b & c;
+    var compare = a + 1 < b * 2;
+    var shiftCompare = a << 2 >= b;
+    var logic = a < b && c == d || !e;
+    var regrouped = (a - b) + (c * d) - (e / f);
+}
+"#
+        .trim(),
+        |formatter| formatter,
+    ));
+}
+
+#[test]
+fn parens_not_added_when_preserved() {
+    insta::assert_snapshot!(format_with(
+        r#"
+function f() {
+    var thirds = width / 3 * 2;
+    var sumShift = a + b << c;
+}
+"#
+        .trim(),
+        |formatter| formatter.with_parens(Parens::Preserve),
     ));
 }
 
