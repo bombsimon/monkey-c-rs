@@ -3,7 +3,7 @@ source: monkey-c-formatter/tests/snapshots.rs
 expression: "format_with(r#\"\nfunction f() {\n    var masked = b as Number | (hi << 8) & mask;\n    var scaled = x as Number | (a * b) / c;\n    var nested = x as Number | (a * b) * c & d;\n}\n\"#.trim(),\n|formatter| formatter,)"
 ---
 function f() {
-    var masked = b as Number | (hi << 8) & mask;
-    var scaled = x as Number | (a * b) / c;
-    var nested = x as Number | (a * b) * c & d;
+    var masked = b as Number | ((hi << 8) & mask);
+    var scaled = x as Number | ((a * b) / c);
+    var nested = x as Number | ((a * b * c) & d);
 }

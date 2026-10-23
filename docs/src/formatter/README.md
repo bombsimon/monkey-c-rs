@@ -71,7 +71,7 @@ function title() {
 | [`annotation-separator`][annotation-separator] | `"space"`            | `(:debug, :background)` to `(:debug :background)` |
 | [`resource-ref`][resource-ref]                 | `"bare"`             | `@Rez.Strings.Title` to `Rez.Strings.Title`       |
 | [`modifier-order`][modifier-order]             | `"visibility-first"` | `static private` to `private static`              |
-| [`parens`][parens]                             | `"drop"`             | `return (a + b);` to `return a + b;`              |
+| [`parens`][parens]                             | `"normalize"`        | `return (a + b);` to `return a + b;`              |
 | [`sort-imports`][sort-imports]                 | `true`               | Imports sorted into groups                        |
 | [`[format.numbers]`][numbers]                  | See settings         | `0Xff` to `0xFF`, `.5` to `0.5`, `1E+05` to `1e5` |
 

@@ -1,0 +1,14 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_with(r#\"\nfunction f() {\n    var sum = a + b * c - d / e;\n    var product = a * b * c;\n    var quotient = a / b / c;\n    var mask = a & b & c;\n    var compare = a + 1 < b * 2;\n    var shiftCompare = a << 2 >= b;\n    var logic = a < b && c == d || !e;\n    var regrouped = (a - b) + (c * d) - (e / f);\n}\n\"#.trim(),\n|formatter| formatter,)"
+---
+function f() {
+    var sum = a + b * c - d / e;
+    var product = a * b * c;
+    var quotient = a / b / c;
+    var mask = a & b & c;
+    var compare = a + 1 < b * 2;
+    var shiftCompare = a << 2 >= b;
+    var logic = a < b && c == d || !e;
+    var regrouped = a - b + c * d - e / f;
+}

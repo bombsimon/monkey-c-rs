@@ -14,17 +14,35 @@ enum OperandSide {
     Right,
 }
 
+/// One operand of a binary chain, and whether it gets parentheses the source didn't have.
+struct ChainOperand<'a> {
+    expr: &'a Expr,
+    parenthesized: bool,
+}
+
+/// The groups of operators readers tell apart, to see which mixes need parentheses to read right.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperatorFamily {
+    Additive,
+    Multiplicative,
+    Shift,
+    Bitwise,
+    Comparison,
+    TypeCheck,
+    Logical,
+}
+
 impl Formatter {
     fn binary_chain_parts(
         &self,
-        operands: &[&Expr],
+        operands: &[ChainOperand],
         ops: &[(&BinaryOperator, usize)],
         outer_max_pos: usize,
     ) -> Vec<Doc> {
         let mut parts: Vec<Doc> = Vec::new();
 
         for (i, operand) in operands.iter().enumerate() {
-            let span = *operand.span();
+            let span = *operand.expr.span();
             let leading = self.drain_leading_doc(span.start);
 
             // Bound the inner expression at the operator position so it cannot
@@ -35,9 +53,21 @@ impl Formatter {
                 .map(|(_, op_pos)| *op_pos)
                 .unwrap_or(outer_max_pos);
 
-            let inner = match operand {
-                Expr::Binary(e) => self.binary_chain_to_doc(operand, &e.operator, false, inner_max),
-                _ => self.expr_inner_to_doc_ctx(operand, inner_max),
+            let inner = match operand.expr {
+                Expr::Binary(e) if operand.parenthesized => Doc::concat(vec![
+                    Doc::text("("),
+                    self.binary_chain_to_doc(
+                        operand.expr,
+                        &e.operator,
+                        true,
+                        span.end.min(inner_max),
+                    ),
+                    Doc::text(")"),
+                ]),
+                Expr::Binary(e) => {
+                    self.binary_chain_to_doc(operand.expr, &e.operator, false, inner_max)
+                }
+                _ => self.expr_inner_to_doc_ctx(operand.expr, inner_max),
             };
 
             parts.push(leading);
@@ -48,7 +78,7 @@ impl Formatter {
                 let op_text = operators::binary_op(op);
                 let op_end = op_pos + op_text.len();
                 let op_line = self.line_index.line(op_pos as u32);
-                let next_start = operands[i + 1].span().start;
+                let next_start = operands[i + 1].expr.span().start;
 
                 // A comment after the operator that ends the line keeps the operator at the end of
                 // the line in front of it, as in `left || // c`, rather than moving past it.
@@ -87,7 +117,7 @@ impl Formatter {
         outermost: bool,
         outer_max_pos: usize,
     ) -> Doc {
-        let mut operands: Vec<&Expr> = Vec::new();
+        let mut operands: Vec<ChainOperand> = Vec::new();
         let mut ops: Vec<(&BinaryOperator, usize)> = Vec::new();
         self.collect_binary_chain(expr, op, &mut operands, &mut ops);
 
@@ -107,14 +137,14 @@ impl Formatter {
         &self,
         expr: &'a Expr,
         chain_op: &BinaryOperator,
-        operands: &mut Vec<&'a Expr>,
+        operands: &mut Vec<ChainOperand<'a>>,
         ops: &mut Vec<(&'a BinaryOperator, usize)>,
     ) {
         if let Expr::Binary(be) = expr
             && be.operator.precedence() == chain_op.precedence()
         {
             let left = self.operand_without_parens(&be.left, be.operator, OperandSide::Left);
-            self.collect_binary_chain(left, chain_op, operands, ops);
+            self.collect_chain_operand(left, be.operator, chain_op, operands, ops);
             ops.push((&be.operator, be.op_pos));
 
             if ends_with_cast(&be.left) {
@@ -122,12 +152,43 @@ impl Formatter {
             }
 
             let right = self.operand_without_parens(&be.right, be.operator, OperandSide::Right);
-            self.collect_binary_chain(right, chain_op, operands, ops);
+            self.collect_chain_operand(right, be.operator, chain_op, operands, ops);
 
             return;
         }
 
-        operands.push(expr);
+        operands.push(ChainOperand {
+            expr,
+            parenthesized: false,
+        });
+    }
+
+    /// An operand that reads ambiguously under `parent` becomes its own parenthesized operand
+    /// instead of joining the chain.
+    fn collect_chain_operand<'a>(
+        &self,
+        operand: &'a Expr,
+        parent: BinaryOperator,
+        chain_op: &BinaryOperator,
+        operands: &mut Vec<ChainOperand<'a>>,
+        ops: &mut Vec<(&'a BinaryOperator, usize)>,
+    ) {
+        if self.parens == options::Parens::Normalize
+            && let Expr::Binary(inner) = operand
+            && needs_clarifying_parens(inner.operator, parent)
+        {
+            // These parentheses already open the operand after a cast, so the ones inside are free
+            // to go.
+            self.after_cast.borrow_mut().remove(&operand.span().start);
+            operands.push(ChainOperand {
+                expr: operand,
+                parenthesized: true,
+            });
+
+            return;
+        }
+
+        self.collect_binary_chain(operand, chain_op, operands, ops);
     }
 
     /// `expr` without the parentheses around it, in a place where any expression reads the same.
@@ -266,14 +327,14 @@ impl Formatter {
     }
 
     fn drops_parens(&self, paren: &ParenExpr) -> bool {
-        self.parens == options::Parens::Drop
+        self.parens == options::Parens::Normalize
             && !self.has_written_comments_in(paren.span)
             && !self.after_cast.borrow().contains(&paren.span.start)
     }
 
     pub(crate) fn condition_to_doc(&self, expr: &Expr) -> Doc {
         if let Expr::Binary(e) = expr {
-            let mut operands: Vec<&Expr> = Vec::new();
+            let mut operands: Vec<ChainOperand> = Vec::new();
             let mut ops: Vec<(&BinaryOperator, usize)> = Vec::new();
             self.collect_binary_chain(expr, &e.operator, &mut operands, &mut ops);
 
@@ -585,6 +646,49 @@ fn associative(op: BinaryOperator) -> Option<BinaryOperator> {
         BinaryOperator::Or | BinaryOperator::OrKeyword => Some(BinaryOperator::Or),
         BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor => Some(op),
         _ => None,
+    }
+}
+
+/// Whether `inner` right under `parent` needs parentheses to read right, even where precedence
+/// doesn't. That's `*`, `/` and `%` mixed, as in Prettier, and every mix where Monkey C groups
+/// differently from C, like `a + b << c` meaning `a + (b << c)`.
+fn needs_clarifying_parens(inner: BinaryOperator, parent: BinaryOperator) -> bool {
+    match (operator_family(inner), operator_family(parent)) {
+        (OperatorFamily::Logical, _)
+        | (_, OperatorFamily::Logical)
+        | (OperatorFamily::Additive, OperatorFamily::Additive) => false,
+        (inner_family, parent_family) if inner_family == parent_family => inner != parent,
+        (
+            OperatorFamily::Additive | OperatorFamily::Multiplicative | OperatorFamily::Comparison,
+            OperatorFamily::Additive | OperatorFamily::Multiplicative | OperatorFamily::Comparison,
+        )
+        | (OperatorFamily::Shift, OperatorFamily::Comparison)
+        | (OperatorFamily::Comparison, OperatorFamily::Shift) => false,
+        _ => true,
+    }
+}
+
+fn operator_family(op: BinaryOperator) -> OperatorFamily {
+    match op {
+        BinaryOperator::Add | BinaryOperator::Sub => OperatorFamily::Additive,
+        BinaryOperator::Mul | BinaryOperator::Div | BinaryOperator::Mod => {
+            OperatorFamily::Multiplicative
+        }
+        BinaryOperator::LeftShift | BinaryOperator::RightShift => OperatorFamily::Shift,
+        BinaryOperator::BitAnd | BinaryOperator::BitOr | BinaryOperator::BitXor => {
+            OperatorFamily::Bitwise
+        }
+        BinaryOperator::Eq
+        | BinaryOperator::NotEq
+        | BinaryOperator::Lt
+        | BinaryOperator::LtEq
+        | BinaryOperator::Gt
+        | BinaryOperator::GtEq => OperatorFamily::Comparison,
+        BinaryOperator::InstanceOf | BinaryOperator::Has => OperatorFamily::TypeCheck,
+        BinaryOperator::And
+        | BinaryOperator::AndKeyword
+        | BinaryOperator::Or
+        | BinaryOperator::OrKeyword => OperatorFamily::Logical,
     }
 }
 

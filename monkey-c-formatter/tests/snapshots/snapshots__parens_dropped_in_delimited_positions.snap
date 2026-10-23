@@ -12,7 +12,7 @@ function f() {
     var condition = i == 1 ? 4 : 4 + no;
     var branches = ready ? a + 1 : b - 1;
     var chained = ready ? a : other ? b : c;
-    var simple = xx + width / foo() * values[0];
+    var simple = xx + (width / foo()) * values[0];
     var negated = !ready && -count < 0;
     var receiver = Math.floor(x).toNumber() + foo.bar[i] + values[0].abs();
     if (ready) {

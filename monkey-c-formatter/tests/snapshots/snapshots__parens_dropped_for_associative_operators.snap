@@ -5,7 +5,7 @@ expression: "format_with(r#\"\nfunction f() {\n    var orChain = a || (b || c);\
 function f() {
     var orChain = a || b || c;
     var andChain = a && b and c;
-    var bits = (a | b | c) & d & e ^ g ^ h;
+    var bits = ((a | b | c) & d & e) ^ g ^ h;
     var mixedLevel = a + (b | c);
     var andOfOr = a && (b || c);
     var minus = a - (b - c);
