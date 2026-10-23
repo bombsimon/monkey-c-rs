@@ -1447,8 +1447,8 @@ function f() {
     ));
 }
 
-/// `*`, `/` and `%` mixed, and any mix where Monkey C groups differently from C, get parentheses
-/// whether the source had them or not.
+/// `*`, `/` and `%` mixed, `&&` inside `||`, and any mix where Monkey C groups differently from C,
+/// get parentheses whether the source had them or not.
 #[test]
 fn parens_added_where_operators_mix() {
     insta::assert_snapshot!(format_with(
@@ -1464,6 +1464,8 @@ function f() {
     var maskEquals = x & mask == 0;
     var hasAnd = a has :b & c;
     var equalsLess = a == b < c;
+    var andInOr = a || b && c || d;
+    var keywords = a and b or c;
 }
 "#
         .trim(),
@@ -1483,7 +1485,9 @@ function f() {
     var mask = a & b & c;
     var compare = a + 1 < b * 2;
     var shiftCompare = a << 2 >= b;
-    var logic = a < b && c == d || !e;
+    var logic = a < b && c == d && !e;
+    var either = a || b or c;
+    var both = a && b and c;
     var regrouped = (a - b) + (c * d) - (e / f);
 }
 "#
