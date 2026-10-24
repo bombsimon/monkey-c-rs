@@ -21,8 +21,9 @@ editor extension for code navigation, but there is no formatter or linter.
 
 This project fills that gap. It starts from a full parser for the language and
 builds the tools on top of it, taking inspiration from [ruff] and [rustfmt].
-The tools are fast and have close to nothing to configure. See
-[Design principles](design) for the reasoning behind them.
+The tools are fast and work out of the box with sensible defaults, so there's
+little to configure. See [Design principles](design) for the reasoning behind
+them.
 
 ## Status
 
@@ -32,10 +33,8 @@ still change between versions, so pin the version you install. See
 
 Some things aren't supported yet:
 
-- Comments that turn off a lint rule or formatting for a section of code.
-- Files that aren't UTF-8, which are skipped with an error.
-- An extension for VS Code. The language server works with any editor that can
-  run one, see [Editor integration](lsp).
+- A VS Code extension. Until there is one, the language server works with any
+  editor that can start a custom server. See [Editor integration](lsp).
 
 ## Feedback
 
