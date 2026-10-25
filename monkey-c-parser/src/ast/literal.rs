@@ -1,105 +1,56 @@
-/// A 32-bit floating point literal together with the source-form flags
-/// needed to round-trip it. The lexer captures `digits` verbatim from the
-/// source (rather than parsing it to `f32`, which would lose precision and
-/// is unnecessary for re-emitting it); flags capture which surface form the
-/// user wrote so the formatter can re-emit the same shape (`0f`, `0.5`,
-/// `0.5f`, `.978`, `.5f`, `6371e3`).
+/// A 32-bit floating point literal, kept in the shape it was written (`0f`, `0.5`, `.978`,
+/// `6371e3`) rather than parsed, since parsing to `f32` would lose precision for no gain.
 ///
 /// <https://developer.garmin.com/connect-iq/api-docs/Toybox/Lang/Float.html>
 #[derive(Debug, Clone, PartialEq)]
 pub struct FloatLit {
-    /// The digits as written in source, before any exponent or `f`/`F`
-    /// suffix (`0`, `0.5`, `.978`, `6371`).
+    /// The digits before any exponent or suffix.
     pub digits: String,
-    /// Source contained a `.` (`0.5`, `.978`). False for integer-form
-    /// literals that gain Float-ness only through the `f` suffix (`0f`) or
-    /// an exponent (`6371e3`).
     pub has_dot: bool,
-    /// Source omitted the leading zero (`.5`, `.5f`). Implies `has_dot`.
+    /// Written without the zero before the `.`, as in `.5`.
     pub leading_dot: bool,
-    /// The `f` or `F` suffix as written, `None` when the source had none.
     pub suffix: Option<char>,
-    /// Exponent part from scientific notation, e.g. `"e3"`, `"E-2"`, `"e+10"`.
-    /// `None` for literals without an exponent.
+    /// The exponent as written, like `e3` or `E-2`.
     pub exponent: Option<String>,
 }
 
-/// A 64-bit floating point literal. Unlike [`FloatLit`], the `d` suffix is
-/// always required in source, so only its casing is optional.
+/// A 64-bit floating point literal. Unlike [`FloatLit`] the `d` suffix is required.
 ///
 /// <https://developer.garmin.com/connect-iq/api-docs/Toybox/Lang/Double.html>
 #[derive(Debug, Clone, PartialEq)]
 pub struct DoubleLit {
-    /// The digits as written in source, before any exponent or `d`/`D`
-    /// suffix (`78`, `78.0`, `.5`, `6371`). See [`FloatLit::digits`].
+    /// The digits before any exponent or suffix.
     pub digits: String,
-    /// Source contained a `.` (`78.0d`). False for integer-form Double
-    /// literals (`78d`) or exponent-only form (`6371e3d`).
     pub has_dot: bool,
-    /// Source omitted the leading zero (`.5d`). Implies `has_dot`.
     pub leading_dot: bool,
-    /// Exponent part from scientific notation, e.g. `"e3"`, `"E-2"`.
-    /// `None` for literals without an exponent.
     pub exponent: Option<String>,
-    /// The `d` or `D` suffix as written.
     pub suffix: char,
 }
 
-impl std::fmt::Display for FloatLit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            self.digits,
-            self.exponent.as_deref().unwrap_or("")
-        )
-    }
-}
-
-impl std::fmt::Display for DoubleLit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}{}",
-            self.digits,
-            self.exponent.as_deref().unwrap_or("")
-        )
-    }
-}
-
-/// A compile-time constant value.
+/// A compile-time constant value. Numbers, strings and chars keep their raw source text, escapes
+/// and casing included, so the formatter controls exactly how they are written back.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#data-types>
 #[derive(Debug, PartialEq)]
 pub enum LiteralValue {
-    /// 32-bit signed integer (no suffix in source). Stores the raw digits
-    /// verbatim so the formatter preserves the exact written form and never
-    /// loses information by round-tripping through a fixed-width integer.
+    /// A 32-bit integer, e.g. `42`.
     Number(String),
-    /// 64-bit signed integer (`l` or `L` suffix in source). Stores the raw
-    /// text including the suffix for the same reason as [`LiteralValue::Number`].
+    /// A 64-bit integer, e.g. `42l`, suffix included.
     Long(String),
-    /// A hex-formatted integer literal (`0x…`). Stores the raw text including
-    /// the prefix so the formatter can preserve the original casing.
+    /// A 32-bit hex integer, e.g. `0xFF`, prefix included.
     Hex(String),
-    /// A hex-formatted 64-bit integer literal (`0x…l`). Stores the raw text
-    /// including prefix and suffix so the formatter can preserve their casing.
+    /// A 64-bit hex integer, e.g. `0xFFl`, prefix and suffix included.
     HexLong(String),
-    /// 32-bit floating point number. Source-form flags let the formatter
-    /// round-trip the exact written form (`0f`, `0.5`, `0.5f`, `.978`, `.5f`).
+    /// A 32-bit float, e.g. `1.5`, `2f` or `1e3`.
     Float(FloatLit),
-    /// 64-bit floating point number. Source-form flags let the formatter
-    /// round-trip the exact written form (`78d`, `78.0d`, `.5d`).
+    /// A 64-bit float, e.g. `1.5d`.
     Double(DoubleLit),
-    /// A string literal. Stores the raw source text between the double
-    /// quotes, with escape sequences left intact so the formatter emits the
-    /// literal exactly as written.
+    /// A string, e.g. `"text"`, without the quotes and with escapes as written.
     String(String),
-    /// A character literal: `'a'`. Stores the raw source text between the
-    /// single quotes, with escape sequences left intact.
+    /// A character, e.g. `'c'`, without the quotes and with escapes as written.
     Char(String),
     Boolean(bool),
-    /// A symbol literal, e.g. `:mySymbol`.
+    /// A symbol, e.g. `:name`, without the `:`.
     Symbol(String),
     Null,
     NaN,

@@ -1,5 +1,4 @@
-//! Individual lint rules. Each rule walks the AST and pushes any findings
-//! into a `Vec<Diagnostic>` provided by the top-level [`crate::lint`] driver.
+//! The lint rules, each called from [`crate::visit`] at the nodes it checks.
 pub mod bool_comparison;
 pub mod collapsible_if;
 pub mod compound_assignment;
@@ -14,6 +13,7 @@ pub mod unused_ignore;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rule {
     pub name: &'static str,
+    /// A short description, shown in the rules table of the documentation.
     pub summary: &'static str,
     pub fix: FixAvailability,
 }
@@ -21,8 +21,11 @@ pub struct Rule {
 /// Whether a rule's findings come with a fix `--fix` can apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FixAvailability {
+    /// Every finding has a fix.
     Always,
+    /// Some findings have a fix, when it can be made safely.
     Sometimes,
+    /// No finding has a fix.
     Never,
 }
 

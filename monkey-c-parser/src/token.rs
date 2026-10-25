@@ -1,6 +1,9 @@
 use crate::ast::{DoubleLit, FloatLit};
 
-/// Language specification <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference>
+/// A token of Monkey C. Literals keep the text as written, and `Display` gives the token back as
+/// source text.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference>
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     // Keywords
@@ -44,7 +47,6 @@ pub enum Type {
     While,
 
     // Literals
-    /// A hex integer literal, stored as a string to support preserving casing.
     Boolean(bool),
     Char(String),
     Double(DoubleLit),
@@ -58,7 +60,7 @@ pub enum Type {
     String(String),
 
     // Identifiers
-    /// The `$` bling symbol — refers to the global namespace.
+    /// `$`, the global namespace.
     Bling,
     Identifier(String),
     Me,
@@ -119,6 +121,7 @@ pub enum Type {
 
     // Special
     Eof,
+    /// A character that can't start any token, consumed so lexing can go on.
     Illegal,
 }
 
@@ -211,8 +214,8 @@ impl std::fmt::Display for Type {
             // Literals
             Type::Boolean(b) => write!(f, "{b}"),
             Type::Char(s) => write!(f, "'{s}'"),
-            Type::Double(n) => write!(f, "{n}d"),
-            Type::Float(n) => write!(f, "{n}"),
+            Type::Double(n) => write!(f, "{}{}", n.digits, n.suffix),
+            Type::Float(n) => write!(f, "{}", n.digits),
             Type::Hex(s) => write!(f, "0x{s}"),
             Type::HexLong(s) => write!(f, "0x{s}l"),
             Type::Long(n) => write!(f, "{n}l"),
@@ -287,112 +290,59 @@ impl std::fmt::Display for Type {
     }
 }
 
-impl std::str::FromStr for Type {
-    type Err = String;
+impl Type {
+    /// The keyword or keyword-like literal spelled `ident`, if any.
+    pub fn keyword(ident: &str) -> Option<Self> {
+        let keyword = match ident {
+            "and" => Type::AndKeyword,
+            "as" => Type::As,
+            "break" => Type::Break,
+            "case" => Type::Case,
+            "catch" => Type::Catch,
+            "class" => Type::Class,
+            "const" => Type::Const,
+            "continue" => Type::Continue,
+            "default" => Type::Default,
+            "do" => Type::Do,
+            "else" => Type::Else,
+            "enum" => Type::Enum,
+            "extends" => Type::Extends,
+            "finally" => Type::Finally,
+            "for" => Type::For,
+            "function" => Type::Function,
+            "has" => Type::Has,
+            "hidden" => Type::Hidden,
+            "if" => Type::If,
+            "import" => Type::Import,
+            "instanceof" => Type::InstanceOf,
+            "interface" => Type::Interface,
+            "module" => Type::Module,
+            "native" => Type::Native,
+            "new" => Type::New,
+            "or" => Type::OrKeyword,
+            "private" => Type::Private,
+            "protected" => Type::Protected,
+            "public" => Type::Public,
+            "return" => Type::Return,
+            "static" => Type::Static,
+            "switch" => Type::Switch,
+            "throw" => Type::Throw,
+            "try" => Type::Try,
+            "typedef" => Type::Typedef,
+            "using" => Type::Using,
+            "var" => Type::Var,
+            "while" => Type::While,
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            // Keywords
-            "and" => Ok(Type::AndKeyword),
-            "as" => Ok(Type::As),
-            "break" => Ok(Type::Break),
-            "case" => Ok(Type::Case),
-            "catch" => Ok(Type::Catch),
-            "class" => Ok(Type::Class),
-            "const" => Ok(Type::Const),
-            "continue" => Ok(Type::Continue),
-            "default" => Ok(Type::Default),
-            "do" => Ok(Type::Do),
-            "else" => Ok(Type::Else),
-            "enum" => Ok(Type::Enum),
-            "extends" => Ok(Type::Extends),
-            "finally" => Ok(Type::Finally),
-            "for" => Ok(Type::For),
-            "function" => Ok(Type::Function),
-            "has" => Ok(Type::Has),
-            "hidden" => Ok(Type::Hidden),
-            "if" => Ok(Type::If),
-            "import" => Ok(Type::Import),
-            "instanceof" => Ok(Type::InstanceOf),
-            "interface" => Ok(Type::Interface),
-            "module" => Ok(Type::Module),
-            "native" => Ok(Type::Native),
-            "new" => Ok(Type::New),
-            "or" => Ok(Type::OrKeyword),
-            "private" => Ok(Type::Private),
-            "protected" => Ok(Type::Protected),
-            "public" => Ok(Type::Public),
-            "return" => Ok(Type::Return),
-            "static" => Ok(Type::Static),
-            "switch" => Ok(Type::Switch),
-            "throw" => Ok(Type::Throw),
-            "try" => Ok(Type::Try),
-            "typedef" => Ok(Type::Typedef),
-            "using" => Ok(Type::Using),
-            "var" => Ok(Type::Var),
-            "while" => Ok(Type::While),
+            "true" => Type::Boolean(true),
+            "false" => Type::Boolean(false),
+            "NaN" => Type::NaN,
+            "null" => Type::Null,
 
-            // Literals
-            "true" => Ok(Type::Boolean(true)),
-            "false" => Ok(Type::Boolean(false)),
-            "NaN" => Ok(Type::NaN),
-            "null" => Ok(Type::Null),
+            "me" => Type::Me,
+            "self" => Type::Self_,
+            _ => return None,
+        };
 
-            // Identifiers
-            "me" => Ok(Type::Me),
-            "self" => Ok(Type::Self_),
-
-            // Operators — unreachable from identifier-text lookup, kept for
-            // completeness.
-            "+=" => Ok(Type::AddAssign),
-            "&&" => Ok(Type::And),
-            "=" => Ok(Type::Assign),
-            "!" => Ok(Type::Bang),
-            "!=" => Ok(Type::BangEqual),
-            "&" => Ok(Type::BitAnd),
-            "&=" => Ok(Type::BitAndAssign),
-            "|" => Ok(Type::BitOr),
-            "|=" => Ok(Type::BitOrAssign),
-            "^" => Ok(Type::BitXor),
-            "^=" => Ok(Type::BitXorAssign),
-            "<<" => Ok(Type::LeftShift),
-            "<<=" => Ok(Type::LeftShiftAssign),
-            ">>" => Ok(Type::RightShift),
-            ">>=" => Ok(Type::RightShiftAssign),
-            "/=" => Ok(Type::DivAssign),
-            "==" => Ok(Type::EqualEqual),
-            ">" => Ok(Type::Greater),
-            ">=" => Ok(Type::GreaterEqual),
-            "<" => Ok(Type::Less),
-            "<=" => Ok(Type::LessEqual),
-            "-" => Ok(Type::Minus),
-            "--" => Ok(Type::MinusMinus),
-            "%=" => Ok(Type::ModAssign),
-            "*=" => Ok(Type::MulAssign),
-            "||" => Ok(Type::Or),
-            "%" => Ok(Type::Percent),
-            "+" => Ok(Type::Plus),
-            "++" => Ok(Type::PlusPlus),
-            "/" => Ok(Type::Slash),
-            "*" => Ok(Type::Star),
-            "-=" => Ok(Type::SubAssign),
-            "~" => Ok(Type::Tilde),
-
-            // Delimiters — unreachable from identifier-text lookup.
-            ":" => Ok(Type::Colon),
-            "," => Ok(Type::Comma),
-            "." => Ok(Type::Dot),
-            "=>" => Ok(Type::FatArrow),
-            "{" => Ok(Type::LBrace),
-            "[" => Ok(Type::LBracket),
-            "(" => Ok(Type::LParen),
-            "?" => Ok(Type::Question),
-            "}" => Ok(Type::RBrace),
-            "]" => Ok(Type::RBracket),
-            ")" => Ok(Type::RParen),
-            ";" => Ok(Type::Semicolon),
-
-            _ => Err(format!("Unknown token: {s}")),
-        }
+        Some(keyword)
     }
 }

@@ -15,7 +15,7 @@
 //! A target whose receiver or index contains a call, a `new`, an assignment,
 //! or a `++` / `--` is skipped — rewriting `arr[next()] = arr[next()] + 1`
 //! to `arr[next()] += 1` would call `next()` once instead of twice.
-use monkey_c_parser::ast::{AssignOperator, BinaryOperator, Expr, UnaryOperator};
+use monkey_c_parser::ast::{AssignOperator, BinaryOperator, Expr, LiteralValue, UnaryOperator};
 
 use crate::visit::LintContext;
 use crate::{Diagnostic, Fix};
@@ -43,7 +43,11 @@ pub fn check_expr(expr: &Expr, ctx: &LintContext) -> Option<Diagnostic> {
         return None;
     }
 
-    let op = binary_op_str(&binary.operator)?;
+    if !has_compound_form(binary.operator) {
+        return None;
+    }
+
+    let op = binary.operator.as_str();
     let target_span = assign.target.span();
     let target_text = ctx.source[target_span.start..target_span.end].trim();
 
@@ -160,74 +164,37 @@ fn same_pure_expr(a: &Expr, b: &Expr) -> bool {
 }
 
 fn is_literal_one(expr: &Expr) -> bool {
-    use monkey_c_parser::ast::LiteralValue;
-
     matches!(expr, Expr::Lit(l) if matches!(&l.value, LiteralValue::Number(n) if n == "1"))
 }
 
-fn binary_op_str(op: &BinaryOperator) -> Option<&'static str> {
-    Some(match op {
-        BinaryOperator::Add => "+",
-        BinaryOperator::Sub => "-",
-        BinaryOperator::Mul => "*",
-        BinaryOperator::Div => "/",
-        BinaryOperator::Mod => "%",
-        BinaryOperator::BitAnd => "&",
-        BinaryOperator::BitOr => "|",
-        BinaryOperator::BitXor => "^",
-        BinaryOperator::LeftShift => "<<",
-        BinaryOperator::RightShift => ">>",
-        _ => return None,
-    })
+fn has_compound_form(operator: BinaryOperator) -> bool {
+    matches!(
+        operator,
+        BinaryOperator::Add
+            | BinaryOperator::Sub
+            | BinaryOperator::Mul
+            | BinaryOperator::Div
+            | BinaryOperator::Mod
+            | BinaryOperator::BitAnd
+            | BinaryOperator::BitOr
+            | BinaryOperator::BitXor
+            | BinaryOperator::LeftShift
+            | BinaryOperator::RightShift
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Diagnostic, apply_fixes, lint};
-    use monkey_c_parser::parser::Parser;
-
-    fn lints(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
-    }
-
-    fn first_fix(src: &str) -> String {
-        let diags = lints(src);
-        let fixes = diags.into_iter().filter_map(|d| d.fix).collect();
-
-        apply_fixes(src, fixes)
-    }
+    use super::RULE;
+    use crate::test_support::{fix_rules, lint_rules};
 
     #[test]
-    fn flags_add_one_as_postinc() {
-        let src = "function f() { x = x + 1; }";
-        let diags = lints(src);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].rule, "compound-assignment");
-        assert_eq!(first_fix(src), "function f() { x++; }");
-    }
-
-    #[test]
-    fn flags_sub_one_as_postdec() {
-        let src = "function f() { x = x - 1; }";
-        assert_eq!(first_fix(src), "function f() { x--; }");
-    }
-
-    #[test]
-    fn flags_add_value_as_compound() {
-        let src = "function f() { x = x + 3; }";
-        assert_eq!(first_fix(src), "function f() { x += 3; }");
-    }
-
-    #[test]
-    fn flags_mul_value_as_compound() {
-        let src = "function f() { x = x * n; }";
-        assert_eq!(first_fix(src), "function f() { x *= n; }");
-    }
-
-    #[test]
-    fn flags_div_mod_bitwise_and_shifts() {
-        let cases = [
+    fn rewrites_self_assignments() {
+        for (stmt, expected) in [
+            ("x = x + 1;", "x++;"),
+            ("x = x - 1;", "x--;"),
+            ("x = x + 3;", "x += 3;"),
+            ("x = x * n;", "x *= n;"),
             ("x = x / 2;", "x /= 2;"),
             ("x = x % 4;", "x %= 4;"),
             ("x = x & mask;", "x &= mask;"),
@@ -235,111 +202,46 @@ mod tests {
             ("x = x ^ flag;", "x ^= flag;"),
             ("x = x << 2;", "x <<= 2;"),
             ("x = x >> 1;", "x >>= 1;"),
-        ];
-        for (input, expected) in cases {
-            let src = format!("function f() {{ {input} }}");
-            let want = format!("function f() {{ {expected} }}");
-            assert_eq!(first_fix(&src), want, "case {input}");
-        }
-    }
+            ("obj.x = obj.x + 1;", "obj.x++;"),
+            ("obj.a.b = obj.a.b * 2;", "obj.a.b *= 2;"),
+            ("arr[i] = arr[i] + 1;", "arr[i]++;"),
+            ("arr[0] = arr[0] + 3;", "arr[0] += 3;"),
+            // Monkey C doesn't allow an assignment as a value, so `++` changes nothing here.
+            ("foo(x = x + 1);", "foo(x++);"),
+        ] {
+            let src = format!("function f() {{ {stmt} }}");
+            let fixed = format!("function f() {{ {expected} }}");
 
-    #[test]
-    fn flags_inside_for_update_as_postinc() {
-        let src = "function f() { for (i = 0; i < 10; i = i + 1) { foo(); } }";
+            assert_eq!(fix_rules(&src, &[RULE]), fixed, "{stmt}");
+        }
+
         assert_eq!(
-            first_fix(src),
-            "function f() { for (i = 0; i < 10; i++) { foo(); } }"
+            fix_rules(
+                "function f() { for (i = 0; i < 10; i = i + 1) {} }",
+                &[RULE]
+            ),
+            "function f() { for (i = 0; i < 10; i++) {} }"
         );
     }
 
     #[test]
-    fn ignores_compound_assignment_already() {
-        let src = "function f() { x += 1; }";
-        assert!(lints(src).is_empty());
-    }
+    fn ignores_other_assignments() {
+        for stmt in [
+            "x += 1;",
+            "y = x + 1;",
+            "obj.x = obj2.x + 1;",
+            "obj.x = obj.y + 1;",
+            // Rewriting would evaluate the call or `++` in the target once instead of twice.
+            "arr[next()] = arr[next()] + 1;",
+            "arr[i++] = arr[i++] + 1;",
+            "getObj().x = getObj().x + 1;",
+            // Only the left operand counts, keeping the rule purely syntactic.
+            "x = 1 + x;",
+            "b = b == 1;",
+        ] {
+            let src = format!("function f() {{ {stmt} }}");
 
-    #[test]
-    fn ignores_when_target_differs() {
-        let src = "function f() { y = x + 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn flags_member_target() {
-        let src = "function f() { obj.x = obj.x + 1; }";
-        assert_eq!(first_fix(src), "function f() { obj.x++; }");
-    }
-
-    #[test]
-    fn flags_chained_member_target() {
-        let src = "function f() { obj.a.b = obj.a.b * 2; }";
-        assert_eq!(first_fix(src), "function f() { obj.a.b *= 2; }");
-    }
-
-    #[test]
-    fn flags_index_target_with_ident_index() {
-        let src = "function f() { arr[i] = arr[i] + 1; }";
-        assert_eq!(first_fix(src), "function f() { arr[i]++; }");
-    }
-
-    #[test]
-    fn flags_index_target_with_literal_index() {
-        let src = "function f() { arr[0] = arr[0] + 3; }";
-        assert_eq!(first_fix(src), "function f() { arr[0] += 3; }");
-    }
-
-    #[test]
-    fn ignores_when_member_objects_differ() {
-        let src = "function f() { obj.x = obj2.x + 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_when_member_properties_differ() {
-        let src = "function f() { obj.x = obj.y + 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_when_index_target_contains_call() {
-        // arr[next()] re-evaluates next() — rewriting to compound form
-        // would call it once instead of twice, changing observable behavior.
-        let src = "function f() { arr[next()] = arr[next()] + 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_when_index_target_contains_post_inc() {
-        let src = "function f() { arr[i++] = arr[i++] + 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_when_member_object_contains_call() {
-        let src = "function f() { getObj().x = getObj().x + 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_when_target_appears_on_rhs_only_via_commutativity() {
-        // `x = 1 + x` is semantically `x += 1`, but the binary's left isn't
-        // `x` so we don't trigger — keeps the rule purely syntactic.
-        let src = "function f() { x = 1 + x; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_non_compoundable_operator() {
-        let src = "function f() { b = b == 1; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn rewrites_unconditionally_regardless_of_surrounding_context() {
-        // Monkey C rejects assignment-as-expression-value at compile time,
-        // so the rule doesn't bother trying to preserve the produced value:
-        // a `+ 1` always becomes `++`.
-        let src = "function f() { foo(x = x + 1); }";
-        assert_eq!(first_fix(src), "function f() { foo(x++); }");
+            assert!(lint_rules(&src, &[RULE]).is_empty(), "{stmt}");
+        }
     }
 }

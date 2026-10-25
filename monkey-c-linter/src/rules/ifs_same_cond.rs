@@ -189,95 +189,45 @@ fn contains_call(expr: &Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Diagnostic, lint};
-    use monkey_c_parser::parser::Parser;
+    use super::RULE;
+    use crate::test_support::lint_rules;
 
-    fn rule_diags(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
-            .into_iter()
-            .filter(|d| d.rule == "ifs-same-cond")
-            .collect()
+    fn findings(chain: &str) -> usize {
+        lint_rules(&format!("function f() {{ {chain} }}"), &[RULE]).len()
     }
 
     #[test]
-    fn flags_identical_consecutive_conditions() {
-        let src = "function f() { if (a == b) { x(); } else if (a == b) { y(); } }";
-        assert_eq!(rule_diags(src).len(), 1);
+    fn flags_a_repeated_condition_in_a_chain() {
+        for chain in [
+            "if (a == b) { x(); } else if (a == b) { y(); }",
+            "if (a == b) { x(); } else if (a==b) { y(); }",
+            "if (a) { x(); } else if (b) { y(); } else if (a) { z(); }",
+            "if (x as Boolean) { a(); } else if (x as Boolean) { b(); }",
+            "if (a) { if (b) { x(); } else if (b) { y(); } }",
+        ] {
+            assert_eq!(findings(chain), 1, "{chain}");
+        }
+
+        assert_eq!(
+            findings("if (a) { x(); } else if (a) { y(); } else if (a) { z(); }"),
+            2
+        );
     }
 
     #[test]
-    fn flags_despite_whitespace_differences() {
-        // Structural comparison — `a == b` and `a==b` are the same condition.
-        let src = "function f() { if (a == b) { x(); } else if (a==b) { y(); } }";
-        assert_eq!(rule_diags(src).len(), 1);
-    }
-
-    #[test]
-    fn flags_non_adjacent_duplicate_in_chain() {
-        let src = "function f() { if (a) { x(); } else if (b) { y(); } else if (a) { z(); } }";
-        assert_eq!(rule_diags(src).len(), 1);
-    }
-
-    #[test]
-    fn flags_each_repeat_once() {
-        let src = "function f() { if (a) { x(); } else if (a) { y(); } else if (a) { z(); } }";
-        assert_eq!(rule_diags(src).len(), 2);
-    }
-
-    #[test]
-    fn flags_identical_cast_conditions() {
-        let src = "function f() { if (x as Boolean) { a(); } else if (x as Boolean) { b(); } }";
-        assert_eq!(rule_diags(src).len(), 1);
-    }
-
-    #[test]
-    fn allows_distinct_conditions() {
-        let src = "function f() { if (a == b) { x(); } else if (a == c) { y(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_distinct_cast_targets() {
-        let src = "function f() { if (x as Boolean) { a(); } else if (x as Number) { b(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_single_if() {
-        let src = "function f() { if (a == b) { x(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_conditions_with_a_call() {
-        let src = "function f() { if (foo()) { x(); } else if (foo()) { y(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_call_nested_in_condition() {
-        let src = "function f() { if (a && foo()) { x(); } else if (a && foo()) { y(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_new_in_condition() {
-        let src = "function f() { if (new Foo()) { x(); } else if (new Foo()) { y(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn separate_chains_are_independent() {
-        // Two unrelated `if`s with the same condition are not a chain — the
-        // first can fall through to the second, so this is not flagged.
-        let src = "function f() { if (a) { x(); } if (a) { y(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn flags_condition_in_nested_chain() {
-        let src = "function f() { if (a) { if (b) { x(); } else if (b) { y(); } } }";
-        assert_eq!(rule_diags(src).len(), 1);
+    fn allows_distinct_or_impure_conditions() {
+        for chain in [
+            "if (a == b) { x(); } else if (a == c) { y(); }",
+            "if (x as Boolean) { a(); } else if (x as Number) { b(); }",
+            "if (a == b) { x(); }",
+            // A call or `new` may give a different result the second time.
+            "if (foo()) { x(); } else if (foo()) { y(); }",
+            "if (a && foo()) { x(); } else if (a && foo()) { y(); }",
+            "if (new Foo()) { x(); } else if (new Foo()) { y(); }",
+            // Separate `if`s aren't a chain, since the first can fall through to the second.
+            "if (a) { x(); } if (a) { y(); }",
+        ] {
+            assert_eq!(findings(chain), 0, "{chain}");
+        }
     }
 }

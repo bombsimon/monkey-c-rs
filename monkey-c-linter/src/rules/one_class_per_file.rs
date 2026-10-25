@@ -57,75 +57,35 @@ fn collect_classes<'a>(ast: &'a Ast, out: &mut Vec<&'a ClassDecl>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Diagnostic, lint};
-    use monkey_c_parser::parser::Parser;
+    use super::RULE;
+    use crate::test_support::lint_rules;
 
-    fn lints(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
+    #[test]
+    fn allows_a_single_class() {
+        assert!(lint_rules("class Foo {}", &[RULE]).is_empty());
+        assert!(lint_rules("module M { class Foo {} }", &[RULE]).is_empty());
     }
 
     #[test]
-    fn allows_single_class_at_top_level() {
-        let src = "class Foo {}";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn allows_single_class_in_module() {
-        let src = "module M { class Foo {} }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn flags_two_top_level_classes() {
-        let src = "class Foo {} class Bar {}";
-        let diags = lints(src);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].rule, "one-class-per-file");
-        assert!(diags[0].message.contains("Bar"));
-    }
-
-    #[test]
-    fn flags_two_classes_inside_same_module() {
-        let src = "module M { class Foo {} class Bar {} }";
-        let diags = lints(src);
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("Bar"));
-    }
-
-    #[test]
-    fn flags_class_at_top_level_plus_class_in_module() {
-        let src = "class Foo {} module M { class Bar {} }";
-        let diags = lints(src);
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("Bar"));
-    }
-
-    #[test]
-    fn flags_classes_across_nested_modules() {
-        let src = "module Outer { module InnerA { class Foo {} } module InnerB { class Bar {} } }";
-        let diags = lints(src);
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("Bar"));
+    fn flags_a_second_class_anywhere_in_the_file() {
+        for src in [
+            "class Foo {} class Bar {}",
+            "module M { class Foo {} class Bar {} }",
+            "class Foo {} module M { class Bar {} }",
+            "module Outer { module InnerA { class Foo {} } module InnerB { class Bar {} } }",
+        ] {
+            let diags = lint_rules(src, &[RULE]);
+            assert_eq!(diags.len(), 1, "{src}");
+            assert!(diags[0].message.contains("Bar"), "{src}");
+            assert!(diags[0].fix.is_none());
+        }
     }
 
     #[test]
     fn flags_each_extra_class() {
-        let src = "class Foo {} class Bar {} class Baz {}";
-        let diags: Vec<_> = lints(src)
-            .into_iter()
-            .filter(|d| d.rule == "one-class-per-file")
-            .collect();
+        let diags = lint_rules("class Foo {} class Bar {} class Baz {}", &[RULE]);
         assert_eq!(diags.len(), 2);
         assert!(diags[0].message.contains("Bar"));
         assert!(diags[1].message.contains("Baz"));
-    }
-
-    #[test]
-    fn no_fix_offered() {
-        let src = "class Foo {} class Bar {}";
-        let diags = lints(src);
-        assert!(diags[0].fix.is_none());
     }
 }

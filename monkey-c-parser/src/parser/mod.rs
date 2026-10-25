@@ -3,7 +3,7 @@ mod expr;
 mod stmt;
 mod types;
 
-use crate::ast::{Ast, CommentStmt, CommentTable, Span};
+use crate::ast::{Ast, CommentStmt, CommentTable, Ident, Position, Span, Spanned, Type};
 use crate::line_index::LineIndex;
 use crate::token;
 
@@ -11,11 +11,10 @@ use crate::token;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserError {
     pub message: String,
-    /// 1-indexed line number of the offending token.
+    /// The line of the offending token, counted from 1.
     pub line: u32,
-    /// 1-indexed column number of the offending token.
+    /// The column of the offending token in bytes, counted from 1.
     pub col: u32,
-    /// Byte span of the offending token, for rendering a source snippet.
     pub span: std::ops::Range<usize>,
 }
 
@@ -27,36 +26,26 @@ impl std::fmt::Display for ParserError {
 
 impl std::error::Error for ParserError {}
 
-/// Output of [`Parser::parse`]. Carries both the AST and the source-order comment table.
+/// What [`Parser::parse`] returns: the [`Ast::Document`] and every comment in source order.
 #[derive(Debug)]
 pub struct ParseOutput {
     pub ast: Ast,
     pub comments: CommentTable,
 }
 
-/// Recursive-descent parser for Monkey C source text.
-///
-/// Construct with [`Parser::new`], then call [`Parser::parse`] to produce an [`Ast::Document`].
+/// Recursive-descent parser for Monkey C. Parsing stops at the first error.
 pub struct Parser<'a> {
     pub(crate) lexer: crate::lexer::Lexer<'a>,
     pub(crate) line_index: LineIndex,
-    /// The token currently being examined.
+    /// The token being looked at, never a comment.
     pub current_token: token::Type,
-    /// Byte offset of the start of `current_token`.
     pub(crate) current_token_start: usize,
-    /// Byte offset of the end (exclusive) of `current_token`.
     pub(crate) current_token_end: usize,
-    /// Byte offset of the end (exclusive) of the token consumed *before* `current_token`. Useful
-    /// for callers that want "position right after the last consumed real token", e.g. the end of a
-    /// parsed type's last token, used to bound the `BeforeBracket` comment slot on a function with
-    /// a return type.
     pub(crate) prev_token_end: usize,
-    /// Every comment encountered during parsing, in source order. Populated at the lexer-parser
-    /// boundary by `next_token_span`, comments never reach `current_token`.
+    /// Comments are collected here at the lexer boundary so the grammar never sees them.
     pub(crate) comment_table: CommentTable,
-    /// Byte length of the source — used to build the synthetic `Ast::Document` span so top-level
-    /// standalone comments can attach as dangling-inside.
     pub(crate) source_len: usize,
+    pub(crate) expression_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -70,13 +59,12 @@ impl<'a> Parser<'a> {
             current_token_start: 0,
             current_token_end: 0,
             prev_token_end: 0,
-            comment_table: CommentTable::new(),
+            comment_table: CommentTable::default(),
             source_len: source.len(),
+            expression_depth: 0,
         };
 
-        // Prime the first token; comment tokens are auto-drained into the table by
-        // `next_token_span`.
-        parser.next_token_span();
+        parser.advance();
         parser
     }
 
@@ -107,66 +95,53 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub(crate) fn assert_next_token(
-        &mut self,
-        expect: &[token::Type],
-    ) -> Result<token::Type, ParserError> {
-        for expected in expect {
-            if self.current_token == *expected {
-                let tkn = self.current_token.clone();
-                self.next_token_span();
-
-                return Ok(tkn);
-            }
+    /// Consume `expected` and return its span, or fail if the current token is something else.
+    pub(crate) fn expect(&mut self, expected: token::Type) -> Result<Span, ParserError> {
+        if self.current_token != expected {
+            return Err(self.parse_error(format!(
+                "Expected '{expected}', got {:?}",
+                self.current_token
+            )));
         }
 
-        Err(self.parse_error(format!(
-            "got unexpected token from `assert_next_token`: '{:?}', expected one of: {:?}",
-            self.current_token, expect
-        )))
-    }
-
-    pub(crate) fn current_token_is(&self, expect: &[token::Type]) -> bool {
-        expect.contains(&self.current_token)
+        Ok(self.advance())
     }
 
     /// Monkey C compiler treats consecutive `;` as empty statement making them no-op and thus
     /// supporting syntax like `var x = 1;;;`.
     fn skip_semicolons(&mut self) {
         while self.current_token == token::Type::Semicolon {
-            self.next_token_span();
+            self.advance();
         }
     }
 
-    /// Advance past `current_token`, drain any intervening comments into the side-table, and update
-    /// `current_token` to the next non-comment token. The grammar code therefore never observes
-    /// comments — they're invisible at the parser/lexer boundary.
-    pub(crate) fn next_token_span(&mut self) -> (usize, token::Type, usize) {
+    /// Consume the current token and return its span, collecting any comments before the next one.
+    pub(crate) fn advance(&mut self) -> Span {
+        let consumed = Span {
+            start: self.current_token_start,
+            end: self.current_token_end,
+        };
+
         loop {
             let (start, token_type, end) = self.lexer.next_token();
-            match &token_type {
-                token::Type::Comment(text) => {
-                    self.comment_table.push(CommentStmt {
-                        text: text.clone(),
-                        is_block: false,
-                        span: Span { start, end },
-                    });
-                }
-                token::Type::BlockComment(text) => {
-                    self.comment_table.push(CommentStmt {
-                        text: text.clone(),
-                        is_block: true,
-                        span: Span { start, end },
-                    });
-                }
-                _ => {
+            let (text, is_block) = match token_type {
+                token::Type::Comment(text) => (text, false),
+                token::Type::BlockComment(text) => (text, true),
+                token_type => {
                     self.prev_token_end = self.current_token_end;
-                    self.current_token = token_type.clone();
+                    self.current_token = token_type;
                     self.current_token_start = start;
                     self.current_token_end = end;
-                    return (start, token_type, end);
+
+                    return consumed;
                 }
-            }
+            };
+
+            self.comment_table.comments.push(CommentStmt {
+                text,
+                is_block,
+                span: Span { start, end },
+            });
         }
     }
 
@@ -176,7 +151,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn consume_generic_close(&mut self) -> Result<(), ParserError> {
         match self.current_token {
             token::Type::Greater => {
-                self.next_token_span();
+                self.advance();
                 Ok(())
             }
             token::Type::RightShift => {
@@ -204,12 +179,10 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_dotted_identifier(&mut self) -> Result<String, ParserError> {
         let name = if self.current_token == token::Type::Bling {
-            self.next_token_span();
+            self.advance();
             "$".to_string()
         } else {
-            let n = self.parse_identifier()?;
-            self.next_token_span();
-            n
+            self.parse_identifier()?
         };
 
         self.parse_dotted_identifier_continuation(name)
@@ -222,23 +195,66 @@ impl<'a> Parser<'a> {
         mut name: String,
     ) -> Result<String, ParserError> {
         while self.current_token == token::Type::Dot {
-            self.next_token_span(); // consume dot
-            let next = self.parse_identifier()?;
+            self.advance();
             name.push('.');
-            name.push_str(&next);
-            self.next_token_span();
+            name.push_str(&self.parse_identifier()?);
         }
 
         Ok(name)
     }
 
-    pub(crate) fn parse_identifier(&mut self) -> Result<String, ParserError> {
-        match &self.current_token {
-            token::Type::Identifier(name) => Ok(name.clone()),
-            _ => {
-                Err(self.parse_error(format!("Expected identifier, got {:?}", self.current_token)))
-            }
+    /// Wrap `node` in a span from `start` to the end of the last consumed token.
+    pub(crate) fn spanned<T>(&self, start: Position, node: T) -> Spanned<T> {
+        Spanned {
+            span: Span {
+                start,
+                end: self.prev_token_end,
+            },
+            node,
         }
+    }
+
+    pub(crate) fn parse_spanned_identifier(&mut self) -> Result<Spanned<Ident>, ParserError> {
+        let start = self.current_token_start;
+        let name = self.parse_identifier()?;
+
+        Ok(self.spanned(start, name))
+    }
+
+    pub(crate) fn parse_spanned_dotted_identifier(
+        &mut self,
+    ) -> Result<Spanned<Ident>, ParserError> {
+        let start = self.current_token_start;
+        let name = self.parse_dotted_identifier()?;
+
+        Ok(self.spanned(start, name))
+    }
+
+    /// Parse an optional `as Type`, returning where `as` was written along with the type.
+    pub(crate) fn parse_type_annotation(
+        &mut self,
+    ) -> Result<(Option<Position>, Option<Type>), ParserError> {
+        if self.current_token != token::Type::As {
+            return Ok((None, None));
+        }
+
+        let as_kw_start = self.advance().start;
+
+        Ok((Some(as_kw_start), Some(self.parse_type()?)))
+    }
+
+    /// Consume an identifier and return its name.
+    pub(crate) fn parse_identifier(&mut self) -> Result<String, ParserError> {
+        let token::Type::Identifier(name) = &self.current_token else {
+            return Err(
+                self.parse_error(format!("Expected identifier, got {:?}", self.current_token))
+            );
+        };
+
+        let name = name.clone();
+        self.advance();
+
+        Ok(name)
     }
 
     /// Read the current token as a symbol name, accepting both `Identifier` and keyword tokens.
@@ -261,7 +277,7 @@ impl<'a> Parser<'a> {
             }
         };
 
-        self.next_token_span();
+        self.advance();
 
         Ok(name)
     }

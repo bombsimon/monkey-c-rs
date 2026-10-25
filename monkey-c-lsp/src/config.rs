@@ -71,10 +71,8 @@ impl InitializationOptions {
     }
 }
 
-/// Resolve the formatter settings for a session from the raw `initialize`
-/// params. Configuration problems are reported to the caller as a message to
-/// surface rather than as a failure: a malformed `rafiki.toml` should leave a
-/// usable editor session, not a dead language server.
+/// Resolve the settings for a session from the raw `initialize` params. Problems come back as
+/// warnings to show, since a broken `rafiki.toml` shouldn't leave a dead language server.
 pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, Vec<String>) {
     let mut warnings = Vec::new();
 
@@ -136,13 +134,9 @@ pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, 
     (settings, warnings)
 }
 
-/// The configuration `source` resolves to, searching from the workspace root
-/// the client reported.
-///
-/// A session with no workspace root has nothing to search: the server's working
-/// directory belongs to whoever spawned the editor and may have no relation to
-/// the code being edited, so discovering from there could silently apply a
-/// stranger's settings.
+/// The configuration `source` resolves to, searching from the workspace root the client reported.
+/// Without one nothing is discovered, since the server's working directory may be unrelated to the
+/// code and would apply a stranger's settings.
 fn file_config(
     source: &ConfigSource,
     params: &serde_json::Value,
@@ -156,8 +150,7 @@ fn file_config(
     source.resolve(&root).map_err(|error| error.to_string())
 }
 
-/// The workspace root as a filesystem path. `workspaceFolders` is the current
-/// spelling and `rootUri` the deprecated one; clients still send either.
+/// The workspace root, from `workspaceFolders` or the deprecated `rootUri` that clients still send.
 fn workspace_root(params: &serde_json::Value) -> Option<PathBuf> {
     let folder = params
         .get("workspaceFolders")

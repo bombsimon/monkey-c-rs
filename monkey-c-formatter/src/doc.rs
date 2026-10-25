@@ -1,28 +1,10 @@
 use unicode_width::UnicodeWidthStr;
 
-/// Formatting intermediate representation.
-///
-/// Formatters build a `Doc` tree describing layout *intent*, then pass it to
-/// `render` which resolves flat-vs-break based on the target line width.
-/// This is the Wadler-Lindig pretty-printing algorithm.
-///
-/// # Typical usage
-///
-/// ```ignore
-/// let doc = Doc::group(vec![
-///     Doc::text("{"),
-///     Doc::indent(vec![
-///         Doc::line(),               // newline in break mode, space in flat
-///         Doc::text("\"key\": \"value\""),
-///     ]),
-///     Doc::line(),
-///     Doc::text("}"),
-/// ]);
-/// let output = render(&doc, 100);
-/// ```
+/// Layout intent for the Wadler-Lindig pretty printer: [`render`] decides which groups stay on
+/// one line and which break, based on the line width.
 #[derive(Debug, Clone)]
 pub enum Doc {
-    /// Literal text with no embedded newlines.
+    /// Text with no newlines.
     Text(String),
     /// A `//` comment. Rendered like [`Doc::Text`] but has no width when deciding whether a
     /// group fits, since it runs to the end of the line and breaking the code before it cannot
@@ -34,25 +16,16 @@ pub enum Doc {
     SoftLine,
     /// Space in flat mode; newline + indent in break mode.
     Line,
-    /// Increase indentation level for all children.
     Indent(Vec<Doc>),
-    /// Try to render all children on one line. If they overflow `width`,
-    /// switch to break mode and expand `Line`/`SoftLine` nodes.
+    /// Children on one line if they fit, otherwise with every `Line`/`SoftLine` broken.
     Group(Vec<Doc>),
     /// Cells kept on one line when they fit, otherwise packed into as many aligned columns as
     /// the width allows, so long lists of short items don't take a line each.
     Fill(Vec<Doc>, Alignment),
-    /// Concatenate documents with no additional spacing logic.
     Concat(Vec<Doc>),
-    /// Empty document — renders to nothing.
     Empty,
-    /// An empty line: emits `\n\n` followed by current indentation.
-    /// Used to preserve a single blank line between declarations or statements.
     BlankLine,
-    /// Renders the first child in flat mode, the second in break mode.
-    ///
-    /// Width is measured from the flat child so enclosing [`Doc::Group`]s make
-    /// the correct fit decision.
+    /// The first child in flat mode, the second in break mode.
     FlatOrBreak(Box<Doc>, Box<Doc>),
 }
 
@@ -402,51 +375,24 @@ mod tests {
     fn column_widths_are_the_widest_cell_in_each_column() {
         assert_eq!(column_widths(&[3, 7, 2, 5, 1], 2), vec![3, 7]);
         assert_eq!(column_widths(&[3, 7, 2, 5, 1], 3), vec![5, 7, 2]);
-    }
-
-    #[test]
-    fn padded_row_width_sums_the_widest_cell_of_each_column() {
         assert_eq!(padded_row_width(&[10, 3, 3, 3, 10, 3, 3, 3], 3), 25);
-    }
-
-    #[test]
-    fn padded_row_width_of_a_single_column_is_the_widest_cell() {
         assert_eq!(padded_row_width(&[3, 7, 2], 1), 7);
     }
 
     #[test]
-    fn long_items_sharing_a_column_allow_more_columns() {
+    fn fill_columns_picks_the_most_columns_that_fit() {
+        // Long items sharing a column allow more columns than fewer would.
         assert_eq!(fill_columns(&[10, 3, 3, 3, 10, 3, 3, 3], 24), Some(4));
-    }
-
-    #[test]
-    fn never_uses_more_columns_than_items() {
         assert_eq!(fill_columns(&[2, 2, 1], 111), Some(3));
-    }
-
-    #[test]
-    fn fills_a_row_to_exactly_the_available_width() {
         assert_eq!(fill_columns(&[2, 2, 2, 2, 2, 2], 8), Some(3));
-    }
-
-    #[test]
-    fn one_column_too_many_does_not_fit() {
         assert_eq!(fill_columns(&[2, 2, 2, 2, 2, 2], 10), Some(3));
         assert_eq!(fill_columns(&[2, 2, 2, 2, 2, 2], 11), Some(4));
     }
 
     #[test]
-    fn too_narrow_to_fill_returns_none() {
+    fn fill_columns_needs_room_for_two_cells() {
         assert_eq!(fill_columns(&[2, 2, 2], 2), None);
-    }
-
-    #[test]
-    fn a_single_cell_never_fills() {
         assert_eq!(fill_columns(&[2], 111), None);
-    }
-
-    #[test]
-    fn no_cells_never_fill() {
         assert_eq!(fill_columns(&[], 111), None);
     }
 }

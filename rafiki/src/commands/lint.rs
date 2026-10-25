@@ -89,10 +89,7 @@ fn lint_target(
     renderer: &Renderer,
 ) -> io::Result<bool> {
     let label = target.label();
-    let source = match target {
-        Target::Stdin => renderer.read_stdin_source()?,
-        Target::File(path) => renderer.read_source(path)?,
-    };
+    let source = renderer.read_target(target)?;
 
     let initial_findings = findings(&source, selected, &label, renderer)?;
 
@@ -128,12 +125,7 @@ fn findings(
     label: &str,
     renderer: &Renderer,
 ) -> io::Result<Vec<Diagnostic>> {
-    let parser = monkey_c_parser::parser::Parser::new(source);
-    let output = parser.parse().map_err(|e| {
-        renderer.parse_error(label, source, &e);
-
-        diagnostics::already_reported()
-    })?;
+    let output = renderer.parse(label, source)?;
 
     Ok(lint_selected(&output, source, selected))
 }

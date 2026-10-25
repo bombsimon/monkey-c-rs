@@ -191,20 +191,15 @@ fn needs_parens(expr: &Expr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{RULE_ELSE_IF, RULE_IF};
-    use crate::{Diagnostic, apply_fixes, lint};
-    use monkey_c_parser::parser::Parser;
+    use crate::Diagnostic;
+    use crate::test_support::{fix_rules, lint_rules};
 
     fn rule_diags(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
-            .into_iter()
-            .filter(|d| d.rule == RULE_IF || d.rule == RULE_ELSE_IF)
-            .collect()
+        lint_rules(src, &[RULE_IF, RULE_ELSE_IF])
     }
 
     fn fixed(src: &str) -> String {
-        let fixes = rule_diags(src).into_iter().filter_map(|d| d.fix).collect();
-        apply_fixes(src, fixes)
+        fix_rules(src, &[RULE_IF, RULE_ELSE_IF])
     }
 
     #[test]

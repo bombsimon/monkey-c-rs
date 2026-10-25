@@ -1,6 +1,9 @@
 use crate::ast::{DoubleLit, FloatLit};
 use crate::token;
 
+/// Splits source text into tokens, comments included. Each token comes with its byte range as
+/// `(start, token, end)`, and the end of input is [`token::Type::Eof`] for as long as it's asked.
+#[derive(Clone)]
 pub struct Lexer<'a> {
     input: &'a str,
     position: usize,
@@ -194,14 +197,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn read_string(&mut self) -> String {
-        self.read_quoted(b'"')
-    }
-
-    fn read_char_literal(&mut self) -> String {
-        self.read_quoted(b'\'')
-    }
-
     /// Read a quoted literal's content up to (but not consuming) the closing `quote`, then consume
     /// the quote. The returned slice is the raw source text with escape sequences left intact —
     /// decoding is intentionally not done here, so the formatter can re-emit the literal exactly as
@@ -260,25 +255,15 @@ impl<'a> Lexer<'a> {
         self.input[position..self.position].to_string()
     }
 
+    /// The next token, without consuming it.
     pub fn peek_token(&self) -> (usize, token::Type, usize) {
-        Self {
-            input: self.input,
-            position: self.position,
-            read_position: self.read_position,
-            ch: self.ch,
-        }
-        .next_token()
+        self.clone().next_token()
     }
 
     /// Like [`peek_token`](Self::peek_token), but skips over any comments between the current token
     /// and the next significant one.
     pub fn peek_token_skip_comments(&self) -> (usize, token::Type, usize) {
-        let mut lexer = Self {
-            input: self.input,
-            position: self.position,
-            read_position: self.read_position,
-            ch: self.ch,
-        };
+        let mut lexer = self.clone();
 
         loop {
             let token = lexer.next_token();
@@ -291,6 +276,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Consume and return the next token.
     pub fn next_token(&mut self) -> (usize, token::Type, usize) {
         self.skip_whitespace();
 
@@ -416,10 +402,7 @@ impl<'a> Lexer<'a> {
             b';' => (token::Type::Semicolon, 1),
             b',' => (token::Type::Comma, 1),
             b'.' => {
-                // `.978` — leading-zero-omitted literal. `read_number`
-                // sets the `leading_dot` flag from `self.ch == b'.'` so we
-                // re-use the same path here, which also lexes the suffix of
-                // `.5d` or `.5l`.
+                // A number with the leading zero left out, like `.978`.
                 if self.peek_char().is_ascii_digit() {
                     let token_type = self.read_number();
                     return (start, token_type, self.position);
@@ -433,13 +416,13 @@ impl<'a> Lexer<'a> {
             b'[' => (token::Type::LBracket, 1),
             b']' => (token::Type::RBracket, 1),
             b'"' => {
-                self.read_char(); // Move past opening quote
-                let content = self.read_string();
+                self.read_char();
+                let content = self.read_quoted(b'"');
                 return (start, token::Type::String(content), self.position);
             }
             b'\'' => {
-                self.read_char(); // Move past opening quote
-                let content = self.read_char_literal();
+                self.read_char();
+                let content = self.read_quoted(b'\'');
                 return (start, token::Type::Char(content), self.position);
             }
             b'$' => (token::Type::Bling, 1),
@@ -449,11 +432,10 @@ impl<'a> Lexer<'a> {
                 let first = self.input[self.position..].chars().next().unwrap_or('\0');
                 if first.is_alphabetic() || first == '_' {
                     let ident = self.read_identifier();
-                    if let Ok(token_type) = ident.parse() {
-                        (token_type, 0)
-                    } else {
-                        (token::Type::Identifier(ident), 0)
-                    }
+                    let token_type =
+                        token::Type::keyword(&ident).unwrap_or(token::Type::Identifier(ident));
+
+                    (token_type, 0)
                 } else if self.ch.is_ascii_digit() {
                     (self.read_number(), 0)
                 } else {

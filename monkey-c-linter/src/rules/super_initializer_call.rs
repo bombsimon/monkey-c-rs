@@ -102,84 +102,37 @@ fn rightmost_name(expr: &Expr) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Diagnostic, lint};
-    use monkey_c_parser::parser::Parser;
+    use super::RULE;
+    use crate::test_support::lint_rules;
 
-    fn lints(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
-    }
-
-    fn rule_diags(src: &str) -> Vec<Diagnostic> {
-        lints(src)
-            .into_iter()
-            .filter(|d| d.rule == "super-initializer-call")
-            .collect()
+    #[test]
+    fn allows_an_initialize_that_calls_the_parent() {
+        for src in [
+            "class Foo { function initialize() {} }",
+            "class Foo extends Base { function bar() {} }",
+            "class Foo extends Base { function initialize(x) { Base.initialize(x); } }",
+            "class Foo extends WatchUi.View { function initialize() { View.initialize(); } }",
+            "class Foo extends WatchUi.View { function initialize() { WatchUi.View.initialize(); } }",
+            "class Foo extends Base { function initialize(x) { if (x) { Base.initialize(x); } } }",
+        ] {
+            assert!(lint_rules(src, &[RULE]).is_empty(), "{src}");
+        }
     }
 
     #[test]
-    fn allows_class_without_extends() {
-        let src = "class Foo { function initialize() {} }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_derived_class_without_initialize() {
-        // Implicit no-op constructor chains automatically.
-        let src = "class Foo extends Base { function bar() {} }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_derived_class_with_super_init_call() {
-        let src = "class Foo extends Base { function initialize() { Base.initialize(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_super_init_with_args() {
-        let src = "class Foo extends Base { function initialize(x) { Base.initialize(x); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_dotted_parent() {
-        // extends WatchUi.View; call is View.initialize(...).
-        let src = "class Foo extends WatchUi.View { function initialize() { View.initialize(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_fully_qualified_super_init_call() {
-        let src = "class Foo extends WatchUi.View { function initialize() { WatchUi.View.initialize(); } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_super_init_inside_conditional() {
-        let src = "class Foo extends Base { function initialize(x) { if (x != null) { Base.initialize(x); } else { Base.initialize(0); } } }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn flags_derived_initialize_without_super_call() {
-        let src = "class Foo extends Base { function initialize() { var x = 1; } }";
-        let diags = rule_diags(src);
+    fn flags_an_initialize_that_skips_the_parent() {
+        let diags = lint_rules(
+            "class Foo extends Base { function initialize() { var x = 1; } }",
+            &[RULE],
+        );
         assert_eq!(diags.len(), 1);
         assert!(diags[0].message.contains("Foo.initialize"));
         assert!(diags[0].message.contains("Base.initialize"));
-    }
 
-    #[test]
-    fn flags_when_calling_wrong_parent() {
-        let src = "class Foo extends Base { function initialize() { Other.initialize(); } }";
-        assert_eq!(rule_diags(src).len(), 1);
-    }
+        for call in ["Other.initialize();", "initialize();"] {
+            let src = format!("class Foo extends Base {{ function initialize() {{ {call} }} }}");
 
-    #[test]
-    fn flags_when_calling_same_named_function() {
-        // `initialize();` (no receiver) doesn't count — it'd be self-recursion.
-        let src = "class Foo extends Base { function initialize() { initialize(); } }";
-        assert_eq!(rule_diags(src).len(), 1);
+            assert_eq!(lint_rules(&src, &[RULE]).len(), 1, "{call}");
+        }
     }
 }

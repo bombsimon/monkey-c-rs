@@ -9,46 +9,31 @@ impl Parser<'_> {
     /// Parse a full type including union alternatives (`or` / `|`) and nullable `?`. Use this for
     /// variable/parameter/return type annotations.
     pub(crate) fn parse_type(&mut self) -> Result<Type, ParserError> {
-        let mut ty = self.parse_simple_type(true)?;
-        while let Some(separator) = self.union_separator() {
-            self.next_token_span();
-            ty.alternatives.push(UnionAlternative {
-                separator,
-                type_: self.parse_simple_type(true)?,
-            });
-        }
-
-        if !ty.alternatives.is_empty() {
-            ty.span.end = self.prev_token_end;
-        }
-
-        Ok(ty)
+        self.parse_union_type(false)
     }
 
-    /// Like [`parse_type`](Self::parse_type) but for the target type of an `as` cast expression.
-    ///
-    /// Two differences from [`parse_type`](Self::parse_type):
-    /// - `?` uses lookahead to distinguish a nullable marker (`as T?;`) from a
-    ///   ternary operator (`as T ? a : b`).
-    /// - `|` uses lookahead: consumed as a union separator only when followed
-    ///   by a token that can start a type name, so `as T | Null` is a union
-    ///   cast while `0x00 as U32 | 0xFF` and `0x00 as U32 | (a | b)` leave `|`
-    ///   as a bitwise-OR operator. `(` is deliberately excluded from
-    ///   "type-start" tokens here: `(expr)` after a cast type is virtually
-    ///   always a parenthesized bitwise-OR operand, not a parenthesized type.
+    /// Like [`parse_type`](Self::parse_type) but for the target of an `as` cast, where `?` might
+    /// start a ternary and `|` might be a bitwise or, as in `0x00 as U32 | 0xFF`. `|` is only read
+    /// as a union when a type name follows, and `(` is not counted as one since `(expr)` after a
+    /// cast is virtually always a bitwise operand.
     pub(crate) fn parse_cast_type(&mut self) -> Result<Type, ParserError> {
-        let mut ty = self.parse_simple_type(false)?;
+        self.parse_union_type(true)
+    }
+
+    fn parse_union_type(&mut self, is_cast: bool) -> Result<Type, ParserError> {
+        let mut ty = self.parse_simple_type(is_cast)?;
         while let Some(separator) = self.union_separator() {
-            if separator.node == UnionSeparator::Pipe
+            if is_cast
+                && separator.node == UnionSeparator::Pipe
                 && !Self::is_type_start(&self.lexer.peek_token().1)
             {
                 break;
             }
 
-            self.next_token_span();
+            self.advance();
             ty.alternatives.push(UnionAlternative {
                 separator,
-                type_: self.parse_simple_type(false)?,
+                type_: self.parse_simple_type(is_cast)?,
             });
         }
 
@@ -82,13 +67,8 @@ impl Parser<'_> {
         )
     }
 
-    /// Parse a single type with optional generic params, optional `?`, and no `or` alternatives
-    /// (which `parse_type` handles).
-    ///
-    /// Generic params are separated by `,` only. `or` inside `<…>` belongs to a single param's
-    /// union (`Array<Number or Null>` → one param whose `alternatives` is `[Null]`), not to the
-    /// param list itself.
-    pub(crate) fn parse_simple_type(&mut self, allow_optional: bool) -> Result<Type, ParserError> {
+    /// Parse a single type with optional generic params and `?`, but no union alternatives.
+    fn parse_simple_type(&mut self, is_cast: bool) -> Result<Type, ParserError> {
         let start = self.current_token_start;
         let kind = if self.current_token == token::Type::LBrace {
             let (entries, body_span) = self.parse_inline_dict_type()?;
@@ -101,13 +81,9 @@ impl Parser<'_> {
                 elements: self.parse_tuple_type_elements()?,
             }
         } else if self.current_token == token::Type::LParen {
-            // `(T)` — parenthesised type. Needed so a trailing `?` or `or`
-            // binds to the whole inner type, e.g. `(Method(x) as Void)?`.
-            let open = self.current_token_start;
-            self.next_token_span(); // consume (
+            let open = self.advance().start;
             let inner = self.parse_type()?;
-            let close = self.current_token_end;
-            self.assert_next_token(&[token::Type::RParen])?;
+            let close = self.expect(token::Type::RParen)?.end;
 
             TypeKind::Group(Parens {
                 open,
@@ -123,7 +99,7 @@ impl Parser<'_> {
                 // `parse_type` handles unions afterwards).
                 let args = self.parse_function_args()?;
                 let returns = if self.current_token == token::Type::As {
-                    self.next_token_span();
+                    self.advance();
                     Some(Box::new(self.parse_type()?))
                 } else {
                     None
@@ -136,20 +112,7 @@ impl Parser<'_> {
                 }
             } else {
                 let generic_params = if self.current_token == token::Type::Less {
-                    self.next_token_span(); // consume <
-                    let mut params = Vec::new();
-
-                    if self.current_token != token::Type::Greater {
-                        params.push(self.parse_type()?);
-                        while self.current_token == token::Type::Comma {
-                            self.next_token_span(); // consume ,
-                            params.push(self.parse_type()?);
-                        }
-                    }
-
-                    self.consume_generic_close()?;
-
-                    params
+                    self.parse_generic_params()?
                 } else {
                     Vec::new()
                 };
@@ -161,18 +124,11 @@ impl Parser<'_> {
             }
         };
 
-        // In cast context (`allow_optional = false`) a trailing `?` is ambiguous: `as T ? a : b`
-        // uses `?` as a ternary operator while `as T?;` makes the type nullable. Peek one token
-        // ahead: a ternary `?` must be followed by an expression, so if the next token is not an
-        // expression start the `?` is a nullable marker. A following `:` is treated as a nullable
-        // marker too — `cond ? expr as T? : fallback` is far more common than a cast directly
-        // followed by a ternary whose branches are symbol literals (`as T ? :a : :b`).
-        let peek = self.lexer.peek_token().1;
         let optional = self.current_token == token::Type::Question
-            && (allow_optional || peek.follows_nullable_cast());
+            && (!is_cast || self.lexer.peek_token().1.follows_nullable_cast());
 
         if optional {
-            self.next_token_span(); // consume ?
+            self.advance();
         }
 
         Ok(Type {
@@ -190,9 +146,8 @@ impl Parser<'_> {
     /// and/or `var name as Type;` declarations, each terminated by `;`. Consumes the surrounding
     /// braces and returns the members together with the byte span of the body (`{` … `}`).
     fn parse_interface_members(&mut self) -> Result<(Vec<InterfaceMember>, Span), ParserError> {
-        self.assert_next_token(&[token::Type::Interface])?;
-        let brace_start = self.current_token_start;
-        self.assert_next_token(&[token::Type::LBrace])?;
+        self.expect(token::Type::Interface)?;
+        let brace_start = self.expect(token::Type::LBrace)?.start;
 
         let mut members = Vec::new();
         while self.current_token != token::Type::RBrace {
@@ -209,8 +164,7 @@ impl Parser<'_> {
             members.push(member);
         }
 
-        let brace_end = self.current_token_end;
-        self.assert_next_token(&[token::Type::RBrace])?;
+        let brace_end = self.expect(token::Type::RBrace)?.end;
 
         Ok((
             members,
@@ -222,28 +176,11 @@ impl Parser<'_> {
     }
 
     fn parse_interface_method(&mut self) -> Result<InterfaceMethod, ParserError> {
-        let start = self.current_token_start;
-        self.assert_next_token(&[token::Type::Function])?;
-        let name_start = self.current_token_start;
-        let name_node = self.parse_identifier()?;
-        self.next_token_span();
-        let name = Spanned {
-            span: Span {
-                start: name_start,
-                end: self.prev_token_end,
-            },
-            node: name_node,
-        };
+        let start = self.expect(token::Type::Function)?.start;
+        let name = self.parse_spanned_identifier()?;
         let args = self.parse_function_args()?;
-        let (as_kw_start, returns) = if self.current_token == token::Type::As {
-            let ak = self.current_token_start;
-            self.next_token_span();
-            (Some(ak), Some(self.parse_type()?))
-        } else {
-            (None, None)
-        };
-        let end = self.current_token_end;
-        self.assert_next_token(&[token::Type::Semicolon])?;
+        let (as_kw_start, returns) = self.parse_type_annotation()?;
+        let end = self.expect(token::Type::Semicolon)?.end;
 
         Ok(InterfaceMethod {
             name,
@@ -255,23 +192,11 @@ impl Parser<'_> {
     }
 
     fn parse_interface_var(&mut self) -> Result<InterfaceVar, ParserError> {
-        let start = self.current_token_start;
-        self.assert_next_token(&[token::Type::Var])?;
-        let name_start = self.current_token_start;
-        let name_node = self.parse_identifier()?;
-        self.next_token_span();
-        let name = Spanned {
-            span: Span {
-                start: name_start,
-                end: self.prev_token_end,
-            },
-            node: name_node,
-        };
-        let as_kw_start = self.current_token_start;
-        self.assert_next_token(&[token::Type::As])?;
+        let start = self.expect(token::Type::Var)?.start;
+        let name = self.parse_spanned_identifier()?;
+        let as_kw_start = self.expect(token::Type::As)?.start;
         let type_ = self.parse_type()?;
-        let end = self.current_token_end;
-        self.assert_next_token(&[token::Type::Semicolon])?;
+        let end = self.expect(token::Type::Semicolon)?.end;
 
         Ok(InterfaceVar {
             name,
@@ -281,16 +206,34 @@ impl Parser<'_> {
         })
     }
 
+    /// Parse a generic argument list `<T, U, ...>`. A union inside belongs to one argument, so
+    /// `or` is never a separator here.
+    pub(crate) fn parse_generic_params(&mut self) -> Result<Vec<Type>, ParserError> {
+        self.expect(token::Type::Less)?;
+        let mut params = Vec::new();
+        if self.current_token != token::Type::Greater {
+            params.push(self.parse_type()?);
+            while self.current_token == token::Type::Comma {
+                self.advance();
+                params.push(self.parse_type()?);
+            }
+        }
+
+        self.consume_generic_close()?;
+
+        Ok(params)
+    }
+
     /// Parse the body of a tuple type `[T1, T2, …]`. Consumes the surrounding brackets. Each
     /// element is a full type, so `or`-unions inside are allowed (`[Number, Number or Null]`).
     fn parse_tuple_type_elements(&mut self) -> Result<Vec<Type>, ParserError> {
-        self.assert_next_token(&[token::Type::LBracket])?;
+        self.expect(token::Type::LBracket)?;
         let mut elements = Vec::new();
         if self.current_token != token::Type::RBracket {
             elements.push(self.parse_type()?);
 
             while self.current_token == token::Type::Comma {
-                self.next_token_span();
+                self.advance();
                 if self.current_token == token::Type::RBracket {
                     break; // trailing comma allowed
                 }
@@ -299,7 +242,7 @@ impl Parser<'_> {
             }
         }
 
-        self.assert_next_token(&[token::Type::RBracket])?;
+        self.expect(token::Type::RBracket)?;
 
         Ok(elements)
     }
@@ -307,17 +250,16 @@ impl Parser<'_> {
     /// Parse the entries of an inline dictionary type `{ :k as T, "k2" as U }`. Consumes the
     /// surrounding braces. Returns the entries and the span from `{` through `}`.
     fn parse_inline_dict_type(&mut self) -> Result<(Separated<DictTypeEntry>, Span), ParserError> {
-        let start = self.current_token_start;
-        self.assert_next_token(&[token::Type::LBrace])?;
+        let start = self.expect(token::Type::LBrace)?.start;
         let entries = self.parse_separated(&token::Type::RBrace, |parser| {
             let entry_start = parser.current_token_start;
             let key = match parser.current_token.clone() {
                 token::Type::Colon => {
-                    parser.next_token_span(); // consume `:`
+                    parser.advance();
                     DictTypeKey::Symbol(parser.parse_symbol_name()?)
                 }
                 token::Type::String(name) => {
-                    parser.next_token_span();
+                    parser.advance();
                     DictTypeKey::String(name)
                 }
                 _ => {
@@ -327,7 +269,7 @@ impl Parser<'_> {
                     )));
                 }
             };
-            parser.assert_next_token(&[token::Type::As])?;
+            parser.expect(token::Type::As)?;
             let value_type = parser.parse_type()?;
 
             Ok(DictTypeEntry {
@@ -339,8 +281,7 @@ impl Parser<'_> {
                 },
             })
         })?;
-        let end = self.current_token_end;
-        self.assert_next_token(&[token::Type::RBrace])?;
+        let end = self.expect(token::Type::RBrace)?.end;
 
         Ok((entries, Span { start, end }))
     }

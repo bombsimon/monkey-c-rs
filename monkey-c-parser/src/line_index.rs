@@ -1,19 +1,11 @@
-/// Maps byte offsets to line/column positions within a source file.
-///
-/// Build once per file with `LineIndex::new(source)`, then call `line_col` as needed. Spans in the
-/// AST remain raw byte offsets; this type is only needed when you want a human-readable location
-/// (error messages, blank-line logic).
+/// Maps the byte offsets used by AST spans to lines and columns.
 pub struct LineIndex {
-    /// Byte offset of the first character of each line (`line_starts[0] == 0`).
     line_starts: Vec<u32>,
-    /// `is_blank[i]` is `true` when line `i`'s body is empty or whitespace-only in the source. Used
-    /// by [`Self::blank_lines_between`] so a line that contains a comment is *not* counted as
-    /// blank.
     is_blank: Vec<bool>,
     indents: Vec<u32>,
 }
 
-/// A 0-indexed line and column position.
+/// A line and a column in bytes, both counted from 0.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LineCol {
     pub line: u32,
@@ -49,9 +41,7 @@ impl LineIndex {
         }
     }
 
-    /// Convert a byte offset into a `LineCol`.
-    ///
-    /// Panics if `offset` is beyond the end of the source.
+    /// The line and column of `offset`. Panics if `offset` is beyond the end of the source.
     pub fn line_col(&self, offset: u32) -> LineCol {
         let line = self.line_starts.partition_point(|&s| s <= offset) - 1;
 
@@ -61,12 +51,12 @@ impl LineIndex {
         }
     }
 
-    /// Return the line number (0-indexed) for a byte offset.
+    /// The line of `offset`, counted from 0.
     pub fn line(&self, offset: u32) -> u32 {
         self.line_col(offset).line
     }
 
-    /// Return the number of leading spaces and tabs on `line`.
+    /// How many spaces and tabs `line` starts with.
     pub fn indent(&self, line: u32) -> u32 {
         self.indents[line as usize]
     }
@@ -79,24 +69,10 @@ impl LineIndex {
         col == self.indent(line)
     }
 
-    /// Return how many blank lines separate two offsets.
-    ///
-    /// A "blank line" is a line whose body is empty or whitespace-only in the source. Lines that
-    /// contain comments are *not* counted as blank, so `a;\n// comment\nb;` counts as zero blank
-    /// lines even though the line number of `b` is two more than that of `a`.
+    /// How many whitespace-only lines separate two offsets. A line holding a comment doesn't count.
     pub fn blank_lines_between(&self, prev_end: u32, next_start: u32) -> u32 {
-        let end_line = self.line(prev_end);
-        let start_line = self.line(next_start);
-        if start_line <= end_line + 1 {
-            return 0;
-        }
+        let lines = (self.line(prev_end) + 1)..self.line(next_start);
 
-        let mut count = 0;
-        for line in (end_line + 1)..start_line {
-            if self.is_blank[line as usize] {
-                count += 1;
-            }
-        }
-        count
+        lines.filter(|&line| self.is_blank[line as usize]).count() as u32
     }
 }

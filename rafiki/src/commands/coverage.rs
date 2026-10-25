@@ -306,10 +306,8 @@ fn run_instrument(renderer: &Renderer, args: &CoverageInstrumentArgs) -> io::Res
         let source = renderer.read_source(file)?;
         let dest = mirrored_path(file, &root);
         let name = dest.to_string_lossy().into_owned();
-        let result = instrument(&source, &name, next_id, &exclude_annotation).map_err(|e| {
-            renderer.parse_error(&name, &source, &e);
-            diagnostics::already_reported()
-        })?;
+        let result = instrument(&source, &name, next_id, &exclude_annotation)
+            .map_err(|e| renderer.parse_error(&name, &source, &e))?;
 
         next_id += result.sites.len();
         for site in &result.sites {
@@ -327,10 +325,7 @@ fn run_instrument(renderer: &Renderer, args: &CoverageInstrumentArgs) -> io::Res
     // How far `coverage_jungle` needs to rebase the original's relative paths.
     let to_root = relative_path(&out, &root);
     let coverage_jungle_source = coverage_jungle(&jungle_source, &to_root.to_string_lossy())
-        .map_err(|e| {
-            renderer.parse_error(&jungle.display().to_string(), &jungle_source, &e);
-            diagnostics::already_reported()
-        })?;
+        .map_err(|e| renderer.parse_error(&jungle.display().to_string(), &jungle_source, &e))?;
 
     write(&out.join("coverage.jungle"), &coverage_jungle_source)?;
 

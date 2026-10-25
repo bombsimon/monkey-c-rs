@@ -282,10 +282,8 @@ fn rule_problem(name: &str) -> Option<String> {
 /// The span to delete to remove `comment`: its whole line when it's alone on it, or the comment
 /// and the space before it when it trails code.
 fn removal(comment: Span, source: &str) -> Span {
-    let line_start = source[..comment.start].rfind('\n').map_or(0, |i| i + 1);
-    let line_end = source[comment.end..]
-        .find('\n')
-        .map_or(source.len(), |i| comment.end + i);
+    let line_start = line_range(source, comment.start).start;
+    let line_end = line_range(source, comment.end).end;
 
     let before = &source[line_start..comment.start];
     let after = &source[comment.end..line_end];
@@ -719,40 +717,32 @@ mod tests {
     }
 
     #[test]
-    fn parses_ignore() {
-        assert_eq!(
-            parsed(" rafiki: ignore[bool-comparison]"),
-            directive(Kind::Ignore, &["bool-comparison"])
-        );
-    }
-
-    #[test]
-    fn parses_file_ignore() {
-        assert_eq!(
-            parsed(" rafiki: file-ignore[one-class-per-file]"),
-            directive(Kind::FileIgnore, &["one-class-per-file"])
-        );
-    }
-
-    #[test]
-    fn parses_rule_lists_with_spacing_and_trailing_comma() {
-        assert_eq!(
-            parsed(" rafiki: ignore[ a,b , c, ]"),
-            directive(Kind::Ignore, &["a", "b", "c"])
-        );
-    }
-
-    #[test]
-    fn parses_without_spaces() {
-        assert_eq!(parsed("rafiki:ignore[a]"), directive(Kind::Ignore, &["a"]));
-    }
-
-    #[test]
-    fn ignores_the_reason() {
-        assert_eq!(
-            parsed(" rafiki: ignore[a] name comes from the SDK [sic]"),
-            directive(Kind::Ignore, &["a"])
-        );
+    fn parses_ignore_lists() {
+        for (text, kind, rules) in [
+            (
+                " rafiki: ignore[bool-comparison]",
+                Kind::Ignore,
+                &["bool-comparison"][..],
+            ),
+            (
+                " rafiki: file-ignore[one-class-per-file]",
+                Kind::FileIgnore,
+                &["one-class-per-file"],
+            ),
+            (
+                " rafiki: ignore[ a,b , c, ]",
+                Kind::Ignore,
+                &["a", "b", "c"],
+            ),
+            ("rafiki:ignore[a]", Kind::Ignore, &["a"]),
+            (
+                " rafiki: ignore[a] name comes from the SDK [sic]",
+                Kind::Ignore,
+                &["a"],
+            ),
+        ] {
+            assert_eq!(parsed(text), directive(kind, rules), "{text:?}");
+        }
     }
 
     #[test]

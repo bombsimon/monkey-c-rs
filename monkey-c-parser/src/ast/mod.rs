@@ -1,3 +1,13 @@
+//! The syntax tree of a Monkey C file.
+//!
+//! Every node keeps its [`Span`], a byte range into the source. Fields named `*_pos` or
+//! `*_kw_start`, like `op_pos` or `as_kw_start`, are the byte offset of that one token, kept so a
+//! comment can stay on the side of it where it was written. Lists keep the positions of their
+//! commas through [`Separated`].
+//!
+//! Source spelling that doesn't change meaning is kept too, like `and` against `&&`, number
+//! literals as written and redundant parentheses, so the tree can be written back as it was.
+
 pub mod comment;
 pub mod decl;
 pub mod expr;
@@ -14,20 +24,17 @@ pub use self::ops::*;
 pub use self::stmt::*;
 pub use self::types::*;
 
-/// An identifier - a plain string name.
+/// A name, which may be dotted like `Toybox.Lang` where the grammar allows it.
 pub type Ident = String;
 
 /// Byte offset into the original source string.
 pub type Position = usize;
 
-/// A symbol name - the string part of a `:symbolName` literal.
+/// The name of a `:symbolName` literal.
 pub type Symbol = String;
 
-/// Visibility modifier on a declaration.
-///
-/// `Hidden` is synonymous with `Protected` — both restrict access to the
-/// declaring class and its subclasses. The distinction is preserved so the
-/// formatter can round-trip the original keyword.
+/// The visibility keyword of a declaration. `Hidden` means the same as `Protected`, but is kept
+/// apart so the keyword written is kept.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#data-hiding>
 #[derive(Debug, PartialEq)]
@@ -48,6 +55,7 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
+    /// The visibility keyword, without its position.
     pub fn visibility(&self) -> Option<&Visibility> {
         self.visibility.as_ref().map(|visibility| &visibility.node)
     }
@@ -56,23 +64,21 @@ impl Modifiers {
         self.static_kw_start.is_some()
     }
 
+    /// Whether neither keyword is written.
     pub fn is_empty(&self) -> bool {
         self.visibility.is_none() && !self.is_static()
     }
 }
 
-/// A half-open byte range `[start, end)` into the original source string.
-///
-/// All offsets are global and measured from byte 0 of the file.
-/// Use [`LineIndex`](crate::line_index::LineIndex) to convert to line/column.
+/// A half-open byte range `[start, end)` into the source. Use
+/// [`LineIndex`](crate::line_index::LineIndex) to convert it to lines and columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: Position,
     pub end: Position,
 }
 
-/// An AST node paired with its source [`Span`]. Used for identifier nodes that
-/// need both their value and source position for comment placement.
+/// A node paired with its source [`Span`], for nodes that otherwise wouldn't have one.
 #[derive(Debug, PartialEq)]
 pub struct Spanned<T> {
     pub span: Span,
@@ -80,14 +86,13 @@ pub struct Spanned<T> {
 }
 
 impl<T> Spanned<T> {
+    /// Where the node starts.
     pub fn start(&self) -> usize {
         self.span.start
     }
 }
 
-/// A parenthesised wrapper around an inner AST piece. Tracks the source positions of the opening
-/// `(` and closing `)`. Used wherever the grammar requires parens — `if (cond)`, `function
-/// f(args)`, `for (init; cond; update)`, `switch (disc)`.
+/// Something the grammar wraps in parentheses, like `if (cond)`, with where the parentheses are.
 #[derive(Debug, PartialEq)]
 pub struct Parens<T> {
     pub open: Position,
@@ -117,6 +122,8 @@ impl<T> Separated<T> {
         self.commas.get(index).copied()
     }
 
+    /// Whether a `,` follows the last item, which the formatter reads as a wish to keep the list
+    /// broken over lines.
     pub fn has_trailing_comma(&self) -> bool {
         !self.items.is_empty() && self.commas.len() == self.items.len()
     }

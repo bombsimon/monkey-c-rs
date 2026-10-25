@@ -94,32 +94,19 @@ mod tests {
     }
 
     #[test]
-    fn no_selection_runs_every_rule() {
+    fn enable_is_an_allowlist_and_disable_subtracts() {
         assert!(settings(&[], &[]).selects("bool-comparison"));
-    }
 
-    #[test]
-    fn enable_is_an_allowlist() {
-        let settings = settings(&["bool-comparison"], &[]);
-        assert!(settings.selects("bool-comparison"));
-        assert!(!settings.selects("naming-convention"));
-    }
+        let enabled = settings(&["bool-comparison"], &[]);
+        assert!(enabled.selects("bool-comparison"));
+        assert!(!enabled.selects("naming-convention"));
 
-    #[test]
-    fn disable_subtracts() {
-        let settings = settings(&[], &["bool-comparison"]);
-        assert!(!settings.selects("bool-comparison"));
-        assert!(settings.selects("naming-convention"));
-    }
+        let disabled = settings(&[], &["bool-comparison"]);
+        assert!(!disabled.selects("bool-comparison"));
+        assert!(disabled.selects("naming-convention"));
 
-    #[test]
-    fn disable_wins_over_enable() {
-        let settings = settings(
-            &["bool-comparison", "naming-convention"],
-            &["bool-comparison"],
-        );
-        assert!(!settings.selects("bool-comparison"));
-        assert!(settings.selects("naming-convention"));
+        let both = settings(&["bool-comparison"], &["bool-comparison"]);
+        assert!(!both.selects("bool-comparison"));
     }
 
     #[test]
