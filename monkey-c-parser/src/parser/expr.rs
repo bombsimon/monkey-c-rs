@@ -6,296 +6,131 @@ use crate::ast::{
 };
 use crate::parser::{Parser, ParserError};
 use crate::token;
-use std::cell::Cell;
 
-thread_local! {
-    static RECURSION_DEPTH: Cell<usize> = const { Cell::new(0) };
-}
+const MAX_EXPRESSION_DEPTH: usize = 1000;
 
 impl Parser<'_> {
     pub(crate) fn parse_expression(&mut self) -> Result<Expr, ParserError> {
-        self.parse_assignment()
-    }
-
-    fn parse_assignment(&mut self) -> Result<Expr, ParserError> {
         let expr = self.parse_ternary()?;
-        match self.current_token {
-            token::Type::Assign
-            | token::Type::AddAssign
-            | token::Type::SubAssign
-            | token::Type::MulAssign
-            | token::Type::DivAssign
-            | token::Type::ModAssign
-            | token::Type::BitAndAssign
-            | token::Type::BitOrAssign
-            | token::Type::BitXorAssign
-            | token::Type::LeftShiftAssign
-            | token::Type::RightShiftAssign => {
-                let operator_token = self.current_token.clone();
-                let start = expr.span().start;
-                let op_pos = self.current_token_start;
-                self.next_token_span();
-                let operator = match operator_token {
-                    token::Type::Assign => AssignOperator::Assign,
-                    token::Type::AddAssign => AssignOperator::AddAssign,
-                    token::Type::SubAssign => AssignOperator::SubAssign,
-                    token::Type::MulAssign => AssignOperator::MulAssign,
-                    token::Type::DivAssign => AssignOperator::DivAssign,
-                    token::Type::ModAssign => AssignOperator::ModAssign,
-                    token::Type::BitAndAssign => AssignOperator::BitAndAssign,
-                    token::Type::BitOrAssign => AssignOperator::BitOrAssign,
-                    token::Type::BitXorAssign => AssignOperator::BitXorAssign,
-                    token::Type::LeftShiftAssign => AssignOperator::LeftShiftAssign,
-                    token::Type::RightShiftAssign => AssignOperator::RightShiftAssign,
-                    _ => unreachable!(),
-                };
-                let value = self.parse_expression()?;
-                let end = value.span().end;
-                Ok(Expr::Assign(AssignExpr {
-                    target: Box::new(expr),
-                    operator,
-                    op_pos,
-                    value: Box::new(value),
-                    span: Span { start, end },
-                }))
-            }
-            _ => Ok(expr),
-        }
+        let Some(operator) = assign_operator(&self.current_token) else {
+            return Ok(expr);
+        };
+
+        let op_pos = self.advance().start;
+        let value = self.parse_expression()?;
+
+        Ok(Expr::Assign(AssignExpr {
+            span: Span {
+                start: expr.span().start,
+                end: value.span().end,
+            },
+            target: Box::new(expr),
+            operator,
+            op_pos,
+            value: Box::new(value),
+        }))
     }
 
     /// Parse a ternary `cond ? then : else`. Right-associative: the `else` branch is itself a
     /// ternary so `a ? b : c ? d : e` becomes `a ? b : (c ? d : e)`.
     fn parse_ternary(&mut self) -> Result<Expr, ParserError> {
-        let cond = self.parse_logical_or()?;
+        let condition = self.parse_logical_or()?;
         if self.current_token != token::Type::Question {
-            return Ok(cond);
+            return Ok(condition);
         }
 
-        let start = cond.span().start;
-        let question_pos = self.current_token_start;
-        self.next_token_span(); // consume `?`
+        let question_pos = self.advance().start;
         let then_expr = self.parse_expression()?;
-        let colon_pos = self.current_token_start;
-        self.assert_next_token(&[token::Type::Colon])?;
+        let colon_pos = self.expect(token::Type::Colon)?.start;
         let else_expr = self.parse_ternary()?;
-        let end = else_expr.span().end;
 
         Ok(Expr::Ternary(TernaryExpr {
-            condition: Box::new(cond),
+            span: Span {
+                start: condition.span().start,
+                end: else_expr.span().end,
+            },
+            condition: Box::new(condition),
             question_pos,
             then_expr: Box::new(then_expr),
             colon_pos,
             else_expr: Box::new(else_expr),
-            span: Span { start, end },
-        }))
-    }
-
-    fn handle_logical_operator(
-        &mut self,
-        left: Expr,
-        operator_token: token::Type,
-    ) -> Result<Expr, ParserError> {
-        let start = left.span().start;
-        let op_pos = self.current_token_start;
-        self.next_token_span();
-        let operator = match operator_token {
-            token::Type::Or => BinaryOperator::Or,
-            token::Type::OrKeyword => BinaryOperator::OrKeyword,
-            token::Type::And => BinaryOperator::And,
-            token::Type::AndKeyword => BinaryOperator::AndKeyword,
-            _ => unreachable!(),
-        };
-
-        // The next tighter level, so a chain of the same operator groups from the left.
-        let right = match operator {
-            BinaryOperator::Or | BinaryOperator::OrKeyword => self.parse_logical_and()?,
-            _ => self.parse_comparison()?,
-        };
-        let end = right.span().end;
-        Ok(Expr::Binary(BinaryExpr {
-            left: Box::new(left),
-            operator,
-            op_pos,
-            right: Box::new(right),
-            span: Span { start, end },
         }))
     }
 
     fn parse_logical_or(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_logical_and()?;
-        while matches!(self.current_token, token::Type::Or | token::Type::OrKeyword) {
-            let tok = self.current_token.clone();
-            expr = self.handle_logical_operator(expr, tok)?;
-        }
-
-        Ok(expr)
+        self.parse_binary_level(1, Self::parse_logical_and)
     }
 
     fn parse_logical_and(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.parse_comparison()?;
-        while matches!(
-            self.current_token,
-            token::Type::And | token::Type::AndKeyword
-        ) {
-            let tok = self.current_token.clone();
-            expr = self.handle_logical_operator(expr, tok)?;
-        }
-
-        Ok(expr)
+        self.parse_binary_level(2, Self::parse_comparison)
     }
 
     fn parse_comparison(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_term()?;
-        self.handle_binary_operator(
-            expr,
-            &[
-                token::Type::EqualEqual,
-                token::Type::BangEqual,
-                token::Type::Less,
-                token::Type::LessEqual,
-                token::Type::Greater,
-                token::Type::GreaterEqual,
-            ],
-            Self::parse_term,
-        )
+        self.parse_binary_level(3, Self::parse_term)
     }
 
-    /// Build a left-associative chain at one precedence level: keeps folding `<left> <op> <right>`
-    /// while the current token is in `operators`. The right-hand side is parsed by `parse_operand`
-    /// — typically the parser for the next-tighter precedence level. Passing the same-level parser
-    /// would yield right-associative parsing.
-    fn handle_binary_operator(
+    fn parse_term(&mut self) -> Result<Expr, ParserError> {
+        self.parse_binary_level(4, Self::parse_factor)
+    }
+
+    fn parse_factor(&mut self) -> Result<Expr, ParserError> {
+        self.parse_binary_level(5, Self::parse_unary)
+    }
+
+    /// Fold a left-associative chain of the operators at `precedence`, with operands parsed by the
+    /// next tighter level.
+    fn parse_binary_level(
         &mut self,
-        left: Expr,
-        operators: &[token::Type],
+        precedence: u8,
         parse_operand: fn(&mut Self) -> Result<Expr, ParserError>,
     ) -> Result<Expr, ParserError> {
-        let mut expr = left;
-        while self.current_token_is(operators) {
-            let operator_token = self.current_token.clone();
-            let start = expr.span().start;
-            let op_pos = self.current_token_start;
-            self.next_token_span();
+        let mut expr = parse_operand(self)?;
 
-            let operator = match operator_token {
-                token::Type::EqualEqual => BinaryOperator::Eq,
-                token::Type::BangEqual => BinaryOperator::NotEq,
-                token::Type::Less => BinaryOperator::Lt,
-                token::Type::LessEqual => BinaryOperator::LtEq,
-                token::Type::Greater => BinaryOperator::Gt,
-                token::Type::GreaterEqual => BinaryOperator::GtEq,
-                token::Type::Plus => BinaryOperator::Add,
-                token::Type::Minus => BinaryOperator::Sub,
-                token::Type::BitOr => BinaryOperator::BitOr,
-                token::Type::BitXor => BinaryOperator::BitXor,
-                token::Type::Star => BinaryOperator::Mul,
-                token::Type::Slash => BinaryOperator::Div,
-                token::Type::Percent => BinaryOperator::Mod,
-                token::Type::LeftShift => BinaryOperator::LeftShift,
-                token::Type::RightShift => BinaryOperator::RightShift,
-                token::Type::BitAnd => BinaryOperator::BitAnd,
-                token::Type::InstanceOf => BinaryOperator::InstanceOf,
-                token::Type::Has => BinaryOperator::Has,
-                _ => unreachable!(),
-            };
-
+        while let Some(operator) = binary_operator(&self.current_token)
+            .filter(|operator| operator.precedence() == precedence)
+        {
+            let op_pos = self.advance().start;
             let right = parse_operand(self)?;
-            let end = right.span().end;
 
             expr = Expr::Binary(BinaryExpr {
+                span: Span {
+                    start: expr.span().start,
+                    end: right.span().end,
+                },
                 left: Box::new(expr),
                 operator,
                 op_pos,
                 right: Box::new(right),
-                span: Span { start, end },
             });
         }
 
         Ok(expr)
     }
 
-    fn parse_term(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_factor()?;
-        self.handle_binary_operator(
-            expr,
-            &[
-                token::Type::Plus,
-                token::Type::Minus,
-                token::Type::BitOr,
-                token::Type::BitXor,
-            ],
-            Self::parse_factor,
-        )
-    }
-
-    fn parse_factor(&mut self) -> Result<Expr, ParserError> {
-        let expr = self.parse_unary()?;
-        self.handle_binary_operator(
-            expr,
-            &[
-                token::Type::Star,
-                token::Type::Slash,
-                token::Type::Percent,
-                token::Type::LeftShift,
-                token::Type::RightShift,
-                token::Type::BitAnd,
-                token::Type::InstanceOf,
-                token::Type::Has,
-            ],
-            Self::parse_unary,
-        )
-    }
-
-    fn handle_unary_operator(&mut self) -> Result<Expr, ParserError> {
-        let start = self.current_token_start;
-        let operator_token = self.current_token.clone();
-        self.next_token_span(); // advance past operator
-        let operator = match operator_token {
-            token::Type::Plus => UnaryOperator::Pos,
-            token::Type::Minus => UnaryOperator::Neg,
-            token::Type::Bang => UnaryOperator::Not,
-            token::Type::Tilde => UnaryOperator::BitNot,
-            token::Type::PlusPlus => UnaryOperator::PreInc,
-            token::Type::MinusMinus => UnaryOperator::PreDec,
-            token::Type::At => UnaryOperator::ResourceRef,
-            _ => unreachable!(),
-        };
-        let right = self.parse_unary()?;
-        let end = right.span().end;
-        Ok(Expr::Unary(UnaryExpr {
-            operator,
-            operand: Box::new(right),
-            span: Span { start, end },
-        }))
-    }
-
     fn parse_unary(&mut self) -> Result<Expr, ParserError> {
-        let depth_check = RECURSION_DEPTH.with(|depth| {
-            let d = depth.get();
-            if d > 1000 {
-                return Err(self.parse_error("Expression too complex".to_string()));
-            }
-            depth.set(d + 1);
-            Ok(())
-        });
-        depth_check?;
+        if self.expression_depth > MAX_EXPRESSION_DEPTH {
+            return Err(self.parse_error("Expression too complex"));
+        }
 
-        let result = if matches!(
-            self.current_token,
-            token::Type::Plus
-                | token::Type::Minus
-                | token::Type::Bang
-                | token::Type::Tilde
-                | token::Type::PlusPlus
-                | token::Type::MinusMinus
-                | token::Type::At
-        ) {
-            self.handle_unary_operator()
+        self.expression_depth += 1;
+
+        let result = if let Some(operator) = prefix_operator(&self.current_token) {
+            let start = self.advance().start;
+            self.parse_unary().map(|operand| {
+                Expr::Unary(UnaryExpr {
+                    operator,
+                    span: Span {
+                        start,
+                        end: operand.span().end,
+                    },
+                    operand: Box::new(operand),
+                })
+            })
         } else {
             self.parse_postfix()
         };
 
-        RECURSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+        self.expression_depth -= 1;
 
         result
     }
@@ -305,366 +140,266 @@ impl Parser<'_> {
         let mut expr = self.parse_primary()?;
 
         loop {
-            if self.current_token == token::Type::Dot {
-                self.next_token_span(); // consume .
-                let property = self.parse_identifier()?;
-                let end = self.current_token_end;
-                self.next_token_span(); // consume property name
-                expr = Expr::Member(MemberExpr {
-                    object: Box::new(expr),
-                    property,
-                    span: Span { start, end },
-                });
-                continue;
-            }
+            expr = match self.current_token {
+                token::Type::Dot => {
+                    self.advance();
+                    let property = self.parse_identifier()?;
 
-            if self.current_token == token::Type::LBracket {
-                self.next_token_span(); // consume [
-                let index = self.parse_expression()?;
-                let end = self.current_token_end; // end of ]
-                expr = Expr::Index(IndexExpr {
-                    object: Box::new(expr),
-                    index: Box::new(index),
-                    span: Span { start, end },
-                });
-                self.assert_next_token(&[token::Type::RBracket])?;
-                continue;
-            }
+                    Expr::Member(MemberExpr {
+                        object: Box::new(expr),
+                        property,
+                        span: Span {
+                            start,
+                            end: self.prev_token_end,
+                        },
+                    })
+                }
+                token::Type::LBracket => {
+                    self.advance();
+                    let index = self.parse_expression()?;
+                    let end = self.expect(token::Type::RBracket)?.end;
 
-            if self.current_token == token::Type::LParen {
-                let args_open = self.current_token_start;
-                self.next_token_span(); // consume (
-                let args = self.parse_call_args(token::Type::RParen)?;
-                let end = self.current_token_end; // end of )
-                expr = Expr::Call(CallExpr {
-                    callee: Box::new(expr),
-                    args,
-                    args_open,
-                    span: Span { start, end },
-                });
-                self.assert_next_token(&[token::Type::RParen])?;
-                continue;
-            }
+                    Expr::Index(IndexExpr {
+                        object: Box::new(expr),
+                        index: Box::new(index),
+                        span: Span { start, end },
+                    })
+                }
+                token::Type::LParen => {
+                    let args_open = self.advance().start;
+                    let args = self.parse_call_args(token::Type::RParen)?;
+                    let end = self.expect(token::Type::RParen)?.end;
 
-            if self.current_token == token::Type::As {
-                self.next_token_span(); // consume `as`
-                let target_type = self.parse_cast_type()?;
-                // current_token_start is the start of the token after the type
-                let end = self.current_token_start;
-                expr = Expr::TypeCast(TypeCastExpr {
-                    expr: Box::new(expr),
-                    target_type,
-                    span: Span { start, end },
-                });
-                continue;
-            }
+                    Expr::Call(CallExpr {
+                        callee: Box::new(expr),
+                        args,
+                        args_open,
+                        span: Span { start, end },
+                    })
+                }
+                token::Type::As => {
+                    self.advance();
+                    let target_type = self.parse_cast_type()?;
 
-            if matches!(
-                self.current_token,
-                token::Type::PlusPlus | token::Type::MinusMinus
-            ) {
-                let operator_token = self.current_token.clone();
-                let end = self.current_token_end;
-                self.next_token_span(); // consume ++/--
-                let operator = match operator_token {
-                    token::Type::PlusPlus => UnaryOperator::PostInc,
-                    token::Type::MinusMinus => UnaryOperator::PostDec,
-                    _ => unreachable!(),
-                };
-                expr = Expr::Unary(UnaryExpr {
-                    operator,
-                    operand: Box::new(expr),
-                    span: Span { start, end },
-                });
-                continue;
-            }
+                    Expr::TypeCast(TypeCastExpr {
+                        expr: Box::new(expr),
+                        target_type,
+                        span: Span {
+                            start,
+                            end: self.prev_token_end,
+                        },
+                    })
+                }
+                token::Type::PlusPlus | token::Type::MinusMinus => {
+                    let operator = if self.current_token == token::Type::PlusPlus {
+                        UnaryOperator::PostInc
+                    } else {
+                        UnaryOperator::PostDec
+                    };
+                    let end = self.advance().end;
 
-            break;
+                    Expr::Unary(UnaryExpr {
+                        operator,
+                        operand: Box::new(expr),
+                        span: Span { start, end },
+                    })
+                }
+                _ => return Ok(expr),
+            };
         }
-
-        Ok(expr)
     }
 
-    fn handle_primary_expression(&mut self, token_type: token::Type) -> Result<Expr, ParserError> {
-        match token_type {
+    fn parse_primary(&mut self) -> Result<Expr, ParserError> {
+        if let Some(value) = literal_value(&self.current_token) {
+            let span = self.advance();
+
+            return Ok(Expr::Lit(LitExpr { value, span }));
+        }
+
+        match self.current_token.clone() {
             token::Type::LParen => {
-                let start = self.current_token_start;
-                self.next_token_span();
+                let start = self.advance().start;
                 let inner = self.parse_expression()?;
-                let end = self.current_token_end;
-                self.assert_next_token(&[token::Type::RParen])?;
+                let end = self.expect(token::Type::RParen)?.end;
 
                 Ok(Expr::Paren(ParenExpr {
                     inner: Box::new(inner),
                     span: Span { start, end },
                 }))
             }
-            token::Type::Identifier(name) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Ident(IdentExpr {
-                    name,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Me => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Me(Span { start, end }))
-            }
-            token::Type::Self_ => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Self_(Span { start, end }))
-            }
-            token::Type::Bling => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Bling(Span { start, end }))
-            }
+            token::Type::Identifier(name) => Ok(Expr::Ident(IdentExpr {
+                name,
+                span: self.advance(),
+            })),
+            token::Type::Me => Ok(Expr::Me(self.advance())),
+            token::Type::Self_ => Ok(Expr::Self_(self.advance())),
+            token::Type::Bling => Ok(Expr::Bling(self.advance())),
             token::Type::Colon => {
-                let start = self.current_token_start;
-                self.next_token_span(); // consume `:`
-                let end = self.current_token_end;
+                let start = self.advance().start;
                 let name = self.parse_symbol_name()?;
+
                 Ok(Expr::Lit(LitExpr {
                     value: LiteralValue::Symbol(name),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Number(value) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Number(value),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Long(value) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Long(value),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Hex(digits) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Hex(digits),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::HexLong(digits) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::HexLong(digits),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Float(lit) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Float(lit),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Double(lit) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Double(lit),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::String(value) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::String(value),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Char(value) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Char(value),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Boolean(value) => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Boolean(value),
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Null => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::Null,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::NaN => {
-                let start = self.current_token_start;
-                let end = self.current_token_end;
-                self.next_token_span();
-                Ok(Expr::Lit(LitExpr {
-                    value: LiteralValue::NaN,
-                    span: Span { start, end },
-                }))
-            }
-            token::Type::Minus => {
-                let (start, _, _) = self.next_token_span();
-                let operand = self.parse_primary()?;
-                let end = operand.span().end;
-                Ok(Expr::Unary(UnaryExpr {
-                    operator: UnaryOperator::Neg,
-                    operand: Box::new(operand),
-                    span: Span { start, end },
+                    span: Span {
+                        start,
+                        end: self.prev_token_end,
+                    },
                 }))
             }
             token::Type::LBracket => {
-                let start = self.current_token_start;
-                self.next_token_span(); // consume [
-                let entries = self.parse_array_entries()?;
-                let mut end = self.current_token_end; // end of ]
-                self.next_token_span(); // consume ]
-
-                let is_byte_array = matches!(
-                    &self.current_token,
-                    token::Type::Identifier(name) if name == "b"
-                );
-                if is_byte_array {
-                    end = self.current_token_end;
-                    self.next_token_span(); // consume `b`
-                }
+                let start = self.advance().start;
+                let entries = self.parse_separated(&token::Type::RBracket, |parser| {
+                    Ok(ArrayEntry {
+                        value: parser.parse_expression()?,
+                    })
+                })?;
+                self.advance();
+                let is_byte_array = self.consume_byte_array_suffix();
 
                 Ok(Expr::Array(ArrayExpr {
                     entries,
                     is_byte_array,
-                    span: Span { start, end },
+                    span: Span {
+                        start,
+                        end: self.prev_token_end,
+                    },
                 }))
             }
             token::Type::LBrace => {
-                let start = self.current_token_start;
-                self.next_token_span(); // consume {
-                let entries = self.parse_dict_entries()?;
-                let end = self.current_token_end; // end of }
-                self.next_token_span(); // consume }
+                let start = self.advance().start;
+                let entries = self.parse_separated(&token::Type::RBrace, |parser| {
+                    let key = parser.parse_expression()?;
+                    let arrow_pos = parser.expect(token::Type::FatArrow)?.start;
+                    let value = parser.parse_expression()?;
+
+                    Ok(DictEntry {
+                        key,
+                        arrow_pos,
+                        value,
+                    })
+                })?;
+                let end = self.advance().end;
 
                 Ok(Expr::Dict(DictExpr {
                     entries,
                     span: Span { start, end },
                 }))
             }
-            token::Type::New => {
-                let start = self.current_token_start;
-                self.next_token_span(); // consume `new`
-
-                // `new [size]` — untyped array allocation.
-                if self.current_token == token::Type::LBracket {
-                    return self.parse_new_array(start, None);
-                }
-
-                // Type follows. Could be `new Foo.Bar(...)`, `new Array<T>[size]`, or `new
-                // self.classDef_(...)` — instantiating via a `Lang.Class` reference stored on
-                // `self`/`me`.
-                let class_start = self.current_token_start;
-                let class = if matches!(self.current_token, token::Type::Self_ | token::Type::Me) {
-                    let name = self.current_token.to_string();
-                    self.next_token_span();
-                    self.parse_dotted_identifier_continuation(name)?
-                } else {
-                    self.parse_dotted_identifier()?
-                };
-                let generic_params = if self.current_token == token::Type::Less {
-                    self.parse_generic_params()?
-                } else {
-                    Vec::new()
-                };
-
-                // `new Type<T>[size]` — typed array allocation.
-                if self.current_token == token::Type::LBracket {
-                    let element_type = Type {
-                        kind: TypeKind::Named {
-                            ident: class,
-                            generic_params,
-                        },
-                        alternatives: Vec::new(),
-                        optional: false,
-                        span: Span {
-                            start: class_start,
-                            end: self.prev_token_end,
-                        },
-                    };
-
-                    return self.parse_new_array(start, Some(element_type));
-                }
-
-                if !generic_params.is_empty() {
-                    return Err(self.parse_error(
-                        "Generic parameters on `new` are only valid for array allocation"
-                            .to_string(),
-                    ));
-                }
-
-                let class_span = Span {
-                    start: class_start,
-                    end: self.prev_token_end,
-                };
-
-                // `new Foo` without a trailing `(...)` is equivalent to `new Foo()`.
-                if self.current_token != token::Type::LParen {
-                    return Ok(Expr::New(NewExpr {
-                        class,
-                        class_span,
-                        args: Separated::default(),
-                        args_open: None,
-                        span: Span {
-                            start,
-                            end: self.prev_token_end,
-                        },
-                    }));
-                }
-
-                let args_open = self.current_token_start;
-                self.assert_next_token(&[token::Type::LParen])?;
-                let args = self.parse_call_args(token::Type::RParen)?;
-                let end = self.current_token_end;
-                self.assert_next_token(&[token::Type::RParen])?;
-
-                Ok(Expr::New(NewExpr {
-                    class,
-                    class_span,
-                    args,
-                    args_open: Some(args_open),
-                    span: Span { start, end },
-                }))
+            token::Type::New => self.parse_new(),
+            token_type => {
+                Err(self.parse_error(format!("Unexpected token in expression: {token_type:?}")))
             }
-            _ => Err(self.parse_error(format!("Unexpected token in expression: {token_type:?}"))),
         }
+    }
+
+    /// Parse `new Foo.Bar(...)`, `new self.classDef_(...)` or an array allocation like
+    /// `new Array<T>[size]` and `new [size]`.
+    fn parse_new(&mut self) -> Result<Expr, ParserError> {
+        let start = self.advance().start;
+
+        if self.current_token == token::Type::LBracket {
+            return self.parse_new_array(start, None);
+        }
+
+        let class_start = self.current_token_start;
+        let class = if matches!(self.current_token, token::Type::Self_ | token::Type::Me) {
+            let name = self.current_token.to_string();
+            self.advance();
+            self.parse_dotted_identifier_continuation(name)?
+        } else {
+            self.parse_dotted_identifier()?
+        };
+        let generic_params = if self.current_token == token::Type::Less {
+            self.parse_generic_params()?
+        } else {
+            Vec::new()
+        };
+
+        let class_span = Span {
+            start: class_start,
+            end: self.prev_token_end,
+        };
+
+        if self.current_token == token::Type::LBracket {
+            let element_type = Type {
+                kind: TypeKind::Named {
+                    ident: class,
+                    generic_params,
+                },
+                alternatives: Vec::new(),
+                optional: false,
+                span: class_span,
+            };
+
+            return self.parse_new_array(start, Some(element_type));
+        }
+
+        if !generic_params.is_empty() {
+            return Err(
+                self.parse_error("Generic parameters on `new` are only valid for array allocation")
+            );
+        }
+
+        // `new Foo` without a trailing `(...)` is equivalent to `new Foo()`.
+        if self.current_token != token::Type::LParen {
+            return Ok(Expr::New(NewExpr {
+                class,
+                class_span,
+                args: Separated::default(),
+                args_open: None,
+                span: Span {
+                    start,
+                    end: self.prev_token_end,
+                },
+            }));
+        }
+
+        let args_open = self.advance().start;
+        let args = self.parse_call_args(token::Type::RParen)?;
+        let end = self.expect(token::Type::RParen)?.end;
+
+        Ok(Expr::New(NewExpr {
+            class,
+            class_span,
+            args,
+            args_open: Some(args_open),
+            span: Span { start, end },
+        }))
+    }
+
+    fn parse_new_array(
+        &mut self,
+        start: usize,
+        element_type: Option<Type>,
+    ) -> Result<Expr, ParserError> {
+        self.expect(token::Type::LBracket)?;
+        let size = self.parse_expression()?;
+        self.expect(token::Type::RBracket)?;
+        let is_byte_array = self.consume_byte_array_suffix();
+
+        Ok(Expr::NewArray(NewArrayExpr {
+            element_type,
+            size: Box::new(size),
+            is_byte_array,
+            span: Span {
+                start,
+                end: self.prev_token_end,
+            },
+        }))
+    }
+
+    /// Consume the `b` that marks an array as a `Lang.ByteArray`, as in `[1, 2]b`.
+    fn consume_byte_array_suffix(&mut self) -> bool {
+        let is_byte_array = matches!(
+            &self.current_token,
+            token::Type::Identifier(name) if name == "b"
+        );
+
+        if is_byte_array {
+            self.advance();
+        }
+
+        is_byte_array
     }
 
     /// Parse a comma-separated list of call arguments. Does not consume the closing delimiter.
@@ -675,38 +410,6 @@ impl Parser<'_> {
         self.parse_separated(&close, |parser| {
             Ok(CallArg {
                 value: parser.parse_expression()?,
-            })
-        })
-    }
-
-    /// Parse the body of an array literal. The opening `[` has already been consumed; the closing
-    /// `]` is left for the caller. Comments are entirely ignored — they live in the comment table
-    /// and attach to entries (or to the array span as dangling-inside) via `attach_comments`.
-    fn parse_array_entries(&mut self) -> Result<Separated<ArrayEntry>, ParserError> {
-        self.parse_separated(&token::Type::RBracket, |parser| {
-            Ok(ArrayEntry {
-                value: parser.parse_expression()?,
-            })
-        })
-    }
-
-    /// Parse the body of a dict literal. The opening `{` has already been consumed; the closing `}`
-    /// is left for the caller. Comments are ignored for the same reason as in
-    /// [`parse_array_entries`](Self::parse_array_entries).
-    fn parse_dict_entries(&mut self) -> Result<Separated<DictEntry>, ParserError> {
-        self.parse_separated(&token::Type::RBrace, |parser| {
-            // Keys may be a symbol/string literal, a variable-like reference (`x`,
-            // `Module.CONST`), or an arbitrary expression (e.g. `Activity.SPORT_GENERIC * 1000 +
-            // ...`).
-            let key = parser.parse_expression()?;
-            let arrow_pos = parser.current_token_start;
-            parser.assert_next_token(&[token::Type::FatArrow])?;
-            let value = parser.parse_expression()?;
-
-            Ok(DictEntry {
-                key,
-                arrow_pos,
-                value,
             })
         })
     }
@@ -724,8 +427,7 @@ impl Parser<'_> {
             separated.items.push(parse_item(self)?);
 
             if self.current_token == token::Type::Comma {
-                separated.commas.push(self.current_token_start);
-                self.next_token_span();
+                separated.commas.push(self.advance().start);
             } else if self.current_token != *close {
                 return Err(self.parse_error(format!(
                     "Expected ',' or '{}', got {:?}",
@@ -736,56 +438,87 @@ impl Parser<'_> {
 
         Ok(separated)
     }
+}
 
-    /// Parse `[size_expr]` and build a [`NewArrayExpr`]. The opening `new` (and optional type) has
-    /// already been consumed by the caller.
-    fn parse_new_array(
-        &mut self,
-        start: usize,
-        element_type: Option<Type>,
-    ) -> Result<Expr, ParserError> {
-        self.assert_next_token(&[token::Type::LBracket])?;
-        let size = self.parse_expression()?;
-        let mut end = self.current_token_end;
-        self.assert_next_token(&[token::Type::RBracket])?;
+fn literal_value(token: &token::Type) -> Option<LiteralValue> {
+    let value = match token {
+        token::Type::Number(value) => LiteralValue::Number(value.clone()),
+        token::Type::Long(value) => LiteralValue::Long(value.clone()),
+        token::Type::Hex(value) => LiteralValue::Hex(value.clone()),
+        token::Type::HexLong(value) => LiteralValue::HexLong(value.clone()),
+        token::Type::Float(value) => LiteralValue::Float(value.clone()),
+        token::Type::Double(value) => LiteralValue::Double(value.clone()),
+        token::Type::String(value) => LiteralValue::String(value.clone()),
+        token::Type::Char(value) => LiteralValue::Char(value.clone()),
+        token::Type::Boolean(value) => LiteralValue::Boolean(*value),
+        token::Type::Null => LiteralValue::Null,
+        token::Type::NaN => LiteralValue::NaN,
+        _ => return None,
+    };
 
-        let is_byte_array = matches!(
-            &self.current_token,
-            token::Type::Identifier(name) if name == "b"
-        );
-        if is_byte_array {
-            end = self.current_token_end;
-            self.next_token_span(); // consume `b`
-        }
+    Some(value)
+}
 
-        Ok(Expr::NewArray(NewArrayExpr {
-            element_type,
-            size: Box::new(size),
-            is_byte_array,
-            span: Span { start, end },
-        }))
-    }
+fn binary_operator(token: &token::Type) -> Option<BinaryOperator> {
+    let operator = match token {
+        token::Type::Or => BinaryOperator::Or,
+        token::Type::OrKeyword => BinaryOperator::OrKeyword,
+        token::Type::And => BinaryOperator::And,
+        token::Type::AndKeyword => BinaryOperator::AndKeyword,
+        token::Type::EqualEqual => BinaryOperator::Eq,
+        token::Type::BangEqual => BinaryOperator::NotEq,
+        token::Type::Less => BinaryOperator::Lt,
+        token::Type::LessEqual => BinaryOperator::LtEq,
+        token::Type::Greater => BinaryOperator::Gt,
+        token::Type::GreaterEqual => BinaryOperator::GtEq,
+        token::Type::Plus => BinaryOperator::Add,
+        token::Type::Minus => BinaryOperator::Sub,
+        token::Type::BitOr => BinaryOperator::BitOr,
+        token::Type::BitXor => BinaryOperator::BitXor,
+        token::Type::Star => BinaryOperator::Mul,
+        token::Type::Slash => BinaryOperator::Div,
+        token::Type::Percent => BinaryOperator::Mod,
+        token::Type::LeftShift => BinaryOperator::LeftShift,
+        token::Type::RightShift => BinaryOperator::RightShift,
+        token::Type::BitAnd => BinaryOperator::BitAnd,
+        token::Type::InstanceOf => BinaryOperator::InstanceOf,
+        token::Type::Has => BinaryOperator::Has,
+        _ => return None,
+    };
 
-    /// Parse a generic parameter list `<T, U, ...>` and return the params. The leading `<` is the
-    /// current token on entry. Each param may be a union (`A or B`), in which case the union lives
-    /// in that param's `alternatives` field — `or` is not a param separator.
-    fn parse_generic_params(&mut self) -> Result<Vec<Type>, ParserError> {
-        self.next_token_span(); // consume `<`
-        let mut params = Vec::new();
-        if self.current_token != token::Type::Greater {
-            params.push(self.parse_type()?);
-            while self.current_token == token::Type::Comma {
-                self.next_token_span();
-                params.push(self.parse_type()?);
-            }
-        }
-        self.consume_generic_close()?;
+    Some(operator)
+}
 
-        Ok(params)
-    }
+fn prefix_operator(token: &token::Type) -> Option<UnaryOperator> {
+    let operator = match token {
+        token::Type::Plus => UnaryOperator::Pos,
+        token::Type::Minus => UnaryOperator::Neg,
+        token::Type::Bang => UnaryOperator::Not,
+        token::Type::Tilde => UnaryOperator::BitNot,
+        token::Type::PlusPlus => UnaryOperator::PreInc,
+        token::Type::MinusMinus => UnaryOperator::PreDec,
+        token::Type::At => UnaryOperator::ResourceRef,
+        _ => return None,
+    };
 
-    pub(crate) fn parse_primary(&mut self) -> Result<Expr, ParserError> {
-        let token_type = self.current_token.clone();
-        self.handle_primary_expression(token_type)
-    }
+    Some(operator)
+}
+
+fn assign_operator(token: &token::Type) -> Option<AssignOperator> {
+    let operator = match token {
+        token::Type::Assign => AssignOperator::Assign,
+        token::Type::AddAssign => AssignOperator::AddAssign,
+        token::Type::SubAssign => AssignOperator::SubAssign,
+        token::Type::MulAssign => AssignOperator::MulAssign,
+        token::Type::DivAssign => AssignOperator::DivAssign,
+        token::Type::ModAssign => AssignOperator::ModAssign,
+        token::Type::BitAndAssign => AssignOperator::BitAndAssign,
+        token::Type::BitOrAssign => AssignOperator::BitOrAssign,
+        token::Type::BitXorAssign => AssignOperator::BitXorAssign,
+        token::Type::LeftShiftAssign => AssignOperator::LeftShiftAssign,
+        token::Type::RightShiftAssign => AssignOperator::RightShiftAssign,
+        _ => return None,
+    };
+
+    Some(operator)
 }

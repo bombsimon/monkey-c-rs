@@ -56,7 +56,7 @@ impl Formatter {
     fn chain_link_to_doc(&self, link: &ChainLink) -> Doc {
         match link {
             ChainLink::Member(e) => Doc::text(format!(".{}", e.property)),
-            ChainLink::Call(e) => self.call_arguments_to_doc(e),
+            ChainLink::Call(e) => self.call_arguments_to_doc(&e.args, e.args_open, e.span.end),
             ChainLink::Index(e) => Doc::concat(vec![
                 Doc::text("["),
                 self.expr_with_leading(&e.index),

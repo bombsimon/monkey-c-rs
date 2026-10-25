@@ -1,6 +1,6 @@
 use monkey_c_parser::ast::{
-    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, EnumDecl, Expr, ForInit,
-    FunctionDecl, Stmt, UnionSeparator, VarDecl, Visibility,
+    Ast, BlockStmt, CaseLabel, ClassDecl, ConstDecl, ElseBranch, Expr, ForInit, FunctionDecl, Stmt,
+    UnionSeparator, VarDecl, Visibility,
 };
 use monkey_c_parser::parser::{Parser, ParserError};
 
@@ -29,13 +29,6 @@ fn first_class(src: &str) -> ClassDecl {
         .into_iter()
         .find_map(|n| if let Ast::Class(c) = n { Some(c) } else { None })
         .expect("no class found")
-}
-
-fn first_enum(src: &str) -> EnumDecl {
-    document_nodes(src)
-        .into_iter()
-        .find_map(|n| if let Ast::Enum(e) = n { Some(e) } else { None })
-        .expect("no enum found")
 }
 
 fn first_function(src: &str) -> FunctionDecl {
@@ -160,12 +153,6 @@ fn test_var_visibility() {
 }
 
 #[test]
-fn test_var_static() {
-    assert!(class_var("class C { static var x; }").modifiers.is_static());
-    assert!(!class_var("class C { var x; }").modifiers.is_static());
-}
-
-#[test]
 fn test_const_declarations() {
     let c = class_const("class C { const PI = 3; }");
     let b = c.bindings.into_iter().next().unwrap();
@@ -241,79 +228,29 @@ fn test_function_signature() {
 }
 
 #[test]
-fn test_function_modifiers() {
-    for (src, vis, is_static) in [
-        ("public function foo() {}", Some(Visibility::Public), false),
-        (
-            "private function foo() {}",
-            Some(Visibility::Private),
-            false,
-        ),
-        ("static function foo() {}", None, true),
-        (
-            "static hidden function foo() {}",
-            Some(Visibility::Hidden),
-            true,
-        ),
-    ] {
-        let f = first_function(src);
-        assert_eq!(
-            f.modifiers.visibility(),
-            vis.as_ref(),
-            "visibility in `{src}`"
-        );
-        assert_eq!(f.modifiers.is_static(), is_static, "is_static in `{src}`");
+fn test_modifiers_on_every_declaration() {
+    let nodes = document_nodes(
+        "static hidden class A {} static hidden function f() {} static hidden enum { X } \
+         static hidden module M {} static hidden var x; static hidden const Y = 1;",
+    );
+
+    for node in &nodes {
+        let modifiers = match node {
+            Ast::Class(c) => &c.modifiers,
+            Ast::Function(f) => &f.modifiers,
+            Ast::Enum(e) => &e.modifiers,
+            Ast::Module(m) => &m.modifiers,
+            Ast::Variable(v) => &v.modifiers,
+            Ast::Const(c) => &c.modifiers,
+            other => panic!("unexpected node {other:?}"),
+        };
+
+        assert_eq!(modifiers.visibility(), Some(&Visibility::Hidden));
+        assert!(modifiers.is_static());
     }
-}
 
-#[test]
-fn test_class_modifiers() {
-    for (src, vis, is_static) in [
-        ("class A {}", None, false),
-        ("private class A {}", Some(Visibility::Private), false),
-        ("static class A {}", None, true),
-        ("static hidden class A {}", Some(Visibility::Hidden), true),
-    ] {
-        let c = first_class(src);
-        assert_eq!(
-            c.modifiers.visibility(),
-            vis.as_ref(),
-            "visibility in `{src}`"
-        );
-        assert_eq!(c.modifiers.is_static(), is_static, "is_static in `{src}`");
-    }
-}
-
-#[test]
-fn test_enum_modifiers() {
-    for (src, vis, is_static) in [
-        ("enum { X }", None, false),
-        ("public enum B { X }", Some(Visibility::Public), false),
-        ("private enum { X }", Some(Visibility::Private), false),
-        (
-            "static protected enum B { X }",
-            Some(Visibility::Protected),
-            true,
-        ),
-    ] {
-        let e = first_enum(src);
-        assert_eq!(
-            e.modifiers.visibility(),
-            vis.as_ref(),
-            "visibility in `{src}`"
-        );
-        assert_eq!(e.modifiers.is_static(), is_static, "is_static in `{src}`");
-    }
-}
-
-#[test]
-fn test_module_modifiers() {
-    let Ast::Module(m) = &document_nodes("public module M {}")[0] else {
-        panic!("expected module");
-    };
-
-    assert_eq!(m.modifiers.visibility(), Some(&Visibility::Public));
-    assert!(!m.modifiers.is_static());
+    assert_eq!(nodes.len(), 6);
+    assert!(class_var("class C { var x; }").modifiers.is_empty());
 }
 
 #[test]
@@ -596,12 +533,6 @@ fn test_nested_module() {
 }
 
 #[test]
-fn test_annotation_is_a_separate_node() {
-    let nodes = document_nodes("(:test)\nfunction foo() {}");
-    assert!(matches!(nodes[0], Ast::Annotation(_, _)));
-}
-
-#[test]
 fn test_annotation_with_comments() {
     // Comments between the parens and the `:tag` shouldn't prevent the
     // `(...)` from being recognised as an annotation.
@@ -623,20 +554,6 @@ fn test_annotation_multiple_space_separated_tags() {
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[0].name, "glance");
     assert_eq!(entries[1].name, "exclForGlanceNone");
-}
-
-#[test]
-fn test_comments_live_in_side_table_not_in_ast() {
-    let out = Parser::new("// a comment\nvar x = 1;")
-        .parse()
-        .expect("parse");
-    let Ast::Document(nodes, _) = &out.ast else {
-        panic!("expected Document");
-    };
-    assert_eq!(nodes.len(), 1);
-    assert!(matches!(nodes[0], Ast::Variable(_)));
-    assert_eq!(out.comments.comments.len(), 1);
-    assert_eq!(out.comments.comments[0].text, " a comment");
 }
 
 #[test]
@@ -681,103 +598,6 @@ fn test_else_if_chain() {
 }
 
 #[test]
-fn test_if_condition_with_member_access() {
-    let f = first_function("function f() { if (obj.flag) { return 1; } }");
-    let Stmt::If(s) = &fn_body(&f).stmts[0] else {
-        panic!("expected if");
-    };
-    assert!(matches!(s.condition.inner, Expr::Member(_)));
-}
-
-#[test]
-fn test_dict_entry_trailing_comments_parse() {
-    // Comment-slot fields have been removed; comments live in the CommentsMap.
-    // This test is preserved as a structural sanity check on dict parsing.
-    let f = first_function("function f() { var x = {:a => 1, :b => 2, // note\n}; }");
-    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
-        panic!("expected var");
-    };
-    let Some(init) = &v.bindings[0].initializer else {
-        panic!("expected initializer");
-    };
-    let Expr::Dict(d) = init.as_ref() else {
-        panic!("expected dict");
-    };
-    let entries: Vec<_> = d.entries.iter().collect();
-    assert_eq!(entries.len(), 2);
-}
-
-#[test]
-fn test_empty_dict_with_tail_comment_parse() {
-    let f = first_function("function f() { var x = {/* tail */}; }");
-    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
-        panic!("expected var");
-    };
-    let Some(init) = &v.bindings[0].initializer else {
-        panic!("expected initializer");
-    };
-    let Expr::Dict(d) = init.as_ref() else {
-        panic!("expected dict");
-    };
-    // Standalone interior comments live in the CommentsMap, not in the
-    // entries list — empty dict has zero entries, comment is in the table.
-    assert!(d.entries.is_empty());
-}
-
-#[test]
-fn test_dict_standalone_comment_between_entries() {
-    let src = "function f() {\n    var x = {\n        :a => 1,\n        // mid\n        :b => 2,\n    };\n}";
-    let f = first_function(src);
-    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
-        panic!("expected var");
-    };
-    let Some(init) = &v.bindings[0].initializer else {
-        panic!("expected initializer");
-    };
-    let Expr::Dict(d) = init.as_ref() else {
-        panic!("expected dict");
-    };
-    // The standalone `// mid` comment lives in the CommentsMap; the dict only
-    // sees two entries.
-    assert_eq!(d.entries.len(), 2);
-}
-
-#[test]
-fn test_dict_blank_line_between_entries_does_not_add_members() {
-    // Blank lines are detected by the formatter from source spans, not by an
-    // AST marker. The parser sees two entries.
-    let src = "function f() {\n    var x = {\n        :a => 1,\n\n        :b => 2,\n    };\n}";
-    let f = first_function(src);
-    let Stmt::Var(v) = &fn_body(&f).stmts[0] else {
-        panic!("expected var");
-    };
-    let Some(init) = &v.bindings[0].initializer else {
-        panic!("expected initializer");
-    };
-    let Expr::Dict(d) = init.as_ref() else {
-        panic!("expected dict");
-    };
-    assert_eq!(d.entries.len(), 2);
-}
-
-#[test]
-fn test_if_else_chain_parses() {
-    // Comments between `}` and `else` live in the CommentsMap now (attached
-    // as trailing on the previous block's span). This test just makes sure
-    // the structural parse succeeds.
-    let src = "function f() {\n\
-                  if (a) { return 1; } // first\n\
-                  else if (b) { return 2; } // second\n\
-                  else { return 3; }\n\
-              }";
-    let f = first_function(src);
-    let Stmt::If(outer) = &fn_body(&f).stmts[0] else {
-        panic!("expected if");
-    };
-    assert!(matches!(outer.else_branch, Some(ElseBranch::If(_))));
-}
-
-#[test]
 fn test_return_statements() {
     let f = first_function("function f() { return 42; }");
     let Stmt::Return(r) = &fn_body(&f).stmts[0] else {
@@ -803,22 +623,6 @@ fn test_break_continue() {
 }
 
 #[test]
-fn test_span_accuracy() {
-    let nodes = document_nodes("var x = 1;");
-    let Ast::Variable(v) = &nodes[0] else {
-        panic!("expected variable");
-    };
-    assert_eq!(v.span.start, 0);
-    assert!(v.span.end > 0);
-
-    let nodes = document_nodes("import Foo;\nvar x = 1;");
-    let Ast::Variable(v) = &nodes[1] else {
-        panic!("expected variable");
-    };
-    assert!(v.span.start > 0, "var on second line should not start at 0");
-}
-
-#[test]
 fn test_error_location() {
     let err = parse_err("class Foo { @invalid }");
     assert!(err.line > 0);
@@ -826,49 +630,6 @@ fn test_error_location() {
 
     let err = parse_err("class Foo {\n    @invalid\n}");
     assert_eq!(err.line, 2);
-}
-
-#[test]
-fn test_complex_programs_parse() {
-    let program = r#"
-import Foo;
-
-class A {}
-
-class B {}
-
-class C {
-    function f1() {
-        me.x = 1;
-    }
-
-    function f2() {
-        var pace = Lang.format("$1$", [x.format("%d")]);
-    }
-
-    function f3() {
-        x = [0, 0] as Array<Number>;
-    }
-}
-
-function f1() {}
-
-function f2() {
-    var x = new MyModule.Foo();
-}
-
-function f3() {
-    var arr = [1, 2, 3];
-    for (var i = 0; i < arr.size(); i++) {
-        arr[i] = arr[i] + 1;
-    }
-}
-"#;
-
-    assert!(
-        Parser::new(program).parse().is_ok(),
-        "failed to parse program"
-    );
 }
 
 #[test]

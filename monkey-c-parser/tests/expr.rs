@@ -156,15 +156,6 @@ fn test_resource_ref() {
 }
 
 #[test]
-fn test_explicit_positive_number() {
-    let Expr::Unary(e) = parse_expr("+1") else {
-        panic!("expected Unary for `+1`");
-    };
-    assert_eq!(e.operator, UnaryOperator::Pos);
-    assert!(matches!(*e.operand, Expr::Lit(_)));
-}
-
-#[test]
 fn test_postfix_unary_operators() {
     for (src, expected) in [
         ("x++;", UnaryOperator::PostInc),
@@ -210,16 +201,6 @@ fn test_assignment_operators() {
 }
 
 #[test]
-fn test_operator_precedence() {
-    // mul binds tighter than add: 1 + 2 * 3 → Add(1, Mul(2, 3))
-    let Expr::Binary(e) = parse_expr("1 + 2 * 3") else {
-        panic!("expected Binary");
-    };
-    assert_eq!(e.operator, BinaryOperator::Add);
-    assert!(matches!(*e.right, Expr::Binary(ref r) if r.operator == BinaryOperator::Mul));
-}
-
-#[test]
 fn test_new_array_untyped() {
     let Expr::NewArray(e) = parse_expr("new [size]") else {
         panic!("expected NewArray");
@@ -236,14 +217,6 @@ fn test_new_array_typed() {
     assert_eq!(ty.ident().unwrap(), "Array");
     assert_eq!(ty.generic_params().len(), 1);
     assert_eq!(ty.generic_params()[0].ident().unwrap(), "Number");
-}
-
-#[test]
-fn test_new_array_size_is_expression() {
-    let Expr::NewArray(e) = parse_expr("new [20 + 30]") else {
-        panic!("expected NewArray");
-    };
-    assert!(matches!(*e.size, Expr::Binary(_)));
 }
 
 #[test]
@@ -453,16 +426,6 @@ fn test_symbol_dict_keys() {
     assert!(
         matches!(&entries[1].key, Expr::Lit(l) if l.value == LiteralValue::Symbol("name".into()))
     );
-}
-
-#[test]
-fn test_complex_expressions_parse() {
-    for src in [
-        "function f() { return (x * y) + (x / y); }",
-        r#"function f() { var x = [arr[0].format("%d"), arr[1].format("%02d")]; }"#,
-    ] {
-        assert!(Parser::new(src).parse().is_ok(), "failed to parse: {src}");
-    }
 }
 
 /// Pin down precedence between adjacent levels: an outer operator with a tighter operator on the

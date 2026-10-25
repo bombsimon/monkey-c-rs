@@ -5,7 +5,7 @@
 //! a file, parsing it, and linting it — rather than each call site guessing.
 
 use ariadne::{Color, Config, Label, Report, ReportKind, Source};
-use monkey_c_parser::parser::ParserError;
+use monkey_c_parser::parser::{ParseOutput, Parser, ParserError};
 
 use std::error;
 use std::fmt;
@@ -13,6 +13,8 @@ use std::fs;
 use std::io::{self, Read};
 use std::ops::Range;
 use std::path::Path;
+
+use crate::runner::Target;
 
 /// Renders diagnostics to stderr, with or without ANSI colour.
 #[derive(Debug, Clone, Copy)]
@@ -83,9 +85,24 @@ impl Renderer {
         })
     }
 
-    /// Render a [`ParserError`] as a labelled source snippet pointing at the
-    /// offending token.
-    pub fn parse_error(&self, label: &str, source: &str, err: &ParserError) {
+    /// Read a target's source, from stdin or its file.
+    pub fn read_target(&self, target: Target<'_>) -> io::Result<String> {
+        match target {
+            Target::Stdin => self.read_stdin_source(),
+            Target::File(path) => self.read_source(path),
+        }
+    }
+
+    /// Parse `source`, reporting a parse error before returning it.
+    pub fn parse(&self, label: &str, source: &str) -> io::Result<ParseOutput> {
+        Parser::new(source)
+            .parse()
+            .map_err(|error| self.parse_error(label, source, &error))
+    }
+
+    /// Print a [`ParserError`] as a labelled source snippet pointing at the offending token, and
+    /// return the error that says it's been reported.
+    pub fn parse_error(&self, label: &str, source: &str, err: &ParserError) -> io::Error {
         let range = byte_range_to_char_range(source, err.span.start, err.span.end);
         let range = clamp_range(range, source.chars().count());
 
@@ -100,6 +117,8 @@ impl Renderer {
             .finish()
             .eprint((label, Source::from(source)))
             .expect("ariadne write to stderr");
+
+        already_reported()
     }
 
     /// Render a warning that the formatter could not preserve the comment at

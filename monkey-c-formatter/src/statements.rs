@@ -9,10 +9,8 @@ use crate::Formatter;
 use crate::doc::Doc;
 
 impl Formatter {
-    /// Render `<keyword> (cond)` with appropriate comment handling between
-    /// `)` and the body block. `brace_start` is the byte offset of the opening
-    /// `{` of the body; it bounds the after-paren trailing drain so comments
-    /// that belong to the body are not accidentally captured here.
+    /// Render `<keyword> (cond)` up to the body starting at `brace_start`, whose comments are left
+    /// for the body.
     fn paren_condition_header(
         &self,
         keyword: &str,
@@ -56,17 +54,11 @@ impl Formatter {
         let cond_doc = self.condition_to_doc(cond);
 
         if wrappable {
-            // Comments physically inside the condition parens (between cond_end and
-            // paren_close): keep them before `)` so they don't move outside.
             let has_line_inside = self.has_trailing_line_comment(cond_end, paren_close);
             let cond_trailing = self.drain_trailing_doc(cond_end, paren_close);
-            // Standalone comments between the condition end and `)` (e.g. `// c3`).
             let dangling = self.drain_dangling_comments_doc(paren_close);
             let has_inside = has_line_inside || !matches!(dangling, Doc::Empty);
 
-            // Comments between `)` and the body `{`, on the same line as `)`.
-            // Bounded by `brace_start` so we don't steal comments that belong
-            // to the body (e.g. `// trailing` after a same-line `{ ... }`).
             let has_line_outside = self.has_trailing_line_comment(paren_close, brace_start);
             let after_paren = self.drain_trailing_doc(paren_close, brace_start);
 
@@ -78,22 +70,16 @@ impl Formatter {
             }
 
             if has_inside {
-                // A trailing `//` comment consumes the rest of its line, so `)` must
-                // appear on the next line to avoid being swallowed by the comment.
                 group_parts.push(Doc::HardLine);
             }
 
             group_parts.push(Doc::text(")"));
-
-            if matches!(after_paren, Doc::Empty) {
-                group_parts.push(Doc::flat_or_break(Doc::text(" "), Doc::HardLine));
-            } else if has_line_outside {
-                group_parts.push(after_paren);
-                group_parts.push(Doc::HardLine);
+            group_parts.push(after_paren);
+            group_parts.push(if has_line_outside {
+                Doc::HardLine
             } else {
-                group_parts.push(after_paren);
-                group_parts.push(Doc::flat_or_break(Doc::text(" "), Doc::HardLine));
-            }
+                Doc::flat_or_break(Doc::text(" "), Doc::HardLine)
+            });
 
             Doc::Group(group_parts)
         } else {
@@ -129,61 +115,35 @@ impl Formatter {
         let header = self.paren_condition_header("if", &s.condition, s.then_branch.span.start);
         let mut parts = vec![header, self.block_to_doc(&s.then_branch)];
 
-        // Bound the same-line trailing drain to the `else` keyword so that
-        // comments on the `else {` / `else if` line are not captured here.
+        // Comments on the `else` line belong to the else branch.
         let max_pos = s.else_kw_start.unwrap_or(usize::MAX);
 
         let has_trailing = self.has_trailing_line_comment(s.then_branch.span.end, max_pos);
-        let trailing = self.drain_trailing_doc(s.then_branch.span.end, max_pos);
+        parts.push(self.drain_trailing_doc(s.then_branch.span.end, max_pos));
 
-        // Drain standalone comments that sit between `}` and the `else` keyword
-        // on their own lines (e.g. `}\n// note\nelse {`).  They must be consumed
-        // before `block_after_keyword_to_doc` is called, otherwise `drain_leading_doc` inside
-        // the block picks them up and places them between `else` and `{`.
+        let Some(else_branch) = &s.else_branch else {
+            return Doc::Concat(parts);
+        };
+
+        // Comments on their own lines between `}` and `else` stay there rather than moving
+        // between `else` and its `{`.
         let before_else = s
             .else_kw_start
             .map(|kw| self.drain_leading_doc(kw))
             .unwrap_or(Doc::Empty);
 
-        match &s.else_branch {
-            None => {
-                parts.push(trailing);
-            }
-            Some(ElseBranch::Block(b)) => {
-                parts.push(trailing);
-                if matches!(&before_else, Doc::Empty) {
-                    if !has_trailing {
-                        parts.push(Doc::text(" else"));
-                    } else {
-                        parts.push(Doc::HardLine);
-                        parts.push(Doc::text("else"));
-                    }
-                } else {
-                    // before_else is a standalone comment (its own line).
-                    // Always needs a HardLine before it whether or not
-                    // has_trailing, since trailing itself has no newline.
-                    parts.push(Doc::HardLine);
-                    parts.push(before_else);
-                    parts.push(Doc::text("else"));
-                }
+        if !matches!(before_else, Doc::Empty) || has_trailing {
+            parts.push(Doc::HardLine);
+            parts.push(before_else);
+            parts.push(Doc::text("else"));
+        } else {
+            parts.push(Doc::text(" else"));
+        }
 
-                parts.push(self.block_after_keyword_to_doc(b));
-            }
-            Some(ElseBranch::If(inner)) => {
-                parts.push(trailing);
-                if matches!(&before_else, Doc::Empty) {
-                    if !has_trailing {
-                        parts.push(Doc::text(" else "));
-                    } else {
-                        parts.push(Doc::HardLine);
-                        parts.push(Doc::text("else "));
-                    }
-                } else {
-                    parts.push(Doc::HardLine);
-                    parts.push(before_else);
-                    parts.push(Doc::text("else "));
-                }
-
+        match else_branch {
+            ElseBranch::Block(b) => parts.push(self.block_after_keyword_to_doc(b)),
+            ElseBranch::If(inner) => {
+                parts.push(Doc::text(" "));
                 parts.push(self.if_stmt_to_doc(inner));
             }
         }
@@ -197,16 +157,12 @@ impl Formatter {
             end: s.span.end,
         };
 
-        // The header comes first so it keeps the comments in front of its `(`. Before-brace
-        // comments are drained before building the body so they aren't stolen by
-        // drain_leading_doc inside the case-rendering loop.
+        // Built in source order so each part keeps the comments written in front of it.
         let header = self.paren_condition_header("switch", &s.discriminant, s.brace_start);
         let before_brace = self.drain_leading_doc(s.brace_start);
-        // Drain same-line comment after `{` to place it on the `{` line, not indented below.
         let after_open = self.drain_after_open_brace(s.brace_start, s.span.end);
         let mut body = Vec::new();
 
-        // Drain any comments before the first case.
         let first_case_start = s.cases.first().map(|c| c.span.start).unwrap_or(s.span.end);
         let before_first = self.drain_leading_doc(first_case_start);
         if !matches!(before_first, Doc::Empty) {
@@ -217,15 +173,7 @@ impl Formatter {
 
         for (i, case) in s.cases.iter().enumerate() {
             if let Some(prev_end) = previous_case_end {
-                let blanks = self
-                    .line_index
-                    .blank_lines_between(prev_end as u32, case.span.start as u32);
-
-                if blanks > 0 {
-                    body.push(Doc::BlankLine);
-                } else {
-                    body.push(Doc::HardLine);
-                }
+                body.push(self.gap_between_positions(prev_end, case.span.start));
             }
 
             body.push(self.drain_leading_doc(case.span.start));
@@ -234,8 +182,7 @@ impl Formatter {
             match &case.label {
                 CaseLabel::Value(e) => {
                     header.push(self.expr_with_leading(e));
-                    // Drain inline block comments between the value and ':',
-                    // e.g. `case 1 /*NAME*/ :`.
+                    // A comment before the `:`, as in `case 1 /*NAME*/ :`.
                     header.push(self.drain_trailing_doc(e.span().end, case.label_span.end));
                 }
                 CaseLabel::InstanceOf(ty) => {
@@ -281,7 +228,6 @@ impl Formatter {
             previous_case_end = Some(stmts_end.max(comments_end));
         }
 
-        // Drain any comments after the last case.
         let prev_end = s.cases.last().map_or(s.brace_start, |c| c.span.end);
         body.push(self.drain_remaining_comments(Some(prev_end), switch_body_span.end));
 
@@ -319,16 +265,11 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    /// Render a block `{ … }` where the caller has already emitted the preceding space or token.
-    /// Drains comments that appear between the last caller token and `{` (before-bracket zone)
-    /// and after `{` on the same line (after-open-brace zone).
+    /// Render a block `{ … }` with the comments before its `{` and after it on the same line.
     pub(crate) fn block_to_doc(&self, block: &BlockStmt) -> Doc {
         let before_brace = self.drain_leading_doc(block.span.start);
 
-        // Only drain same-line comments after `{` when the first statement is on a
-        // different line. For single-line blocks like `{ /* note */ var x; }` the
-        // inline comment belongs to the first statement and is captured by its
-        // drain_leading_doc call inside stmts_to_doc.
+        // In a one-line block like `{ /* note */ var x; }` the comment belongs to the statement.
         let brace_line = self.line_index.line(block.span.start as u32);
         let first_stmt_line = block
             .stmts
@@ -438,9 +379,7 @@ impl Formatter {
         Doc::concat(docs)
     }
 
-    /// Render a statement with its comments, capping the trailing comment drain at `max_pos`.
-    /// Pass `container.end` when the stmt is inside a block so that comments
-    /// after the closing `}` are not accidentally captured by the last stmt.
+    /// Render a statement with its comments, taking none from `max_pos` on.
     fn stmt_to_doc_bounded(&self, stmt: &Stmt, max_pos: usize) -> Doc {
         let span = *stmt.span();
         let leading = self.drain_leading_doc(span.start);
@@ -523,31 +462,12 @@ impl Formatter {
             }
             Stmt::Return(s) => match &s.value {
                 None => Doc::text("return;"),
-                Some(v) => {
-                    let v = self.without_parens(v);
-                    let keyword_end = s.span.start + "return".len();
-                    let mut parts = vec![
-                        Doc::text("return"),
-                        self.after_token(keyword_end, v.span().start, || self.expr_with_leading(v)),
-                    ];
-                    self.push_before_semi(&mut parts, s.semi_pos);
-
-                    Doc::Concat(parts)
-                }
+                Some(value) => self.keyword_value_to_doc("return", s.span.start, value, s.semi_pos),
             },
             Stmt::Break(_) => Doc::text("break;"),
             Stmt::Continue(_) => Doc::text("continue;"),
             Stmt::Throw(s) => {
-                let keyword_end = s.span.start + "throw".len();
-                let mut parts = vec![
-                    Doc::text("throw"),
-                    self.after_token(keyword_end, s.value.span().start, || {
-                        self.expr_with_leading(self.without_parens(&s.value))
-                    }),
-                ];
-                self.push_before_semi(&mut parts, s.semi_pos);
-
-                Doc::Concat(parts)
+                self.keyword_value_to_doc("throw", s.span.start, &s.value, s.semi_pos)
             }
             Stmt::Switch(s) => self.switch_stmt_to_doc(s),
             Stmt::Try(s) => self.try_stmt_to_doc(s),
@@ -559,5 +479,25 @@ impl Formatter {
                 Doc::Concat(parts)
             }
         }
+    }
+
+    /// `return value;` or `throw value;`, for the keyword starting at `start`.
+    fn keyword_value_to_doc(
+        &self,
+        keyword: &str,
+        start: usize,
+        value: &Expr,
+        semi_pos: usize,
+    ) -> Doc {
+        let value = self.without_parens(value);
+        let mut parts = vec![
+            Doc::text(keyword),
+            self.after_token(start + keyword.len(), value.span().start, || {
+                self.expr_with_leading(value)
+            }),
+        ];
+        self.push_before_semi(&mut parts, semi_pos);
+
+        Doc::Concat(parts)
     }
 }

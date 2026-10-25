@@ -1,18 +1,18 @@
-//! Monkey C linter — reads a parsed [`ParseOutput`] together with the
-//! original source and emits [`Diagnostic`]s, some of which carry [`Fix`]
-//! suggestions that can be applied directly to the source bytes.
+//! Monkey C linter, reporting [`Diagnostic`]s for a parsed file.
 //!
-//! The linter is intentionally independent of `monkey-c-formatter`: fixes
-//! are text-range replacements (route A — like clippy and ruff), so they
-//! survive the user's formatting choices outside the fix region. If
-//! whitespace normalization is desired after applying fixes, the formatter
-//! is run as a separate pass.
+//! Fixes are plain text replacements, like clippy's and ruff's, so they leave the formatting
+//! around them alone and don't depend on the formatter.
 //!
-//! Adding a rule:
-//! 1. Add `pub mod my_rule;` to [`rules`] and write
-//!    `pub fn check_expr(expr, ctx) -> Option<Diagnostic>` (or
-//!    `check_stmt`, …).
-//! 2. Add one line to the matching `dispatch_*` in [`visit`].
+//! # Adding a rule
+//!
+//! 1. Add a module under [`rules`] with a `RULE` name and a check function for the nodes it looks
+//!    at, such as `check_expr(&Expr, &LintContext) -> Option<Diagnostic>`.
+//! 2. Call the check from the matching `dispatch_*` function in [`visit`].
+//! 3. List the rule in [`rules::ALL`], and give it a page under `docs/src/linter/rules` linked
+//!    from `SUMMARY.md`. Run `just update-docs` to refresh the rules table.
+//!
+//! Findings silenced by a `rafiki: ignore` comment are dropped by [`lint`], so a rule never has to
+//! look at comments for that.
 pub mod rules;
 pub mod suppression;
 pub mod visit;
@@ -23,41 +23,33 @@ use monkey_c_parser::parser::ParseOutput;
 use crate::suppression::Suppressions;
 use crate::visit::LintContext;
 
-/// A lint finding.
+/// A finding of one rule.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diagnostic {
-    /// Stable identifier for the rule that produced this diagnostic.
+    /// The rule's `RULE` name.
     pub rule: &'static str,
-    /// Human-readable message describing what's wrong.
     pub message: String,
-    /// Source range the diagnostic refers to.
+    /// What the finding is about. Only its start decides which `rafiki: ignore` comment covers it.
     pub span: Span,
-    /// Optional machine-applicable fix. `None` means the diagnostic is
-    /// advisory only.
     pub fix: Option<Fix>,
 }
 
-/// A single source-byte-range replacement: replace `span` with `replacement`.
-/// An empty `replacement` is a pure deletion.
+/// Replace `span` with `replacement`, which deletes it when empty.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edit {
     pub span: Span,
     pub replacement: String,
 }
 
-/// A machine-applicable fix — one or more [`Edit`]s applied together as a unit.
-///
-/// Most fixes are a single edit ([`Fix::single`]). Multiple edits let a fix
-/// touch disjoint ranges — e.g. rewrite a header and delete a now-redundant
-/// closing brace — without copying the untouched span between them into a
-/// replacement string, which matters when that span is large.
+/// [`Edit`]s applied together or not at all. Several edits let a fix touch disjoint ranges, like a
+/// header and a closing brace, without copying everything between them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fix {
     pub edits: Vec<Edit>,
 }
 
 impl Fix {
-    /// A fix consisting of a single edit — the common case.
+    /// A fix of a single edit, which is what most rules need.
     pub fn single(span: Span, replacement: impl Into<String>) -> Self {
         Self {
             edits: vec![Edit {
@@ -69,8 +61,6 @@ impl Fix {
 }
 
 /// Run all rules over `output` and return their diagnostics, in source order.
-/// `source` is the original source text — rules use it to build replacement
-/// strings for their fixes.
 pub fn lint(output: &ParseOutput, source: &str) -> Vec<Diagnostic> {
     lint_selected(output, source, |_| true)
 }
@@ -98,12 +88,8 @@ pub fn lint_selected(
     diags
 }
 
-/// Apply `fixes` to `source` and return the patched text.
-///
-/// Fixes are processed left to right by their earliest edit. Each fix is
-/// applied atomically: if any of its edits would overlap already-emitted output
-/// the whole fix is skipped, so a fix never lands half-applied. Edits within a
-/// fix must be disjoint and are applied in source order.
+/// Apply `fixes` to `source`, skipping a fix that overlaps one applied before it. Edits within a
+/// fix must be disjoint.
 pub fn apply_fixes(source: &str, mut fixes: Vec<Fix>) -> String {
     fixes.sort_by_key(|f| f.edits.iter().map(|e| e.span.start).min().unwrap_or(0));
 
@@ -114,9 +100,6 @@ pub fn apply_fixes(source: &str, mut fixes: Vec<Fix>) -> String {
         let mut edits: Vec<&Edit> = fix.edits.iter().collect();
         edits.sort_by_key(|e| e.span.start);
 
-        // Skip the whole fix unless its first (earliest) edit starts at or after
-        // the cursor. Since edits are sorted and disjoint, that guarantees none
-        // overlap what's already been emitted.
         match edits.first() {
             Some(first) if first.span.start >= cursor => {}
             _ => continue,
@@ -131,4 +114,31 @@ pub fn apply_fixes(source: &str, mut fixes: Vec<Fix>) -> String {
 
     out.push_str(&source[cursor..]);
     out
+}
+
+#[cfg(test)]
+mod test_support {
+    use monkey_c_parser::parser::Parser;
+
+    use crate::{Diagnostic, apply_fixes, lint};
+
+    /// The findings of `rules` in `src`.
+    pub(crate) fn lint_rules(src: &str, rules: &[&str]) -> Vec<Diagnostic> {
+        let output = Parser::new(src).parse().expect("parse");
+
+        lint(&output, src)
+            .into_iter()
+            .filter(|diagnostic| rules.contains(&diagnostic.rule))
+            .collect()
+    }
+
+    /// `src` with the fixes for the findings of `rules` applied.
+    pub(crate) fn fix_rules(src: &str, rules: &[&str]) -> String {
+        let fixes = lint_rules(src, rules)
+            .into_iter()
+            .filter_map(|diagnostic| diagnostic.fix)
+            .collect();
+
+        apply_fixes(src, fixes)
+    }
 }

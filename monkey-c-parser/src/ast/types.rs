@@ -1,20 +1,17 @@
 use crate::ast::{Ident, Parameter, Parens, Position, Separated, Span, Spanned};
 
-/// A Monkey C type annotation, optionally nullable and optionally part of
-/// an `or`-union with other peers.
+/// A type annotation, optionally nullable and optionally a union with other types.
 ///
-/// `,` inside `<…>` and the `or` keyword are *not* interchangeable:
-/// `Dictionary<String, Number>` has two distinct arguments;
-/// `Array<Number or Null>` has one argument that is itself a union. Each
-/// generic argument may carry its own union.
+/// A `,` and `or` aren't interchangeable inside `<…>`: `Dictionary<String, Number>` has two
+/// generic arguments, while `Array<Number or Null>` has one that is itself a union.
 ///
 /// <https://developer.garmin.com/connect-iq/monkey-c/monkey-types/>
 #[derive(Debug, PartialEq)]
 pub struct Type {
     pub kind: TypeKind,
-    /// Union peers, excluding the first (which is this type itself). Empty for non-union types.
+    /// The union members after the first, which is this type itself.
     pub alternatives: Vec<UnionAlternative>,
-    /// Whether the type is nullable (`?` suffix).
+    /// Written with a `?`, as in `String?`.
     pub optional: bool,
     pub span: Span,
 }
@@ -27,6 +24,7 @@ pub struct UnionAlternative {
     pub type_: Type,
 }
 
+/// How the members of a union are separated. Both mean the same.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnionSeparator {
     Or,
@@ -34,6 +32,7 @@ pub enum UnionSeparator {
 }
 
 impl UnionSeparator {
+    /// The separator as written in source.
     pub fn as_str(self) -> &'static str {
         match self {
             UnionSeparator::Or => "or",
@@ -42,64 +41,50 @@ impl UnionSeparator {
     }
 }
 
-/// What kind of type this is, before alternatives/optional are applied.
+/// The shape of a [`Type`], before its union members and `?`.
 #[derive(Debug, PartialEq)]
 pub enum TypeKind {
-    /// A named type, possibly generic: `Number`, `Array<T>`, `Dictionary<K, V>`.
+    /// A named type, possibly generic, e.g. `Number`, `Array<T>` or `Dictionary<K, V>`.
     Named {
         ident: Ident,
-        /// Comma-separated arguments inside `<…>`. Empty for non-generic types.
         generic_params: Vec<Type>,
     },
-    /// An inline dictionary type: `{ :key1 as T, "key2" as U }`. Used as a type annotation, e.g.
-    /// `function f(opts as { :flag as Boolean })`.
-    ///
-    /// `body_span` covers `{` through `}`, like [`TypeKind::Interface`].
+    /// An inline dictionary type, e.g. `{ :key1 as T, "key2" as U }`. `body_span` covers the
+    /// braces.
     Dict {
         entries: Separated<DictTypeEntry>,
         body_span: Span,
     },
-    /// An inline interface type: `interface { function foo() as X; var bar as Y; … }`. Members are
-    /// function signatures and/or `var` declarations — see [`InterfaceMember`]. Used as a `typedef`
-    /// right-hand side and as an inline type annotation on function parameters.
-    ///
-    /// `body_span` covers `{` through `}` so comment attachment can pick this as the smallest
-    /// containing scope for comments inside the body.
+    /// An inline interface type of function signatures and typed variables, e.g.
+    /// `interface { function foo() as X; var bar as Y; }`. `body_span` covers the braces.
     Interface {
         members: Vec<InterfaceMember>,
         body_span: Span,
     },
-    /// A tuple type: `[T1, T2, …]`. Models an array with a positionally-typed shape, `[Number,
-    /// String, Boolean]` is a 3-element array whose entries must match the listed types. Used in
-    /// `as`-annotations: `function f() as [StartView, StartDelegate]`.
+    /// A tuple type, an array whose entries have the listed types by position, e.g.
+    /// `[Number, String]`.
     Tuple { elements: Vec<Type> },
-    /// A callable / method-reference type: `Method(arg as T, …) as Return`. `name` is typically
-    /// `Method` but the parser accepts any identifier in this position so unfamiliar SDK callable
-    /// types still parse. The return is optional,`Method(x as Number)` (no `as`) is allowed.
+    /// A callable type, e.g. `Method(arg as T) as Return`, where the return type is optional. Any
+    /// name is accepted in place of `Method` so unfamiliar SDK callable types still parse.
     Method {
         name: Ident,
         args: Parens<Separated<Parameter>>,
         returns: Option<Box<Type>>,
     },
-    /// A parenthesised type: `(T)`. Preserved from source so the formatter can re-emit user-written
-    /// grouping, which matters when the `?` or `or` suffix would otherwise bind to a sub-part,
-    /// `(Method(x) as Void)?` is the whole callable being nullable, not the return type.
-    ///
-    /// The [`Parens`] wrapper carries the open/close byte offsets so the formatter can tell whether
-    /// a comment sits inside them before dropping a redundant grouping.
+    /// A parenthesized type, which matters when a `?` or union would otherwise bind to part of it,
+    /// e.g. `(Method(x) as Void)?` is a nullable callable rather than one returning `Void?`.
     Group(Parens<Box<Type>>),
 }
 
-/// One member inside an `interface { … }` type — either a function signature or a typed variable
-/// declaration.
+/// A member of an `interface { … }` type, either a function signature or a typed variable.
 #[derive(Debug, PartialEq)]
 pub enum InterfaceMember {
     Function(InterfaceMethod),
     Variable(InterfaceVar),
 }
 
-/// One method signature inside an `interface { … }` type. Mirrors
-/// [`FunctionDecl`](crate::ast::FunctionDecl) minus the body.
+/// A method signature inside an interface type, like [`FunctionDecl`](crate::ast::FunctionDecl)
+/// without a body.
 #[derive(Debug, PartialEq)]
 pub struct InterfaceMethod {
     pub name: Spanned<Ident>,
@@ -109,8 +94,7 @@ pub struct InterfaceMethod {
     pub span: Span,
 }
 
-/// One variable declaration inside an `interface { … }` type. The type annotation is required since
-/// the variable has no initializer.
+/// A variable inside an interface type, e.g. `var name as Type;`. The type is required.
 #[derive(Debug, PartialEq)]
 pub struct InterfaceVar {
     pub name: Spanned<Ident>,
@@ -119,7 +103,7 @@ pub struct InterfaceVar {
     pub span: Span,
 }
 
-/// A single `key as Type` entry in an inline dictionary type.
+/// One `key as Type` entry of an inline dictionary type.
 #[derive(Debug, PartialEq)]
 pub struct DictTypeEntry {
     pub key: DictTypeKey,
@@ -127,17 +111,26 @@ pub struct DictTypeEntry {
     pub span: Span,
 }
 
-/// A key in an inline dictionary type. Either a symbol literal (`:name`)
-/// or a string literal (`"name"`).
+/// The key of a [`DictTypeEntry`], a symbol like `:name` or a string like `"name"`, without the
+/// `:` or quotes.
 #[derive(Debug, PartialEq)]
 pub enum DictTypeKey {
     Symbol(String),
     String(String),
 }
 
+impl InterfaceMember {
+    /// The source range of the member, its `;` included.
+    pub fn span(&self) -> Span {
+        match self {
+            InterfaceMember::Function(method) => method.span,
+            InterfaceMember::Variable(variable) => variable.span,
+        }
+    }
+}
+
 impl Type {
-    /// The name of a [`TypeKind::Named`] type, or `None` for an inline dictionary type. Unwraps
-    /// [`TypeKind::Group`] transparently.
+    /// The name of a named or method type, looking through groups.
     pub fn ident(&self) -> Option<&str> {
         match &self.kind {
             TypeKind::Named { ident, .. } => Some(ident),
@@ -147,8 +140,7 @@ impl Type {
         }
     }
 
-    /// Comma-separated generic arguments. Empty for non-generic types and for inline dictionary
-    /// types. Unwraps [`TypeKind::Group`] transparently.
+    /// The generic arguments of a named type, looking through groups.
     pub fn generic_params(&self) -> &[Type] {
         match &self.kind {
             TypeKind::Named { generic_params, .. } => generic_params,

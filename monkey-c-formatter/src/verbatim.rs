@@ -8,6 +8,7 @@
 use monkey_c_parser::ast::{CommentStmt, Span};
 
 use crate::Formatter;
+use crate::comments::push_dedented_lines;
 use crate::doc::Doc;
 
 const PREFIX: &str = "rafiki:";
@@ -94,26 +95,10 @@ impl Formatter {
     pub(crate) fn verbatim_doc(&self, region: Span) -> Doc {
         self.comment_cursor.borrow_mut().drain_before(region.end);
 
-        let start_line = self.line_index.line(region.start as u32);
-        let source_indent = self.line_index.indent(start_line) as usize;
-
         let mut lines = self.source[region.start..region.end].split('\n');
         let first = lines.next().unwrap_or_default();
         let mut parts = vec![Doc::text(first.trim_end())];
-
-        for line in lines {
-            let line = line.trim_end();
-            let indent_width = line.len() - line.trim_start_matches([' ', '\t']).len();
-            let line = &line[indent_width.min(source_indent)..];
-
-            // A raw newline keeps blank lines free of the indentation a hard line would add.
-            if line.is_empty() {
-                parts.push(Doc::text("\n"));
-            } else {
-                parts.push(Doc::HardLine);
-                parts.push(Doc::text(line));
-            }
-        }
+        push_dedented_lines(&mut parts, lines, self.indent_at(region.start));
 
         Doc::concat(parts)
     }
@@ -150,10 +135,6 @@ mod tests {
         assert_eq!(directive(" rafiki: fmt off"), Some(FmtDirective::Off));
         assert_eq!(directive(" rafiki: fmt on"), Some(FmtDirective::On));
         assert_eq!(directive("rafiki:fmt   off"), Some(FmtDirective::Off));
-    }
-
-    #[test]
-    fn allows_a_reason() {
         assert_eq!(
             directive(" rafiki: fmt off keeps the table aligned"),
             Some(FmtDirective::Off)

@@ -87,96 +87,40 @@ fn needs_parens_under_not(expr: &Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Diagnostic, apply_fixes, lint};
-    use monkey_c_parser::parser::Parser;
+    use super::RULE;
+    use crate::test_support::{fix_rules, lint_rules};
 
-    fn lints(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
-    }
+    #[test]
+    fn rewrites_comparisons_with_a_boolean() {
+        for (expr, expected) in [
+            ("ready == true", "ready"),
+            ("ready != false", "ready"),
+            ("ready == false", "!ready"),
+            ("ready != true", "!ready"),
+            ("true == ready", "ready"),
+            ("isReady() == true", "isReady()"),
+            ("isReady() == false", "!isReady()"),
+            // `!` binds tighter than `<`, so the comparison needs parentheses.
+            ("a < b == false", "!(a < b)"),
+        ] {
+            let src = format!("function f() {{ return {expr}; }}");
+            let fixed = format!("function f() {{ return {expected}; }}");
 
-    fn first_fix(src: &str) -> String {
-        let fixes = lints(src).into_iter().filter_map(|d| d.fix).collect();
+            assert_eq!(fix_rules(&src, &[RULE]), fixed, "{expr}");
+        }
 
-        apply_fixes(src, fixes)
+        assert_eq!(
+            fix_rules("function f() { if (ready == true) { go(); } }", &[RULE]),
+            "function f() { if (ready) { go(); } }"
+        );
     }
 
     #[test]
-    fn drops_eq_true() {
-        let src = "function f() { return ready == true; }";
-        let diags = lints(src);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].rule, "bool-comparison");
-        assert_eq!(first_fix(src), "function f() { return ready; }");
-    }
+    fn ignores_other_comparisons() {
+        for expr in ["true == false", "count > 0", "ready"] {
+            let src = format!("function f() {{ return {expr}; }}");
 
-    #[test]
-    fn drops_ne_false() {
-        let src = "function f() { return ready != false; }";
-        assert_eq!(first_fix(src), "function f() { return ready; }");
-    }
-
-    #[test]
-    fn negates_eq_false() {
-        let src = "function f() { return ready == false; }";
-        assert_eq!(first_fix(src), "function f() { return !ready; }");
-    }
-
-    #[test]
-    fn negates_ne_true() {
-        let src = "function f() { return ready != true; }";
-        assert_eq!(first_fix(src), "function f() { return !ready; }");
-    }
-
-    #[test]
-    fn handles_literal_on_the_left() {
-        let src = "function f() { return true == ready; }";
-        assert_eq!(first_fix(src), "function f() { return ready; }");
-    }
-
-    #[test]
-    fn keeps_a_call_operand() {
-        let src = "function f() { return isReady() == true; }";
-        assert_eq!(first_fix(src), "function f() { return isReady(); }");
-    }
-
-    #[test]
-    fn parenthesises_a_negated_relational_operand() {
-        // `!` binds tighter than `<`, so the operand needs parens to stay a
-        // single negated comparison rather than `(!a) < b`.
-        let src = "function f() { return a < b == false; }";
-        assert_eq!(first_fix(src), "function f() { return !(a < b); }");
-    }
-
-    #[test]
-    fn does_not_parenthesise_a_negated_call() {
-        let src = "function f() { return isReady() == false; }";
-        assert_eq!(first_fix(src), "function f() { return !isReady(); }");
-    }
-
-    #[test]
-    fn fires_inside_a_condition() {
-        let src = "function f() { if (ready == true) { go(); } }";
-        assert_eq!(first_fix(src), "function f() { if (ready) { go(); } }");
-    }
-
-    #[test]
-    fn ignores_both_operands_literal() {
-        let src = "function f() { return true == false; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_non_equality_operators() {
-        // Comparing against a boolean literal with `<` isn't idiomatic, but the
-        // rule only rewrites `==` / `!=` and leaves everything else alone.
-        let src = "function f() { return count > 0; }";
-        assert!(lints(src).is_empty());
-    }
-
-    #[test]
-    fn ignores_plain_boolean_expression() {
-        let src = "function f() { return ready; }";
-        assert!(lints(src).is_empty());
+            assert!(lint_rules(&src, &[RULE]).is_empty(), "{expr}");
+        }
     }
 }

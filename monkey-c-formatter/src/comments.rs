@@ -1,7 +1,7 @@
 //! Comment placement: draining comments from the cursor at the right spots and rendering them around
 //! the tokens they were written next to.
 
-use monkey_c_parser::ast::{CommentStmt, Expr, Span, Spanned};
+use monkey_c_parser::ast::{CommentStmt, Expr, Span, Spanned, Type};
 
 use crate::Formatter;
 use crate::doc::Doc;
@@ -57,27 +57,15 @@ impl Formatter {
                 }
             } else {
                 let next_start = comments.get(i + 1).map(|nc| nc.span.start).unwrap_or(pos);
-                let blanks = self
-                    .line_index
-                    .blank_lines_between(c.span.end as u32, next_start as u32);
-
-                if blanks > 0 {
-                    parts.push(Doc::BlankLine);
-                } else {
-                    parts.push(Doc::HardLine);
-                }
+                parts.push(self.gap_between_positions(c.span.end, next_start));
             }
         }
 
         Doc::Concat(parts)
     }
 
-    /// Drain all remaining comments before `pos` and render them separated by
-    /// `HardLine` (or `BlankLine` when blank lines appear in source), but
-    /// WITHOUT a trailing newline after the last comment.
-    ///
-    /// Used for trailing/dangling comments at the end of a block body where
-    /// the enclosing structure already provides the final newline before `}`.
+    /// Drain the comments before `pos`, one per line, with no newline after the last since the
+    /// enclosing structure adds the one before its closing bracket.
     pub(crate) fn drain_dangling_comments_doc(&self, pos: usize) -> Doc {
         let comments = self.comment_cursor.borrow_mut().drain_before(pos);
         if comments.is_empty() {
@@ -87,16 +75,7 @@ impl Formatter {
         let mut parts = Vec::new();
         for (i, c) in comments.iter().enumerate() {
             if i > 0 {
-                let prev = &comments[i - 1];
-                let blanks = self
-                    .line_index
-                    .blank_lines_between(prev.span.end as u32, c.span.start as u32);
-
-                parts.push(if blanks > 0 {
-                    Doc::BlankLine
-                } else {
-                    Doc::HardLine
-                });
+                parts.push(self.gap_between_positions(comments[i - 1].span.end, c.span.start));
             }
 
             parts.push(self.comment_to_doc(c));
@@ -167,7 +146,7 @@ impl Formatter {
         )
     }
 
-    /// Peek: any undrained comment with start inside `span`?
+    /// Whether an undrained comment starts inside `span`.
     pub(crate) fn has_comments_in(&self, span: Span) -> bool {
         self.comment_cursor
             .borrow()
@@ -185,9 +164,8 @@ impl Formatter {
             .is_some()
     }
 
-    /// True when any same-line comment immediately after `brace_pos` (up to
-    /// `close_pos`) is a `//` line comment — used to decide whether a list
-    /// must be forced multi-line.
+    /// Whether a `//` comment follows the opening delimiter at `brace_pos` on its line, which forces
+    /// the list it opens to break.
     pub(crate) fn after_open_has_line_comment(&self, brace_pos: usize, close_pos: usize) -> bool {
         let brace_line = self.line_index.line(brace_pos as u32);
         self.comment_cursor.borrow().has_line_comment_between(
@@ -201,48 +179,36 @@ impl Formatter {
     /// Drain the comments on the line of the opening delimiter at `brace_pos`, such as `{ // c`.
     /// Bounded by `close_pos` so comments outside the delimited region stay where they are.
     pub(crate) fn drain_after_open_brace(&self, brace_pos: usize, close_pos: usize) -> Doc {
-        let brace_line = self.line_index.line(brace_pos as u32);
-        let comments = self.comment_cursor.borrow_mut().drain_trailing(
-            brace_pos,
-            close_pos,
-            brace_line,
-            &self.line_index,
-        );
-        if comments.is_empty() {
-            return Doc::Empty;
-        }
-
-        let mut parts = Vec::new();
-        for c in &comments {
-            parts.push(self.same_line_comment_to_doc(c));
-        }
-
-        Doc::Concat(parts)
+        self.drain_after_open(brace_pos, close_pos, false)
     }
 
     /// Like [`Self::drain_after_open_brace`] but hugs a leading block comment as `(/* c */ x)`.
     pub(crate) fn drain_after_open_paren(&self, paren_pos: usize, close_pos: usize) -> Doc {
-        let paren_line = self.line_index.line(paren_pos as u32);
+        self.drain_after_open(paren_pos, close_pos, true)
+    }
+
+    fn drain_after_open(&self, open_pos: usize, close_pos: usize, hug_block: bool) -> Doc {
+        let open_line = self.line_index.line(open_pos as u32);
         let comments = self.comment_cursor.borrow_mut().drain_trailing(
-            paren_pos,
+            open_pos,
             close_pos,
-            paren_line,
+            open_line,
             &self.line_index,
         );
-        if comments.is_empty() {
-            return Doc::Empty;
-        }
 
-        let mut parts = Vec::new();
-        for (i, c) in comments.iter().enumerate() {
-            if i == 0 && c.is_block {
-                parts.push(self.block_comment_to_doc(c));
-            } else {
-                parts.push(self.same_line_comment_to_doc(c));
-            }
-        }
+        let parts = comments
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                if hug_block && i == 0 && c.is_block {
+                    self.block_comment_to_doc(c)
+                } else {
+                    self.same_line_comment_to_doc(c)
+                }
+            })
+            .collect();
 
-        Doc::Concat(parts)
+        Doc::concat(parts)
     }
 
     /// Drain comments between a name and its `(`, kept in place as `foo /* c */()`. A `//` comment
@@ -351,8 +317,7 @@ impl Formatter {
         Doc::concat(vec![before, Doc::text(format!(" {token}")), after])
     }
 
-    /// Effective start of `span` — the position of its first leading comment
-    /// (if one exists just before the span) or `span.start` itself.
+    /// Where `span` starts including any undrained comment just before it.
     pub(crate) fn effective_start(&self, span: Span) -> usize {
         self.comment_cursor
             .borrow()
@@ -361,13 +326,11 @@ impl Formatter {
             .unwrap_or(span.start)
     }
 
-    /// Effective end after draining trailing comments — max of `span.end` and
-    /// the end of the last drained comment.
+    /// Where `span` ends including the comments drained after it.
     pub(crate) fn effective_end(&self, span: Span) -> usize {
         self.comment_cursor.borrow().last_end().max(span.end)
     }
 
-    /// Render a comment as a [`Doc`].
     pub(crate) fn comment_to_doc(&self, c: &CommentStmt) -> Doc {
         if c.is_block {
             self.block_comment_to_doc(c)
@@ -396,40 +359,22 @@ impl Formatter {
             return Doc::text(format!("/*{text}*/"));
         };
 
-        let start_line = self.line_index.line(comment.span.start as u32);
-        let source_indent = self.line_index.indent(start_line) as usize;
-        let dedent = |line: &str| -> String {
-            let indent_width = line.len() - line.trim_start_matches([' ', '\t']).len();
-
-            line[indent_width.min(source_indent)..].to_string()
-        };
+        let source_indent = self.indent_at(comment.span.start);
 
         // Drop what trails each line, including the `\r` of CRLF line endings, but keep the
         // whitespace before an inline `*/`, as in `line 2 */`.
         let mut lines: Vec<&str> = rest.split('\n').collect();
         let last_line = lines.pop().unwrap_or_default();
         let mut parts = vec![Doc::text(format!("/*{}", first_line.trim_end()))];
-        for line in lines {
-            let line = dedent(line.trim_end());
-
-            // A raw newline keeps blank lines free of the indentation a hard line would add.
-            if line.is_empty() {
-                parts.push(Doc::text("\n"));
-            } else {
-                parts.push(Doc::HardLine);
-                parts.push(Doc::text(line));
-            }
-        }
+        push_dedented_lines(&mut parts, lines, source_indent);
 
         parts.push(Doc::HardLine);
-        parts.push(Doc::text(format!("{}*/", dedent(last_line))));
+        parts.push(Doc::text(format!("{}*/", dedent(last_line, source_indent))));
 
         Doc::concat(parts)
     }
 
-    /// Drain any comments that appear between the last expression/token and
-    /// the closing `;`, then push the semicolon. Block comments hug the `;` like
-    /// they hug a closing bracket, as in `expr /* c */;`.
+    /// Push the comments before the `;` at `semi_pos` and then the `;`, as in `expr /* c */;`.
     pub(crate) fn push_before_semi(&self, parts: &mut Vec<Doc>, semi_pos: usize) {
         parts.push(self.drain_before_close_doc(semi_pos));
         parts.push(Doc::text(";"));
@@ -450,4 +395,52 @@ impl Formatter {
             Doc::HardLine
         }
     }
+
+    /// ` <keyword> ` with the comments written in front of the keyword at `keyword_pos`.
+    pub(crate) fn spaced_keyword(&self, keyword: &str, keyword_pos: usize) -> Doc {
+        Doc::concat(vec![
+            Doc::text(" "),
+            self.drain_leading_doc(keyword_pos),
+            Doc::text(format!("{keyword} ")),
+        ])
+    }
+
+    /// ` as Type`, for a type whose `as` is at `as_kw_start`.
+    pub(crate) fn type_annotation_to_doc(&self, as_kw_start: Option<usize>, ty: &Type) -> Doc {
+        Doc::concat(vec![
+            self.spaced_keyword("as", as_kw_start.unwrap_or(ty.span.start)),
+            self.type_to_doc(ty),
+        ])
+    }
+
+    /// The indentation of the line `pos` is on.
+    pub(crate) fn indent_at(&self, pos: usize) -> usize {
+        self.line_index.indent(self.line_index.line(pos as u32)) as usize
+    }
+}
+
+/// Push each of `lines` on a line of its own, trimmed and moved left by up to `source_indent`, so
+/// text copied from the source keeps its layout relative to where it started.
+pub(crate) fn push_dedented_lines<'a>(
+    parts: &mut Vec<Doc>,
+    lines: impl IntoIterator<Item = &'a str>,
+    source_indent: usize,
+) {
+    for line in lines {
+        let line = dedent(line.trim_end(), source_indent);
+
+        // A raw newline keeps blank lines free of the indentation a hard line would add.
+        if line.is_empty() {
+            parts.push(Doc::text("\n"));
+        } else {
+            parts.push(Doc::HardLine);
+            parts.push(Doc::text(line));
+        }
+    }
+}
+
+fn dedent(line: &str, source_indent: usize) -> &str {
+    let indent_width = line.len() - line.trim_start_matches([' ', '\t']).len();
+
+    &line[indent_width.min(source_indent)..]
 }

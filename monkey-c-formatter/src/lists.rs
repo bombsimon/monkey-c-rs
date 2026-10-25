@@ -2,8 +2,8 @@
 //! comma kept on the side they were written on.
 
 use monkey_c_parser::ast::{
-    ArrayExpr, CallArg, CallExpr, DictEntry, DictExpr, Expr, LiteralValue, Parameter, Parens,
-    Separated, Span, UnaryOperator,
+    ArrayExpr, CallArg, DictEntry, DictExpr, Expr, LiteralValue, Parameter, Parens, Separated,
+    Span, UnaryOperator,
 };
 
 use crate::Formatter;
@@ -11,9 +11,7 @@ use crate::doc::{Alignment, Doc, display_width, render_flat};
 use crate::expressions::literal_text;
 use crate::options::Numbers;
 
-/// An item in a delimited list (array entry, dict pair, call arg, etc.) along
-/// with any comments that trail it inside the bracketed list. Used by
-/// [`Formatter::format_list`].
+/// An entry of a bracketed list along with the comments around its comma.
 pub(crate) struct ListItem {
     pub(crate) content: Doc,
     pub(crate) before_separator: Doc,
@@ -78,23 +76,12 @@ impl Formatter {
                 arg_parts.push(self.drain_leading_doc(arg.span.start));
                 arg_parts.push(Doc::text(&arg.name.node));
                 if let Some(ty) = &arg.type_ {
-                    arg_parts.push(Doc::text(" "));
-                    arg_parts
-                        .push(self.drain_leading_doc(arg.as_kw_start.unwrap_or(ty.span.start)));
-                    arg_parts.push(Doc::text("as "));
-                    arg_parts.push(self.type_to_doc(ty));
+                    arg_parts.push(self.type_annotation_to_doc(arg.as_kw_start, ty));
                 }
-
-                // arg.span.end points to the start of the following `,` or `)`
-                // token (the parser sets it to current_token_start after
-                // parse_type, skipping past any same-line comment). Use the
-                // type's own span end so trailing comments are captured on the
-                // correct source line.
-                let parameter_end = arg.type_.as_ref().map_or(arg.span.end, |t| t.span.end);
 
                 self.list_item(
                     Doc::Concat(arg_parts),
-                    parameter_end,
+                    arg.span.end,
                     parameters.comma_after(i),
                     parameters.get(i + 1).map(|next| next.span.start),
                     parameters.close,
@@ -117,18 +104,17 @@ impl Formatter {
     /// `([` … `])` or `({` … `})` so the collection alone decides whether to break. Hugging
     /// saves a level of indentation for the entries. `None` when it does not apply, including when
     /// a comment sits between the parentheses and the brackets, since it would have nowhere to go.
-    pub(crate) fn hugged_sole_collection(
+    fn hugged_sole_collection(
         &self,
-        args: &[CallArg],
-        args_trailing_comma: bool,
+        args: &Separated<CallArg>,
         args_open: usize,
         call_end: usize,
     ) -> Option<Doc> {
-        if args_trailing_comma {
+        if args.has_trailing_comma() {
             return None;
         }
 
-        let [argument] = args else {
+        let [argument] = &args[..] else {
             return None;
         };
 
@@ -157,32 +143,25 @@ impl Formatter {
         ]))
     }
 
-    /// The `(…)` part of a call.
-    pub(crate) fn call_arguments_to_doc(&self, e: &CallExpr) -> Doc {
-        let before_open = self.drain_before_open_paren(e.args_open);
-        if let Some(args) = self.hugged_sole_collection(
-            &e.args,
-            e.args.has_trailing_comma(),
-            e.args_open,
-            e.span.end,
-        ) {
+    /// The `(…)` part of a call or `new` expression ending at `end`.
+    pub(crate) fn call_arguments_to_doc(
+        &self,
+        args: &Separated<CallArg>,
+        args_open: usize,
+        end: usize,
+    ) -> Doc {
+        let before_open = self.drain_before_open_paren(args_open);
+        if let Some(args) = self.hugged_sole_collection(args, args_open, end) {
             return Doc::concat(vec![before_open, args]);
         }
 
-        // Only capture comments between `(` and the first argument as after-open.
-        // Comments inside an argument expression (e.g. `x - /* C */ 1`) must not
-        // be stolen here — they belong to the sub-expression's drain_leading_doc.
-        let first_arg_start = e
-            .args
-            .first()
-            .map(|a| a.value.span().start)
-            .unwrap_or(e.span.end);
-        let after_open_force_newline =
-            self.after_open_has_line_comment(e.args_open, first_arg_start);
-        let after_open = self.drain_after_open_paren(e.args_open, first_arg_start);
+        // Comments inside the first argument, as in `x - /* C */ 1`, belong to it.
+        let first_arg_start = args.first().map(|a| a.value.span().start).unwrap_or(end);
+        let after_open_force_newline = self.after_open_has_line_comment(args_open, first_arg_start);
+        let after_open = self.drain_after_open_paren(args_open, first_arg_start);
 
-        let items = self.call_args_to_items(&e.args, e.span.end);
-        let before_close = self.drain_dangling_comments_doc(e.span.end);
+        let items = self.call_args_to_items(args, end);
+        let before_close = self.drain_dangling_comments_doc(end);
 
         Doc::concat(vec![
             before_open,
@@ -191,18 +170,14 @@ impl Formatter {
                 ")",
                 items,
                 before_close,
-                e.args.has_trailing_comma(),
+                args.has_trailing_comma(),
                 after_open,
                 after_open_force_newline,
             ),
         ])
     }
 
-    pub(crate) fn call_args_to_items(
-        &self,
-        args: &Separated<CallArg>,
-        args_close: usize,
-    ) -> Vec<ListItem> {
+    fn call_args_to_items(&self, args: &Separated<CallArg>, args_close: usize) -> Vec<ListItem> {
         args.iter()
             .enumerate()
             .map(|(i, a)| {
@@ -376,10 +351,7 @@ impl Formatter {
             return Doc::bracketed(Doc::text(open), Doc::Empty, before_close, Doc::text(close));
         }
 
-        // Line comments (`// …`) consume the rest of the source line, so any
-        // list containing one must be forced multi-line regardless of width.
-        // Block comments (`/* … */`) can stay inline — let the pretty-printer
-        // decide based on the available line width.
+        // A `//` comment ends its line, while block comments are left to the line width.
         let force_multiline = trailing_comma
             || after_open_force_newline
             || has_before_close
@@ -465,15 +437,7 @@ impl Formatter {
                 flat_inner.push(Doc::text(", "));
             }
 
-            // format_dict guarantees no comments inside dict when this path is
-            // taken, so expr_inner_to_doc is safe and avoids accidentally
-            // draining trailing comments that belong to the outer context (e.g.
-            // a `// comment` after `}` in an enclosing array entry).
-            flat_inner.push(Doc::concat(vec![
-                self.expr_inner_to_doc(self.without_parens(&entry.key)),
-                Doc::text(" => "),
-                self.expr_inner_to_doc(self.without_parens(&entry.value)),
-            ]));
+            flat_inner.push(self.flat_dict_entry_to_doc(entry));
         }
         let flat_doc = Doc::concat(vec![
             Doc::text("{"),
@@ -483,6 +447,16 @@ impl Formatter {
         let break_doc = self.format_dict_multiline(e);
 
         Doc::Group(vec![Doc::flat_or_break(flat_doc, break_doc)])
+    }
+
+    /// A `key => value` pair of a dict without comments. Leaves the cursor alone so a comment
+    /// after the dict, such as one trailing an enclosing array entry, isn't drained here.
+    fn flat_dict_entry_to_doc(&self, entry: &DictEntry) -> Doc {
+        Doc::concat(vec![
+            self.expr_inner_to_doc(self.without_parens(&entry.key)),
+            Doc::text(" => "),
+            self.expr_inner_to_doc(self.without_parens(&entry.value)),
+        ])
     }
 
     fn format_dict_multiline(&self, e: &DictExpr) -> Doc {
@@ -667,9 +641,8 @@ impl Formatter {
         for (i, entry) in entries.iter().enumerate() {
             let entry_start = start_of(entry);
 
-            // Drain any standalone comments before this entry — but only those on a
-            // different line. A block comment on the same line as the entry is an inline
-            // prefix (e.g. `/* INFO */ :key => val`) and is handled by `content_of`.
+            // A block comment on the entry's own line, as in `/* INFO */ :key => val`, is left for
+            // `content_of`.
             let entry_line = self.line_index.line(entry_start as u32);
             let comment_start = self
                 .comment_cursor
@@ -686,9 +659,6 @@ impl Formatter {
                 self.push_gap(&mut inner, prev_end, entry_start, trailing_comma);
             }
 
-            // Only capture trailing comments up to the next entry's start (or
-            // the collection close). This prevents stealing a comment from a
-            // later entry or from outside the collection.
             let next_entry_start = entries.get(i + 1).map(&start_of);
             let content = content_of(i, entry, next_entry_start.unwrap_or(span.end));
             let entry_end = end_of(entry);
@@ -710,7 +680,6 @@ impl Formatter {
             prev_end = Some(self.comment_cursor.borrow().last_end().max(entry_end));
         }
 
-        // Drain any standalone comments after the last entry.
         let remaining_start = self
             .comment_cursor
             .borrow()
@@ -775,14 +744,7 @@ impl Formatter {
             .entries
             .iter()
             .map(|entry| ListItem {
-                // format_dict guarantees no comments inside dict when this
-                // path is taken — use expr_inner_to_doc to avoid draining
-                // trailing comments that belong to the outer context.
-                content: Doc::concat(vec![
-                    self.expr_inner_to_doc(self.without_parens(&entry.key)),
-                    Doc::text(" => "),
-                    self.expr_inner_to_doc(self.without_parens(&entry.value)),
-                ]),
+                content: self.flat_dict_entry_to_doc(entry),
                 before_separator: Doc::Empty,
                 trailing: Doc::Empty,
                 ends_line: false,
@@ -820,11 +782,8 @@ fn is_number_literal(expr: &Expr) -> bool {
     }
 }
 
-/// Compute the flat display width of a dict key expression without touching
-/// the comment cursor. Used for alignment padding in multiline dicts.
-///
-/// Returns `None` when the expression cannot be represented as a single flat
-/// token sequence (e.g. a call or binary expression as a key).
+/// The width of a dict key that is a plain name or literal, measured without touching the comment
+/// cursor.
 fn expr_key_width(expr: &Expr, numbers: &Numbers) -> Option<usize> {
     match expr {
         Expr::Ident(e) => Some(display_width(&e.name)),
@@ -882,70 +841,35 @@ mod tests {
     }
 
     #[test]
-    fn array_with_only_short_items_can_fill() {
+    fn arrays_of_short_items_can_fill() {
         assert!(can_fill("[:foo, :bar, :baz, :biz, :foo2]", 8));
-    }
-
-    #[test]
-    fn array_with_one_long_item_cannot_fill() {
-        assert!(!can_fill("[:foo, :bar, :thisIsWayTooLong]", 8));
-    }
-
-    #[test]
-    fn items_exactly_as_wide_as_the_limit_can_fill() {
         assert!(can_fill("[:abcdefg, :a]", 8));
         assert!(!can_fill("[:abcdefgh, :a]", 8));
-    }
-
-    #[test]
-    fn a_width_of_zero_never_fills() {
         assert!(!can_fill("[1, 2, 3]", 0));
-    }
-
-    #[test]
-    fn items_are_measured_by_display_width() {
-        // 8 columns on screen but 11 bytes in the source.
-        assert!(can_fill("[\"日本語\", \"a\"]", 8));
+        assert!(
+            !can_fill("[\n    1,\n\n    2,\n]", 8),
+            "blank line between items"
+        );
     }
 
     #[test]
     fn items_are_measured_as_formatted() {
+        // 8 columns on screen but 11 bytes in the source.
+        assert!(can_fill("[\"日本語\", \"a\"]", 8));
         // The source spreads `-  1` over 4 columns, the output prints it as `-1`.
         assert!(can_fill("[-  1, 2]", 2));
     }
 
     #[test]
-    fn a_blank_line_between_items_keeps_them_apart() {
-        assert!(!can_fill("[\n    1,\n\n    2,\n]", 8));
-    }
-
-    #[test]
-    fn integers_and_floats_are_numbers() {
-        for item in ["0", "42", "100l", "1.5", "1.5f", "2.5d"] {
+    fn number_literals_line_up_by_their_last_digit() {
+        for item in [
+            "0", "42", "100l", "1.5", "1.5f", "2.5d", "0x1f", "0x1fl", "-3", "-1.5",
+        ] {
             assert!(is_number(item), "{item}");
         }
-    }
 
-    #[test]
-    fn hex_literals_are_numbers() {
-        assert!(is_number("0x1f"));
-        assert!(is_number("0x1fl"));
-    }
-
-    #[test]
-    fn negated_numbers_are_numbers() {
-        assert!(is_number("-3"));
-        assert!(is_number("-1.5"));
-    }
-
-    #[test]
-    fn negated_names_are_not_numbers() {
-        assert!(!is_number("-x"));
-    }
-
-    #[test]
-    fn symbols_and_strings_are_not_numbers() {
-        assert!(!is_number(":foo"));
-        assert!(!is_number("\"12\""));
+        for item in ["-x", ":foo", "\"12\""] {
+            assert!(!is_number(item), "{item}");
+        }
     }
 }

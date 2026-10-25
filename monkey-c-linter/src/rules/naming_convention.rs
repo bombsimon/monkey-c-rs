@@ -261,237 +261,77 @@ fn header_span(span: Span, brace_start: usize) -> Span {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Diagnostic, lint};
-    use monkey_c_parser::parser::Parser;
+    use super::RULE;
+    use crate::Diagnostic;
+    use crate::test_support::lint_rules;
 
     fn rule_diags(src: &str) -> Vec<Diagnostic> {
-        let output = Parser::new(src).parse().expect("parse");
-        lint(&output, src)
-            .into_iter()
-            .filter(|d| d.rule == "naming-convention")
-            .collect()
+        lint_rules(src, &[RULE])
     }
 
     #[test]
-    fn allows_pascal_class() {
-        assert!(rule_diags("class MyClass {}").is_empty());
+    fn allows_conventional_names() {
+        for src in [
+            "class MyClass {}",
+            "module MyModule { var myVar = 1; }",
+            "function myFunction(myArg as Number) {}",
+            "var myVar = 1;",
+            "class Foo { var myField; public var otherField; }",
+            "class Foo { private var _a; protected var _b; hidden var _c; }",
+            "function f() { var myTotal = 0; for (var i = 0; i < 1; i += 1) {} }",
+            "enum Color { COLOR_RED, COLOR_GREEN }",
+            "enum { LONELY }",
+            // Constants are left alone, since SDK code writes them in SCREAMING_SNAKE_CASE.
+            "const myConst = 1; class Foo { private const SOME_CONST = 1; }",
+        ] {
+            assert!(rule_diags(src).is_empty(), "{src}");
+        }
     }
 
     #[test]
-    fn flags_lowercase_class() {
-        let diags = rule_diags("class myClass {}");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("class"));
-        assert!(diags[0].message.contains("PascalCase"));
+    fn flags_unconventional_names() {
+        for (src, expected) in [
+            ("class myClass {}", "PascalCase"),
+            ("module myModule {}", "PascalCase"),
+            ("function MyFunction() {}", "camelCase"),
+            ("function my_function() {}", "camelCase"),
+            ("function f(MyArg as Number) {}", "camelCase"),
+            ("var MyVar = 1;", "camelCase"),
+            // The `_` prefix is for private class members.
+            ("var _myVar = 1;", "camelCase"),
+            ("class Foo { var MyField; }", "camelCase"),
+            ("class Foo { public var _myField; }", "camelCase"),
+            ("class Foo { private var myField; }", "_camelCase"),
+            ("class Foo { private var _MyField; }", "_camelCase"),
+            ("class Foo { private var mValue; }", "_camelCase"),
+            ("function f() { var _myTotal = 0; }", "local variable"),
+            (
+                "function f() { if (true) { var MyTotal = 0; } }",
+                "local variable",
+            ),
+            (
+                "function f() { for (var Index = 0; Index < 1; Index += 1) {} }",
+                "local variable",
+            ),
+            ("enum { firstThing, SECOND_THING }", "SCREAMING_SNAKE_CASE"),
+            ("enum { FIRST, SECOND }", "prefix"),
+            ("enum { COLOR_RED, FIELD_BAR }", "COLOR_"),
+        ] {
+            let diags = rule_diags(src);
+            assert_eq!(diags.len(), 1, "{src}");
+            assert!(
+                diags[0].message.contains(expected),
+                "{src}: {}",
+                diags[0].message
+            );
+        }
     }
 
     #[test]
-    fn allows_pascal_module() {
-        assert!(rule_diags("module MyModule {}").is_empty());
-    }
-
-    #[test]
-    fn flags_lowercase_module() {
-        assert_eq!(rule_diags("module myModule {}").len(), 1);
-    }
-
-    #[test]
-    fn allows_camel_function() {
-        assert!(rule_diags("function myFunction() {}").is_empty());
-    }
-
-    #[test]
-    fn flags_pascal_function() {
-        let diags = rule_diags("function MyFunction() {}");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("camelCase"));
-    }
-
-    #[test]
-    fn flags_snake_function() {
-        assert_eq!(rule_diags("function my_function() {}").len(), 1);
-    }
-
-    #[test]
-    fn allows_camel_function_param() {
-        assert!(rule_diags("function f(myArg as Number) {}").is_empty());
-    }
-
-    #[test]
-    fn flags_pascal_function_param() {
-        assert_eq!(rule_diags("function f(MyArg as Number) {}").len(), 1);
-    }
-
-    #[test]
-    fn allows_camel_module_variable() {
-        assert!(rule_diags("var myVar = 1;").is_empty());
-    }
-
-    #[test]
-    fn flags_pascal_module_variable() {
-        assert_eq!(rule_diags("var MyVar = 1;").len(), 1);
-    }
-
-    #[test]
-    fn flags_underscore_module_variable() {
-        // _-prefix is reserved for private class members.
-        assert_eq!(rule_diags("var _myVar = 1;").len(), 1);
-    }
-
-    #[test]
-    fn ignores_const_declarations() {
-        // Constants conventionally use SCREAMING_SNAKE_CASE in Monkey C
-        // SDK code; the rule leaves all `const` declarations alone.
-        assert!(rule_diags("const myConst = 1;").is_empty());
-        assert!(rule_diags("const COLOR_RED = 0xFF0000;").is_empty());
-        assert!(rule_diags("class Foo { const SOME_CONST = 1; }").is_empty());
-        assert!(rule_diags("class Foo { private const SOME_CONST = 1; }").is_empty());
-    }
-
-    #[test]
-    fn allows_camel_var_inside_module() {
-        assert!(rule_diags("module M { var myVar = 1; }").is_empty());
-    }
-
-    #[test]
-    fn allows_public_class_field_camel() {
-        assert!(rule_diags("class Foo { var myField; }").is_empty());
-    }
-
-    #[test]
-    fn allows_explicit_public_class_field() {
-        assert!(rule_diags("class Foo { public var myField; }").is_empty());
-    }
-
-    #[test]
-    fn flags_public_class_field_pascal() {
-        assert_eq!(rule_diags("class Foo { var MyField; }").len(), 1);
-    }
-
-    #[test]
-    fn flags_public_class_field_with_underscore() {
-        let diags = rule_diags("class Foo { public var _myField; }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("camelCase"));
-    }
-
-    #[test]
-    fn allows_private_class_field() {
-        assert!(rule_diags("class Foo { private var _myField; }").is_empty());
-    }
-
-    #[test]
-    fn allows_protected_class_field() {
-        assert!(rule_diags("class Foo { protected var _myField; }").is_empty());
-    }
-
-    #[test]
-    fn allows_hidden_class_field() {
-        assert!(rule_diags("class Foo { hidden var _myField; }").is_empty());
-    }
-
-    #[test]
-    fn flags_private_field_without_underscore() {
-        let diags = rule_diags("class Foo { private var myField; }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("_camelCase"));
-    }
-
-    #[test]
-    fn flags_private_field_with_uppercase_after_underscore() {
-        assert_eq!(rule_diags("class Foo { private var _MyField; }").len(), 1);
-    }
-
-    #[test]
-    fn flags_hungarian_m_prefix_private_field() {
-        // The Garmin convention is `_camelCase`; `mValue` is the older
-        // Hungarian convention and is rejected.
-        assert_eq!(rule_diags("class Foo { private var mValue; }").len(), 1);
-    }
-
-    #[test]
-    fn allows_camel_local_var() {
-        assert!(rule_diags("function f() { var myTotal = 0; }").is_empty());
-    }
-
-    #[test]
-    fn flags_pascal_local_var() {
-        let diags = rule_diags("function f() { var MyTotal = 0; }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("local variable"));
-        assert!(diags[0].message.contains("camelCase"));
-    }
-
-    #[test]
-    fn flags_underscore_local_var() {
-        // _-prefix is reserved for private class members.
-        assert_eq!(rule_diags("function f() { var _myTotal = 0; }").len(), 1);
-    }
-
-    #[test]
-    fn flags_local_var_in_nested_block() {
-        let src = "function f() { if (true) { var MyTotal = 0; } }";
-        assert_eq!(rule_diags(src).len(), 1);
-    }
-
-    #[test]
-    fn flags_multiple_bindings_in_one_local_var_decl() {
+    fn flags_every_binding_of_a_declaration() {
         assert_eq!(
             rule_diags("function f() { var MyA = 1, MyB = 2; }").len(),
             2
         );
-    }
-
-    #[test]
-    fn allows_camel_for_loop_var() {
-        assert!(rule_diags("function f() { for (var i = 0; i < 1; i += 1) {} }").is_empty());
-    }
-
-    #[test]
-    fn flags_pascal_for_loop_var() {
-        let diags = rule_diags("function f() { for (var Index = 0; Index < 1; Index += 1) {} }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("local variable"));
-    }
-
-    #[test]
-    fn allows_enum_with_consistent_prefix() {
-        let src = "enum Color { COLOR_RED, COLOR_GREEN, COLOR_BLUE }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_anonymous_enum_with_consistent_prefix() {
-        let src = "enum { FIELD_A, FIELD_B }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn allows_single_variant_enum() {
-        // No prefix check makes sense with only one variant.
-        let src = "enum { LONELY }";
-        assert!(rule_diags(src).is_empty());
-    }
-
-    #[test]
-    fn flags_enum_variant_not_screaming_snake() {
-        let diags = rule_diags("enum { firstThing, SECOND_THING }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("firstThing"));
-        assert!(diags[0].message.contains("SCREAMING_SNAKE_CASE"));
-    }
-
-    #[test]
-    fn flags_enum_variants_missing_underscore_prefix() {
-        let diags = rule_diags("enum { FIRST, SECOND }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("prefix"));
-    }
-
-    #[test]
-    fn flags_enum_variants_with_different_prefixes() {
-        let diags = rule_diags("enum { COLOR_RED, FIELD_BAR }");
-        assert_eq!(diags.len(), 1);
-        assert!(diags[0].message.contains("COLOR_"));
     }
 }

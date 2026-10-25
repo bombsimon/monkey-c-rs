@@ -23,9 +23,8 @@ impl Formatter {
             Ast::Using(decl) => {
                 let mut parts = vec![Doc::text("using "), self.name_to_doc(&decl.name)];
                 if let Some(alias) = &decl.alias {
-                    parts.push(Doc::text(" "));
-                    parts.push(self.drain_leading_doc(decl.as_kw_start.unwrap_or(decl.span.end)));
-                    parts.push(Doc::text("as "));
+                    parts
+                        .push(self.spaced_keyword("as", decl.as_kw_start.unwrap_or(alias.start())));
                     parts.push(self.name_to_doc(alias));
                 }
                 self.push_before_semi(&mut parts, decl.span.end - 1);
@@ -34,10 +33,7 @@ impl Formatter {
             Ast::Typedef(decl) => {
                 let mut parts = vec![Doc::text("typedef ")];
                 parts.push(self.name_to_doc(&decl.name));
-                parts.push(Doc::text(" "));
-                parts.push(self.drain_leading_doc(decl.as_kw_start));
-                parts.push(Doc::text("as "));
-                parts.push(self.type_to_doc(&decl.type_));
+                parts.push(self.type_annotation_to_doc(Some(decl.as_kw_start), &decl.type_));
                 self.push_before_semi(&mut parts, decl.span.end - 1);
                 Doc::Concat(parts)
             }
@@ -57,11 +53,10 @@ impl Formatter {
                 let mut header_parts = self.decl_keyword(&decl.modifiers, "class");
                 header_parts.push(self.name_to_doc(&decl.name));
                 if let Some(extends) = &decl.extends {
-                    header_parts.push(Doc::text(" "));
-                    header_parts.push(
-                        self.drain_leading_doc(decl.extends_kw_start.unwrap_or(decl.brace_start)),
-                    );
-                    header_parts.push(Doc::text("extends "));
+                    header_parts.push(self.spaced_keyword(
+                        "extends",
+                        decl.extends_kw_start.unwrap_or(extends.start()),
+                    ));
                     header_parts.push(self.name_to_doc(extends));
                 }
                 header_parts.push(Doc::text(" "));
@@ -160,8 +155,7 @@ impl Formatter {
         }
     }
 
-    /// Render a sequence of declarations interleaved with standalone comments,
-    /// preserving blank lines between adjacent items.
+    /// Render declarations and the comments between them, keeping blank lines.
     fn decls_to_doc(&self, decls: &[Ast], container: Span) -> Doc {
         let has_content = !decls.is_empty()
             || self
@@ -259,9 +253,6 @@ impl Formatter {
                 continue;
             }
 
-            // Bound the trailing drain at the next decl's start so that same-line
-            // comments following a decl (e.g. after an annotation or var with `;`)
-            // are not stolen by the current decl's trailing drain.
             docs.push(self.drain_leading_doc(decl_span.start));
             docs.push(self.ast_to_doc(decl));
             docs.push(self.drain_trailing_doc(decl_span.end, next_decl_start(idx)));
@@ -270,7 +261,6 @@ impl Formatter {
             prev_is_block_decl = is_block_decl;
         }
 
-        // Drain any remaining comments inside the container (after last decl).
         docs.push(self.drain_remaining_comments(prev_end, container.end));
 
         Doc::concat(docs)
@@ -413,9 +403,9 @@ impl Formatter {
                 if pad > 0 {
                     parts.push(Doc::text(" ".repeat(pad)));
                 }
-                parts.push(Doc::text(" "));
-                parts.push(self.drain_leading_doc(v.assign_kw_start.unwrap_or(value.span().start)));
-                parts.push(Doc::text("= "));
+                parts.push(
+                    self.spaced_keyword("=", v.assign_kw_start.unwrap_or(value.span().start)),
+                );
                 parts.push(self.expr_with_leading(value));
             }
 
@@ -470,10 +460,7 @@ impl Formatter {
         parts.push(self.parameter_list_to_doc(&decl.parameters));
 
         if let Some(ret) = &decl.returns {
-            parts.push(Doc::text(" "));
-            parts.push(self.drain_leading_doc(decl.as_kw_start.unwrap_or(ret.span.start)));
-            parts.push(Doc::text("as "));
-            parts.push(self.type_to_doc(ret));
+            parts.push(self.type_annotation_to_doc(decl.as_kw_start, ret));
         }
 
         match &decl.body {
@@ -487,35 +474,28 @@ impl Formatter {
         Doc::Concat(parts)
     }
 
-    pub(crate) fn var_stmt_to_doc(&self, var_decl: &VarDecl) -> Doc {
-        if var_decl.bindings.len() >= 2 {
-            return self.wrapped_bindings_decl(
-                &var_decl.modifiers,
-                "var",
-                &var_decl.bindings,
-                var_decl.semi_pos,
-            );
-        }
-
-        let mut parts = vec![self.var_decl_to_doc(var_decl)];
-        self.push_before_semi(&mut parts, var_decl.semi_pos);
-
-        Doc::Concat(parts)
+    pub(crate) fn var_stmt_to_doc(&self, decl: &VarDecl) -> Doc {
+        self.bindings_decl_to_doc(&decl.modifiers, "var", &decl.bindings, decl.semi_pos)
     }
 
     fn const_decl_to_doc(&self, decl: &ConstDecl) -> Doc {
-        if decl.bindings.len() >= 2 {
-            return self.wrapped_bindings_decl(
-                &decl.modifiers,
-                "const",
-                &decl.bindings,
-                decl.semi_pos,
-            );
+        self.bindings_decl_to_doc(&decl.modifiers, "const", &decl.bindings, decl.semi_pos)
+    }
+
+    fn bindings_decl_to_doc(
+        &self,
+        modifiers: &Modifiers,
+        keyword: &str,
+        bindings: &Separated<Binding>,
+        semi_pos: usize,
+    ) -> Doc {
+        if bindings.len() >= 2 {
+            return self.wrapped_bindings_decl(modifiers, keyword, bindings, semi_pos);
         }
 
-        let mut parts = self.decl_keyword(&decl.modifiers, "const");
-        parts.push(self.bindings_to_doc(&decl.bindings, Doc::text(" ")));
-        self.push_before_semi(&mut parts, decl.semi_pos);
+        let mut parts = self.decl_keyword(modifiers, keyword);
+        parts.push(self.bindings_to_doc(bindings, Doc::text(" ")));
+        self.push_before_semi(&mut parts, semi_pos);
 
         Doc::Concat(parts)
     }
@@ -538,8 +518,7 @@ impl Formatter {
 
         let indented = vec![Doc::text(" "), self.bindings_to_doc(bindings, Doc::Line)];
 
-        // The `;` sits inside the group so a declaration that only overflows
-        // by its terminator still breaks.
+        // The `;` sits inside the group so a declaration that only overflows by it still breaks.
         let mut group = vec![Doc::text(keyword.to_string()), Doc::Indent(indented)];
         self.push_before_semi(&mut group, semi_pos);
         parts.push(Doc::group(group));
@@ -595,10 +574,7 @@ impl Formatter {
         ];
 
         if let Some(ty) = &b.type_ {
-            parts.push(Doc::text(" "));
-            parts.push(self.drain_leading_doc(b.as_kw_start.unwrap_or(ty.span.start)));
-            parts.push(Doc::text("as "));
-            parts.push(self.type_to_doc(ty));
+            parts.push(self.type_annotation_to_doc(b.as_kw_start, ty));
         }
 
         if let Some(init) = &b.initializer {

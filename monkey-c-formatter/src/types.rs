@@ -5,7 +5,6 @@ use monkey_c_parser::ast::{
     UnionSeparator,
 };
 use monkey_c_parser::lexer::Lexer;
-use monkey_c_parser::token;
 
 use crate::Formatter;
 use crate::doc::Doc;
@@ -165,21 +164,9 @@ impl Formatter {
                     return Doc::text(format!("{ident}{suffix}"));
                 }
 
-                let params: Vec<Doc> = generic_params
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, p)| {
-                        if i > 0 {
-                            vec![Doc::text(", "), self.type_to_doc(p)]
-                        } else {
-                            vec![self.type_to_doc(p)]
-                        }
-                    })
-                    .collect();
-
                 Doc::concat(vec![
                     Doc::text(format!("{ident}<")),
-                    Doc::Concat(params),
+                    self.type_list_to_doc(generic_params),
                     Doc::text(format!(">{suffix}")),
                 ])
             }
@@ -189,20 +176,11 @@ impl Formatter {
             TypeKind::Interface { members, body_span } => {
                 self.interface_type_to_doc(members, *body_span, suffix)
             }
-            TypeKind::Tuple { elements } => {
-                let mut parts = vec![Doc::text("[")];
-                for (i, el) in elements.iter().enumerate() {
-                    if i > 0 {
-                        parts.push(Doc::text(", "));
-                    }
-
-                    parts.push(self.type_to_doc(el));
-                }
-
-                parts.push(Doc::text(format!("]{suffix}")));
-
-                Doc::Concat(parts)
-            }
+            TypeKind::Tuple { elements } => Doc::concat(vec![
+                Doc::text("["),
+                self.type_list_to_doc(elements),
+                Doc::text(format!("]{suffix}")),
+            ]),
             TypeKind::Method {
                 name,
                 args,
@@ -234,6 +212,19 @@ impl Formatter {
                 ])
             }
         }
+    }
+
+    fn type_list_to_doc(&self, types: &[Type]) -> Doc {
+        let mut parts = Vec::new();
+        for (i, ty) in types.iter().enumerate() {
+            if i > 0 {
+                parts.push(Doc::text(", "));
+            }
+
+            parts.push(self.type_to_doc(ty));
+        }
+
+        Doc::concat(parts)
     }
 
     /// The grammar only takes parentheses around a `Method(…)` type, and they're only needed when
@@ -319,18 +310,13 @@ impl Formatter {
             return Doc::text(format!("interface {{}}{suffix}"));
         }
 
-        // Place same-line comment directly after `{`, not inside the indent.
         let after_open = self.drain_after_open_brace(body_span.start, body_span.end);
         let mut inner = Vec::new();
 
         let mut prev_end: Option<usize> = None;
 
         for member in members {
-            let member_span = match member {
-                InterfaceMember::Function(m) => m.span,
-                InterfaceMember::Variable(v) => v.span,
-            };
-
+            let member_span = member.span();
             let eff_start = self.effective_start(member_span);
             if let Some(pe) = prev_end {
                 inner.push(self.gap_between_positions(pe, eff_start));
@@ -351,13 +337,7 @@ impl Formatter {
     }
 
     fn interface_member_to_doc(&self, member: &InterfaceMember) -> Doc {
-        let span = match member {
-            InterfaceMember::Function(m) => m.span,
-            InterfaceMember::Variable(v) => v.span,
-        };
-
-        // Drain leading before building body — body construction calls type_to_doc
-        // which also drains, so leading must come first.
+        let span = member.span();
         let leading = self.drain_leading_doc(span.start);
 
         let body = match member {
@@ -368,10 +348,7 @@ impl Formatter {
                     self.parameter_list_to_doc(&m.args),
                 ];
                 if let Some(ret) = &m.returns {
-                    parts.push(Doc::text(" "));
-                    parts.push(self.drain_leading_doc(m.as_kw_start.unwrap_or(ret.span.start)));
-                    parts.push(Doc::text("as "));
-                    parts.push(self.type_to_doc(ret));
+                    parts.push(self.type_annotation_to_doc(m.as_kw_start, ret));
                 }
 
                 parts.push(Doc::text(";"));
@@ -379,10 +356,7 @@ impl Formatter {
             }
             InterfaceMember::Variable(v) => {
                 let mut parts = vec![Doc::text("var "), self.name_to_doc(&v.name)];
-                parts.push(Doc::text(" "));
-                parts.push(self.drain_leading_doc(v.as_kw_start));
-                parts.push(Doc::text("as "));
-                parts.push(self.type_to_doc(&v.type_));
+                parts.push(self.type_annotation_to_doc(Some(v.as_kw_start), &v.type_));
                 parts.push(Doc::text(";"));
                 Doc::Concat(parts)
             }
@@ -423,12 +397,8 @@ fn is_method_with_return(kind: &TypeKind) -> bool {
 /// Whether a `?` added to the type of a cast would still be read as nullable, given `rest`, the
 /// source after the type. The parser decides by the next token, so comments don't count.
 fn ends_cast_before_question(rest: &str) -> bool {
-    let mut lexer = Lexer::new(rest);
-
-    loop {
-        match lexer.next_token().1 {
-            token::Type::Comment(_) | token::Type::BlockComment(_) => continue,
-            next => return next.follows_nullable_cast(),
-        }
-    }
+    Lexer::new(rest)
+        .peek_token_skip_comments()
+        .1
+        .follows_nullable_cast()
 }

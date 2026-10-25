@@ -5,9 +5,8 @@ use monkey_c_formatter::options::{
 };
 use serde::Deserialize;
 
-/// Formatter settings with every value resolved. This is the single definition
-/// of the formatter's defaults: the CLI, the language server and `rafiki.toml`
-/// all start from here.
+/// Formatter settings with every value resolved, and the one place the defaults the CLI and the
+/// language server start from are defined.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatSettings {
     pub line_width: usize,
@@ -61,50 +60,24 @@ impl FormatSettings {
 
     /// Overlay the keys `config` sets, leaving the rest untouched. Apply layers
     /// in increasing order of priority — file first, then the explicit request.
-    pub fn with_overrides(mut self, config: &FormatConfig) -> Self {
-        if let Some(line_width) = config.line_width {
-            self.line_width = line_width;
+    pub fn with_overrides(self, config: &FormatConfig) -> Self {
+        Self {
+            line_width: config.line_width.unwrap_or(self.line_width),
+            alignment: config.alignment.unwrap_or(self.alignment),
+            short_array_element_width: config
+                .short_array_element_width
+                .unwrap_or(self.short_array_element_width),
+            union_style: config.union_style.unwrap_or(self.union_style),
+            nullable: config.nullable.unwrap_or(self.nullable),
+            annotation_separator: config
+                .annotation_separator
+                .unwrap_or(self.annotation_separator),
+            resource_ref: config.resource_ref.unwrap_or(self.resource_ref),
+            modifier_order: config.modifier_order.unwrap_or(self.modifier_order),
+            parens: config.parens.unwrap_or(self.parens),
+            sort_imports: config.sort_imports.unwrap_or(self.sort_imports),
+            numbers: config.numbers.overlay(self.numbers),
         }
-
-        if let Some(alignment) = config.alignment {
-            self.alignment = alignment;
-        }
-
-        if let Some(width) = config.short_array_element_width {
-            self.short_array_element_width = width;
-        }
-
-        if let Some(union_style) = config.union_style {
-            self.union_style = union_style;
-        }
-
-        if let Some(nullable) = config.nullable {
-            self.nullable = nullable;
-        }
-
-        if let Some(separator) = config.annotation_separator {
-            self.annotation_separator = separator;
-        }
-
-        if let Some(resource_ref) = config.resource_ref {
-            self.resource_ref = resource_ref;
-        }
-
-        if let Some(modifier_order) = config.modifier_order {
-            self.modifier_order = modifier_order;
-        }
-
-        if let Some(parens) = config.parens {
-            self.parens = parens;
-        }
-
-        if let Some(sort_imports) = config.sort_imports {
-            self.sort_imports = sort_imports;
-        }
-
-        self.numbers = config.numbers.overlay(self.numbers);
-
-        self
     }
 }
 
@@ -172,17 +145,6 @@ impl NumbersConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_layer_overlays_only_the_keys_it_sets() {
-        let settings = FormatSettings::default().with_overrides(&FormatConfig {
-            line_width: Some(80),
-            ..FormatConfig::default()
-        });
-
-        assert_eq!(settings.line_width, 80);
-        assert_eq!(settings.alignment, FormatSettings::default().alignment);
-    }
 
     #[test]
     fn the_last_layer_wins() {

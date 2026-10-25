@@ -4,7 +4,6 @@ use monkey_c_parser::ast::{BinaryOperator, Expr, LiteralValue, ParenExpr, UnaryO
 
 use crate::Formatter;
 use crate::doc::Doc;
-use crate::operators;
 use crate::options::{self, Numbers, ResourceRef};
 
 /// Which side of a binary operator an operand is on.
@@ -45,9 +44,7 @@ impl Formatter {
             let span = *operand.expr.span();
             let leading = self.drain_leading_doc(span.start);
 
-            // Bound the inner expression at the operator position so it cannot
-            // steal comments that sit between the operand and the operator.
-            // For the last operand fall back to `outer_max_pos`.
+            // Comments between an operand and its operator are placed around the operator.
             let inner_max = ops
                 .get(i)
                 .map(|(_, op_pos)| *op_pos)
@@ -75,7 +72,7 @@ impl Formatter {
 
             if i + 1 < operands.len() {
                 let (op, op_pos) = ops[i];
-                let op_text = operators::binary_op(op);
+                let op_text = op.as_str();
                 let op_end = op_pos + op_text.len();
                 let op_line = self.line_index.line(op_pos as u32);
                 let next_start = operands[i + 1].expr.span().start;
@@ -194,70 +191,36 @@ impl Formatter {
     /// `expr` without the parentheses around it, in a place where any expression reads the same.
     /// An assignment keeps them, since `x = y = 1` isn't one.
     pub(crate) fn without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
-        let mut current = expr;
-        while let Expr::Paren(p) = current
-            && self.drops_parens(p)
-            && !matches!(*p.inner, Expr::Assign(_))
-        {
-            current = &p.inner;
-        }
-
-        current
+        self.strip_parens(expr, |inner| !matches!(inner, Expr::Assign(_)))
     }
 
     /// A ternary's condition without parentheses, unless it's a ternary itself, which would read
     /// as a chain, or ends in a cast, whose type would take the `?` as nullable.
     fn condition_without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
-        let mut current = expr;
-        while let Expr::Paren(p) = current
-            && self.drops_parens(p)
-            && !matches!(*p.inner, Expr::Assign(_) | Expr::Ternary(_))
-            && !ends_with_cast(&p.inner)
-        {
-            current = &p.inner;
-        }
-
-        current
+        self.strip_parens(expr, |inner| {
+            !matches!(inner, Expr::Assign(_) | Expr::Ternary(_)) && !ends_with_cast(inner)
+        })
     }
 
     /// A ternary branch without parentheses. A nested ternary keeps them in the `then` branch,
     /// where it's hard to tell which `:` belongs to which `?`, and a cast keeps them in the
     /// `else` branch, where whatever follows the ternary could extend its type.
     fn branch_without_parens<'a>(&self, expr: &'a Expr, branch: Branch) -> &'a Expr {
-        let mut current = expr;
-        while let Expr::Paren(p) = current
-            && self.drops_parens(p)
-            && !matches!(*p.inner, Expr::Assign(_))
-        {
+        self.strip_parens(expr, |inner| {
             let keeps = match branch {
-                Branch::Then => matches!(*p.inner, Expr::Ternary(_)),
-                Branch::Else => ends_with_cast(&p.inner),
+                Branch::Then => matches!(inner, Expr::Ternary(_)),
+                Branch::Else => ends_with_cast(inner),
             };
 
-            if keeps {
-                break;
-            }
-
-            current = &p.inner;
-        }
-
-        current
+            !keeps && !matches!(inner, Expr::Assign(_))
+        })
     }
 
     /// The operand of a prefix operator like `!` or `-` without parentheses around a name,
     /// literal, call or other operand that precedence can't split. Another prefix operator keeps
     /// them, since `-(-x)` would otherwise become the decrement `--x`.
     fn simple_without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
-        let mut current = expr;
-        while let Expr::Paren(p) = current
-            && self.drops_parens(p)
-            && is_simple(&p.inner)
-            && !is_prefix_unary(&p.inner)
-        {
-            current = &p.inner;
-        }
-
-        current
+        self.strip_parens(expr, |inner| is_simple(inner) && !is_prefix_unary(inner))
     }
 
     /// What a member access, index or call is applied to, without parentheses around a name, call,
@@ -265,11 +228,9 @@ impl Formatter {
     /// than `360.toFloat()`, and so does `new`, where `new Foo().bar()` would hide which part
     /// `new` applies to.
     pub(crate) fn receiver_without_parens<'a>(&self, expr: &'a Expr) -> &'a Expr {
-        let mut current = expr;
-        while let Expr::Paren(p) = current
-            && self.drops_parens(p)
-            && matches!(
-                *p.inner,
+        self.strip_parens(expr, |inner| {
+            matches!(
+                inner,
                 Expr::Paren(_)
                     | Expr::Call(_)
                     | Expr::Member(_)
@@ -279,11 +240,7 @@ impl Formatter {
                     | Expr::Self_(_)
                     | Expr::Bling(_)
             )
-        {
-            current = &p.inner;
-        }
-
-        current
+        })
     }
 
     /// `operand` of a `parent` operator without parentheses that can't change how it groups:
@@ -296,30 +253,31 @@ impl Formatter {
         parent: BinaryOperator,
         side: OperandSide,
     ) -> &'a Expr {
-        let mut current = operand;
+        self.strip_parens(operand, |inner| match inner {
+            inner if is_simple(inner) => true,
+            Expr::Binary(binary) => {
+                let inner_precedence = binary.operator.precedence();
+                let parent_precedence = parent.precedence();
+                let groups = inner_precedence > parent_precedence
+                    || (inner_precedence == parent_precedence && side == OperandSide::Left)
+                    || (side == OperandSide::Right
+                        && associative(binary.operator).is_some()
+                        && associative(binary.operator) == associative(parent));
+
+                groups && !ends_with_cast(inner)
+            }
+            _ => false,
+        })
+    }
+
+    /// Peel off parentheses around `expr` for as long as they may be dropped and `redundant` holds
+    /// for what's inside them.
+    fn strip_parens<'a>(&self, expr: &'a Expr, redundant: impl Fn(&Expr) -> bool) -> &'a Expr {
+        let mut current = expr;
         while let Expr::Paren(p) = current
             && self.drops_parens(p)
+            && redundant(&p.inner)
         {
-            let redundant = match p.inner.as_ref() {
-                inner if is_simple(inner) => true,
-                Expr::Binary(inner) => {
-                    let inner_precedence = inner.operator.precedence();
-                    let parent_precedence = parent.precedence();
-                    let groups = inner_precedence > parent_precedence
-                        || (inner_precedence == parent_precedence && side == OperandSide::Left)
-                        || (side == OperandSide::Right
-                            && associative(inner.operator).is_some()
-                            && associative(inner.operator) == associative(parent));
-
-                    groups && !ends_with_cast(&p.inner)
-                }
-                _ => false,
-            };
-
-            if !redundant {
-                break;
-            }
-
             current = &p.inner;
         }
 
@@ -338,29 +296,24 @@ impl Formatter {
             let mut ops: Vec<(&BinaryOperator, usize)> = Vec::new();
             self.collect_binary_chain(expr, &e.operator, &mut operands, &mut ops);
 
-            // Cap at cond.span.end so the last operand cannot drain trailing
-            // comments that sit outside the condition (i.e. after the `)`
-            // in `if (…)`). paren_condition_header drains those via has_line.
-            let cond_end = expr.span().end;
-
-            return Doc::Concat(self.binary_chain_parts(&operands, &ops, cond_end));
+            // Comments after the `)` of `if (…)` belong to the header, not the last operand.
+            return Doc::Concat(self.binary_chain_parts(&operands, &ops, expr.span().end));
         }
 
         self.expr_with_leading(expr)
     }
 
     pub(crate) fn expr_list_to_doc(&self, exprs: &[Expr]) -> Doc {
-        Doc::concat(
-            exprs
-                .iter()
-                .enumerate()
-                .flat_map(|(i, e)| {
-                    let sep = if i > 0 { vec![Doc::text(", ")] } else { vec![] };
-                    sep.into_iter()
-                        .chain(std::iter::once(self.expr_with_leading(e)))
-                })
-                .collect(),
-        )
+        let mut parts = Vec::new();
+        for (i, expr) in exprs.iter().enumerate() {
+            if i > 0 {
+                parts.push(Doc::text(", "));
+            }
+
+            parts.push(self.expr_with_leading(expr));
+        }
+
+        Doc::concat(parts)
     }
 
     pub(crate) fn expr_with_leading(&self, expr: &Expr) -> Doc {
@@ -371,10 +324,8 @@ impl Formatter {
         Doc::concat(vec![leading, inner])
     }
 
-    /// Like [`Self::expr_with_leading`] but caps the trailing drain of any nested
-    /// binary chain at `outer_max_pos`. Used when the expression sits inside a
-    /// delimiter (e.g. paren) whose closing token must not be swallowed by a
-    /// `//` comment that belongs to an outer chain.
+    /// Like [`Self::expr_with_leading`] but no comment from `outer_max_pos` on is drained, so the
+    /// delimiter there keeps the comments after it.
     pub(crate) fn expr_with_leading_bounded(&self, expr: &Expr, outer_max_pos: usize) -> Doc {
         let leading = self.drain_leading_doc(expr.span().start);
         let inner = self.expr_inner_to_doc_ctx(expr, outer_max_pos);
@@ -384,10 +335,7 @@ impl Formatter {
 
     fn expr_inner_to_doc_ctx(&self, expr: &Expr, outer_max_pos: usize) -> Doc {
         match expr {
-            // Bound binary chains at the expression's own span so they cannot
-            // drain trailing comments that belong to the surrounding delimiter
-            // (e.g. a trailing `//` after the last operand of an array entry
-            // must stay after the `,`, not inside the binary expression doc).
+            // A `//` after the last operand of an array entry stays after the `,`.
             Expr::Binary(e) => self.binary_chain_to_doc(
                 expr,
                 &e.operator,
@@ -411,21 +359,18 @@ impl Formatter {
 
     pub(crate) fn expr_inner_to_doc(&self, expr: &Expr) -> Doc {
         match expr {
-            // Bound binary chains at the expression's own span so they cannot
-            // steal trailing comments that appear after a following `;` or `,`.
+            // Comments after a following `;` or `,` aren't the chain's to take.
             Expr::Binary(e) => self.binary_chain_to_doc(expr, &e.operator, true, expr.span().end),
             Expr::Unary(e) => match e.operator {
-                UnaryOperator::PostInc => {
-                    Doc::concat(vec![self.expr_with_leading(&e.operand), Doc::text("++")])
-                }
-                UnaryOperator::PostDec => {
-                    Doc::concat(vec![self.expr_with_leading(&e.operand), Doc::text("--")])
-                }
+                UnaryOperator::PostInc | UnaryOperator::PostDec => Doc::concat(vec![
+                    self.expr_with_leading(&e.operand),
+                    Doc::text(e.operator.as_str()),
+                ]),
                 UnaryOperator::ResourceRef if self.resource_ref == ResourceRef::Bare => {
                     self.expr_with_leading(&e.operand)
                 }
                 _ => Doc::concat(vec![
-                    Doc::text(operators::unary_prefix_op(&e.operator)),
+                    Doc::text(e.operator.as_str()),
                     self.expr_with_leading(self.simple_without_parens(&e.operand)),
                 ]),
             },
@@ -465,7 +410,7 @@ impl Formatter {
                 self.expr_with_leading(&e.target),
                 self.token_then_expr(
                     e.target.span().end,
-                    operators::assign_op(&e.operator),
+                    e.operator.as_str(),
                     e.op_pos,
                     self.without_parens(&e.value),
                 ),
@@ -477,7 +422,10 @@ impl Formatter {
 
                 let callee = self.expr_with_leading(self.receiver_without_parens(&e.callee));
 
-                Doc::concat(vec![callee, self.call_arguments_to_doc(e)])
+                Doc::concat(vec![
+                    callee,
+                    self.call_arguments_to_doc(&e.args, e.args_open, e.span.end),
+                ])
             }
             Expr::Member(e) => {
                 if let Some(chain) = self.member_chain_to_doc(expr) {
@@ -513,42 +461,9 @@ impl Formatter {
                     return Doc::concat(vec![class, Doc::text("()")]);
                 };
 
-                let before_open = self.drain_before_open_paren(args_open);
-                let first_arg_start = e
-                    .args
-                    .first()
-                    .map(|a| a.value.span().start)
-                    .unwrap_or(e.span.end);
-                let hugged = self.hugged_sole_collection(
-                    &e.args,
-                    e.args.has_trailing_comma(),
-                    args_open,
-                    e.span.end,
-                );
-
-                if let Some(args) = hugged {
-                    return Doc::concat(vec![class, before_open, args]);
-                }
-
-                let after_open_force_newline =
-                    self.after_open_has_line_comment(args_open, first_arg_start);
-                let after_open = self.drain_after_open_paren(args_open, first_arg_start);
-
-                let items = self.call_args_to_items(&e.args, e.span.end);
-                let before_close = self.drain_dangling_comments_doc(e.span.end);
-
                 Doc::concat(vec![
                     class,
-                    before_open,
-                    self.format_list(
-                        "(",
-                        ")",
-                        items,
-                        before_close,
-                        e.args.has_trailing_comma(),
-                        after_open,
-                        after_open_force_newline,
-                    ),
+                    self.call_arguments_to_doc(&e.args, args_open, e.span.end),
                 ])
             }
             Expr::NewArray(e) => {

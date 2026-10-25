@@ -63,13 +63,8 @@ impl Config {
         })
     }
 
-    /// Find and parse the nearest `rafiki.toml` at or above `start`, returning
-    /// the file's path alongside it. `start` may be a file or a directory.
-    ///
-    /// Walking up (rather than requiring the file in the current directory)
-    /// means `rafiki fmt src/Foo.mc` from anywhere inside a project picks up the
-    /// project's settings, which is also what the language server needs when
-    /// the editor's working directory is unrelated to the workspace.
+    /// Find and parse the nearest `rafiki.toml` at or above the file or directory `start`, so a
+    /// project's settings apply no matter which directory the CLI or editor runs from.
     pub fn discover(start: &Path) -> Result<Option<(PathBuf, Self)>, Error> {
         let Some(path) = find_config_file(start) else {
             return Ok(None);
@@ -131,20 +126,14 @@ mod tests {
     }
 
     #[test]
-    fn format_keys_are_kebab_case() {
-        let config: Config =
-            toml::from_str("[format]\nshort-array-element-width = 0\n").expect("config parses");
-
-        assert_eq!(config.format.short_array_element_width, Some(0));
-    }
-
-    #[test]
-    fn rewrite_values_are_kebab_case() {
+    fn keys_and_values_are_kebab_case() {
         let config: Config = toml::from_str(
-            "[format]\nunion-style = \"pipe\"\nmodifier-order = \"visibility-first\"\n",
+            "[format]\nshort-array-element-width = 0\nunion-style = \"pipe\"\n\
+             modifier-order = \"visibility-first\"\n",
         )
         .expect("config parses");
 
+        assert_eq!(config.format.short_array_element_width, Some(0));
         assert_eq!(config.format.union_style, Some(UnionStyle::Pipe));
         assert_eq!(
             config.format.modifier_order,
@@ -153,21 +142,14 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_rewrite_value_is_an_error() {
-        let error = toml::from_str::<Config>("[format]\nnullable = \"short\"\n")
-            .expect_err("unknown value is rejected");
-        assert!(error.to_string().contains("shorthand"), "{error}");
-    }
-
-    #[test]
-    fn an_unknown_key_is_an_error() {
-        let error = toml::from_str::<Config>("[format]\nline_width = 80\n")
-            .expect_err("snake_case key is rejected");
-        assert!(error.to_string().contains("line_width"), "{error}");
-    }
-
-    #[test]
-    fn an_unknown_table_is_an_error() {
-        toml::from_str::<Config>("[formatter]\n").expect_err("unknown table is rejected");
+    fn unknown_keys_tables_and_values_are_errors() {
+        for (text, mentions) in [
+            ("[format]\nnullable = \"short\"\n", "shorthand"),
+            ("[format]\nline_width = 80\n", "line_width"),
+            ("[formatter]\n", "formatter"),
+        ] {
+            let error = toml::from_str::<Config>(text).expect_err("rejected");
+            assert!(error.to_string().contains(mentions), "{error}");
+        }
     }
 }

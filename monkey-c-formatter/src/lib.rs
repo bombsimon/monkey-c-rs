@@ -6,7 +6,6 @@ mod expressions;
 mod lists;
 mod member_chain;
 mod numbers;
-mod operators;
 pub mod options;
 mod statements;
 mod types;
@@ -28,24 +27,13 @@ use doc::render;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-/// Formats a Monkey C AST back into source text.
-///
-/// Construct with [`Formatter::new`], optionally configure with builder
-/// methods, then call [`Formatter::format`].
-///
-/// The formatter uses the Wadler-Lindig algorithm (see [`doc`]) to make
-/// line-breaking decisions globally rather than per-node, so a dict or array
-/// that fits on one line is kept there automatically.
+/// Formats a Monkey C AST back into source text, deciding line breaks with the Wadler-Lindig
+/// algorithm in [`doc`].
 pub struct Formatter {
     source: String,
     line_index: LineIndex,
-    /// Maximum line width before a [`doc::Doc::Group`] is broken.
     line_width: usize,
-    /// When `true`, runs of related entries are rendered with their separator
-    /// operators column-aligned, as are trailing comments on consecutive lines.
     align_pairs: bool,
-    /// The widest an item can be for a broken array to fill its lines with aligned columns
-    /// instead of one item per line. `0` never fills.
     short_array_element_width: usize,
     union_style: UnionStyle,
     nullable: Nullable,
@@ -58,9 +46,6 @@ pub struct Formatter {
     /// Where operands written right after a cast start. A `(` there has to stay, or the cast's
     /// type would take what follows as one more union member.
     after_cast: RefCell<HashSet<usize>>,
-    /// Positional drain cursor over all source comments. Advanced forward as
-    /// the formatter builds the Doc tree; each comment is emitted exactly once
-    /// at the first output position that follows its source location.
     comment_cursor: RefCell<CommentCursor>,
 }
 
@@ -175,9 +160,8 @@ impl Formatter {
         formatted
     }
 
-    /// "No comment left behind": source comments that did **not** survive into
-    /// `rendered`. Re-lexes `rendered` and matches each source comment against
-    /// the output comments by kind plus whitespace-normalised content.
+    /// The source comments missing from `rendered`, matched by kind and text with whitespace
+    /// normalized.
     pub fn lost_comments(output: &ParseOutput, rendered: &str) -> Vec<CommentStmt> {
         fn normalize(text: &str) -> String {
             text.split_whitespace().collect::<Vec<_>>().join(" ")

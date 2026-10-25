@@ -1,22 +1,34 @@
 use crate::ast::{Expr, Ident, Parens, Position, Span, Type, VarDecl};
 
-/// A statement node.
+/// A statement inside a function body.
 #[derive(Debug, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Stmt {
+    /// Leaving the innermost loop or `switch`, e.g. `break;`.
     Break(Span),
+    /// Skipping to the next iteration of a loop, e.g. `continue;`.
     Continue(Span),
+    /// A block on its own, e.g. `{ … }`.
     Block(BlockStmt),
+    /// A conditional with optional `else if` and `else` branches.
     If(IfStmt),
+    /// A loop testing its condition first, e.g. `while (cond) { … }`.
     While(WhileStmt),
+    /// A loop testing its condition last, e.g. `do { … } while (cond);`.
     DoWhile(DoWhileStmt),
+    /// A loop with a header, e.g. `for (init; cond; update) { … }`.
     For(ForStmt),
+    /// Returning from a function, e.g. `return value;`.
     Return(ReturnStmt),
+    /// Picking a branch by value or type, e.g. `switch (value) { case 1: … }`.
     Switch(SwitchStmt),
+    /// Catching exceptions, e.g. `try { … } catch (e) { … }`.
     Try(TryStmt),
+    /// Raising an exception, e.g. `throw value;`.
     Throw(ThrowStmt),
+    /// A local variable declaration, e.g. `var x = 1;`.
     Var(VarDecl),
-    /// A bare expression used as a statement (e.g. an assignment or call).
+    /// An expression used as a statement, like a call or an assignment.
     Expr(ExprStmt),
 }
 
@@ -28,7 +40,7 @@ pub struct ExprStmt {
     pub span: Span,
 }
 
-/// A block is code between an opening `{` and a closing `}`.
+/// The statements between `{` and `}`, with the span covering both braces.
 #[derive(Debug, PartialEq)]
 pub struct BlockStmt {
     pub stmts: Vec<Stmt>,
@@ -56,6 +68,7 @@ pub enum ElseBranch {
 }
 
 impl ElseBranch {
+    /// The source range of the block or the `if` after `else`.
     pub fn span(&self) -> &Span {
         match self {
             ElseBranch::Block(b) => &b.span,
@@ -87,7 +100,7 @@ pub struct DoWhileStmt {
 }
 
 /// The init clause of a `for` loop, either a `var` declaration or one or more comma-separated
-/// expressions (`for (i = 0, j = 1; ...; ...)`).
+/// expressions, e.g. `for (i = 0, j = 1; …)`.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#loops>
 #[derive(Debug, PartialEq)]
@@ -96,9 +109,7 @@ pub enum ForInit {
     Expr(Vec<Expr>),
 }
 
-/// The `(init; cond; update)` triple of a `for` loop. `first_semi` and `second_semi` are the byte
-/// offsets of the two `;` delimiters, ordered here as they appear in source: `init ; cond ;
-/// update`.
+/// The `(init; cond; update)` of a `for` loop, each part optional, with where its two `;` are.
 #[derive(Debug, PartialEq)]
 pub struct ForHeader {
     pub init: Option<ForInit>,
@@ -118,7 +129,7 @@ pub struct ForStmt {
     pub span: Span,
 }
 
-/// A return statement.
+/// A return statement, with or without a value.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#returning-values-from-functions>
 #[derive(Debug, PartialEq)]
@@ -128,8 +139,7 @@ pub struct ReturnStmt {
     pub span: Span,
 }
 
-/// A `switch (discriminant) { … }` statement. `cases` preserves source order, including any
-/// `default` arm.
+/// A `switch (discriminant) { … }` statement.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#switch-case-statements>
 #[derive(Debug, PartialEq)]
@@ -140,26 +150,25 @@ pub struct SwitchStmt {
     pub span: Span,
 }
 
-/// A single arm inside a `switch` body.
+/// One arm of a `switch`, with the statements up to the next arm. An arm without statements
+/// falls through to the next.
 #[derive(Debug, PartialEq)]
 pub struct SwitchCase {
     pub label: CaseLabel,
-    /// Statements until the next `case`/`default` or the closing `}`.
-    /// Empty when the case immediately falls through to the next.
     pub stmts: Vec<Stmt>,
-    /// Span from `case`/`default` through the `:`.
+    /// From `case` or `default` through the `:`.
     pub label_span: Span,
     pub span: Span,
 }
 
-/// What a `case` (or `default`) arm matches against.
+/// What a `switch` arm matches.
 #[derive(Debug, PartialEq)]
 pub enum CaseLabel {
-    /// `case <expr>:` equality match against the discriminant.
+    /// Matching a value, e.g. `case 1:`.
     Value(Expr),
-    /// `case instanceof <Type>:` type match.
+    /// Matching a type, e.g. `case instanceof Number:`.
     InstanceOf(Type),
-    /// `default:` fall-through fallback.
+    /// The fallback arm, `default:`.
     Default,
 }
 
@@ -178,7 +187,7 @@ pub struct TryStmt {
 #[derive(Debug, PartialEq)]
 pub struct CatchClause {
     pub binding: Ident,
-    /// Type filter from `catch (e instanceof Type)`; `None` means catch-all.
+    /// The `Type` of `catch (e instanceof Type)`, or `None` to catch anything.
     pub type_filter: Option<Type>,
     pub body: BlockStmt,
     pub span: Span,
@@ -195,7 +204,7 @@ pub struct ThrowStmt {
 }
 
 impl Stmt {
-    /// Return the source span of this statement.
+    /// The source range of the statement, its `;` included.
     pub fn span(&self) -> &Span {
         match self {
             Stmt::Block(s) => &s.span,

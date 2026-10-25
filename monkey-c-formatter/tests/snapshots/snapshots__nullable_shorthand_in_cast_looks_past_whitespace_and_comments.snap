@@ -4,7 +4,5 @@ expression: "format_with(\"function f() {\\n    var a = y as Number or Null == n
 ---
 function f() {
     var a = y as Number? == null;
-    var b = y as Number or Null
-        /* c */
-        - 1;
+    var b = y as Number or Null /* c */ - 1;
 }

@@ -10,7 +10,7 @@ use std::io::{self, Write};
 use std::path::Path;
 
 use crate::cli::{FmtArgs, GlobalArgs};
-use crate::diagnostics::{self, Renderer};
+use crate::diagnostics::Renderer;
 use crate::runner::{self, Target};
 use crate::settings;
 
@@ -61,10 +61,7 @@ fn format_target(
     color: bool,
 ) -> io::Result<bool> {
     let label = target.label();
-    let source = match target {
-        Target::Stdin => renderer.read_stdin_source()?,
-        Target::File(path) => renderer.read_source(path)?,
-    };
+    let source = renderer.read_target(target)?;
 
     let formatted = format_source(&source, settings, &label, renderer)?;
     let changed = formatted != source;
@@ -101,13 +98,7 @@ fn format_source(
     label: &str,
     renderer: &Renderer,
 ) -> io::Result<String> {
-    let parser = monkey_c_parser::parser::Parser::new(source);
-    let output = parser.parse().map_err(|e| {
-        renderer.parse_error(label, source, &e);
-
-        diagnostics::already_reported()
-    })?;
-
+    let output = renderer.parse(label, source)?;
     let formatted = settings.formatter(source).format(&output);
 
     // Warn (without failing) about any comment the formatter could not carry
@@ -189,7 +180,7 @@ mod tests {
         let error = format_source("class {{{", &FormatSettings::default(), "test", &renderer)
             .expect_err("broken source fails");
 
-        assert!(diagnostics::is_already_reported(&error));
+        assert!(crate::diagnostics::is_already_reported(&error));
     }
 
     #[test]

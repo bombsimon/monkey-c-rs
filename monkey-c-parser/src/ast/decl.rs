@@ -2,30 +2,41 @@ use crate::ast::{
     BlockStmt, Expr, Ident, Modifiers, Parens, Position, Separated, Span, Spanned, Symbol, Type,
 };
 
-/// A top-level AST node.
+/// A declaration, or the whole file as [`Ast::Document`]. Classes and modules hold more of these
+/// in their bodies, while function bodies hold [`Stmt`](crate::ast::Stmt)s.
 #[derive(Debug, PartialEq)]
 pub enum Ast {
-    /// The root of a parsed file. The span covers the entire source.
+    /// The root of a parsed file, with a span covering the whole source.
     Document(Vec<Ast>, Span),
-    /// A `(:Name)`, `(:Name(args…))`, or `(:Name1, :Name2(arg), …)` decorator. Each entry is a
-    /// symbol identifier with an optional list of argument expressions (`(:typecheck(false))`).
-    /// Monkey C supports applying multiple annotations in one parenthesised group.
+    /// An annotation group, e.g. `(:test)` or `(:a, :typecheck(false))`. Several annotations can
+    /// share one group, and the group is a sibling of the declaration it applies to rather than
+    /// part of it.
     ///
     /// <https://developer.garmin.com/connect-iq/monkey-c/annotations/>
     Annotation(Vec<AnnotationEntry>, Span),
+    /// A class declaration, e.g. `class Name extends Parent { … }`.
     Class(ClassDecl),
+    /// A constant declaration, e.g. `const NAME = value;`.
     Const(ConstDecl),
+    /// An enum declaration, e.g. `enum Name { A, B = 2 }`.
     Enum(EnumDecl),
+    /// A function declaration, e.g. `function name(args) as Type { … }`.
     Function(FunctionDecl),
+    /// An import of a module's types, e.g. `import Toybox.Lang;`.
     Import(ImportDecl),
+    /// A module declaration, e.g. `module Name { … }`.
     Module(ModuleDecl),
+    /// A named type, e.g. `typedef Name as Type;`.
     Typedef(TypedefDecl),
+    /// Bringing a module into scope, e.g. `using Toybox.Lang as Lang;`.
     Using(UsingDecl),
+    /// A variable declaration, e.g. `var name = value;`.
     Variable(VarDecl),
+    /// The end of the input, only seen while parsing and never inside a document.
     Eof,
 }
 
-/// A named, optionally-typed binding used for function parameters.
+/// A function parameter, optionally typed, e.g. `name` or `name as Type`.
 #[derive(Debug, PartialEq)]
 pub struct Parameter {
     pub name: Spanned<Ident>,
@@ -47,22 +58,21 @@ pub struct Binding {
     pub span: Span,
 }
 
-/// A `var` declaration, at module/class scope or inside a function body. Holds one or more
-/// comma-separated bindings: `var a, b = 2, c as Number;`.
+/// A `var` declaration with one or more bindings, as in `var a, b = 2, c as Number;`, anywhere
+/// from module scope to a `for` header.
 ///
 /// <https://developer.garmin.com/connect-iq/monkey-c/monkey-types/>
 #[derive(Debug, PartialEq)]
 pub struct VarDecl {
     pub bindings: Separated<Binding>,
     pub modifiers: Modifiers,
-    /// `0` when `var` appears in a `for`-init — the loop's first `;` acts as terminator.
     pub semi_pos: Position,
     pub span: Span,
 }
 
-/// One entry inside an annotation group: a symbol name plus an optional argument list. `(:foo)`
-/// parses with empty `args`; `(:typecheck(false))` gets `args = [false]`. Entries may be separated
-/// by commas or only by whitespace, and the formatter keeps whichever was written.
+/// One entry inside an annotation group: a symbol name and optional arguments, e.g. `:foo` or
+/// `:typecheck(false)`. Entries may be separated by commas or only by whitespace, and the
+/// formatter keeps whichever was written.
 #[derive(Debug, PartialEq)]
 pub struct AnnotationEntry {
     pub name: Symbol,
@@ -77,7 +87,6 @@ pub struct AnnotationEntry {
 /// <https://developer.garmin.com/connect-iq/monkey-c/monkey-types/#the-import-statement>
 #[derive(Debug, PartialEq)]
 pub struct ImportDecl {
-    /// Fully qualified import path, e.g. `Toybox.WatchUi`.
     pub name: Spanned<Ident>,
     pub span: Span,
 }
@@ -107,9 +116,9 @@ pub struct TypedefDecl {
     pub span: Span,
 }
 
-// A `module Name` declaration for declaring a module.
-//
-// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#modules>
+/// A `module Name { … }` declaration.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#modules>
 #[derive(Debug, PartialEq)]
 pub struct ModuleDecl {
     pub name: Spanned<Ident>,
@@ -119,9 +128,9 @@ pub struct ModuleDecl {
     pub span: Span,
 }
 
-// A `class Name` declaration for declaring a class.
-//
-// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#defining-classes>
+/// A `class Name extends Parent { … }` declaration. The parent can be dotted, e.g. `WatchUi.View`.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#defining-classes>
 #[derive(Debug, PartialEq)]
 pub struct ClassDecl {
     pub name: Spanned<Ident>,
@@ -133,14 +142,9 @@ pub struct ClassDecl {
     pub span: Span,
 }
 
-/// An `enum [Name] { … }` declaration.
-///
-/// Anonymous enums introduce each variant as a top-level constant.
-///
-/// Named enums (`enum Dog { SPOT = "Spot", … }`) introduce a type that the variants belong to.
-///
-/// Values are auto-incremented from the last explicit value (or 0 if none yet) for variants without
-/// an explicit `= value`.
+/// An `enum [Name] { … }` declaration. An anonymous enum introduces each variant as a constant,
+/// while a named one introduces a type the variants belong to. A variant without a value is one
+/// more than the one before it, starting from 0.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#enumerations>
 #[derive(Debug, PartialEq)]
@@ -153,27 +157,24 @@ pub struct EnumDecl {
 }
 
 /// One entry in an [`EnumDecl`].
+/// One variant of an [`EnumDecl`], e.g. `NAME` or `NAME = value`.
 #[derive(Debug, PartialEq)]
 pub struct EnumVariant {
     pub name: Ident,
-    /// Explicit value (`= <expr>`); `None` means the variant is implicitly `previous + 1`.
     pub value: Option<Expr>,
     pub assign_kw_start: Option<Position>,
-    /// Span from the variant's name through its value (or just the name if no `= value`).
     pub span: Span,
 }
 
-// A `function name(...)` declaration.
-//
-// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#functions>
-// <https://developer.garmin.com/connect-iq/monkey-c/functions/>
+/// A `function name(args) as Type { … }` declaration. `body` is `None` for a declaration without
+/// one, e.g. `function name() as Type;` in an abstract class.
+///
+/// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#functions>
+/// <https://developer.garmin.com/connect-iq/monkey-c/functions/>
 #[derive(Debug, PartialEq)]
 pub struct FunctionDecl {
     pub name: Spanned<Ident>,
-    /// A trailing comma drives the magic trailing comma, like
-    /// [`CallExpr::args`](crate::ast::CallExpr::args).
     pub parameters: Parens<Separated<Parameter>>,
-    /// Return type from `as ReturnType`.
     pub returns: Option<Type>,
     pub as_kw_start: Option<Position>,
     /// `None` for abstract / interface method declarations (`function f() as T;`).
@@ -182,13 +183,9 @@ pub struct FunctionDecl {
     pub span: Span,
 }
 
-/// A `const` declaration at module or class scope.
-///
-/// Unlike [`VarDecl`], the initializer is mandatory,`const` without a value is a syntax error.
-/// `const` also cannot appear inside a function body.
-///
-/// Note that `const` only prevents the binding from being reassigned; it does not deeply freeze its
-/// value (a `const` array still has mutable elements).
+/// A `const` declaration at module or class scope. Unlike [`VarDecl`] every binding needs a value,
+/// and `const` can't appear inside a function body. It only prevents reassigning the binding, so
+/// a `const` array still has mutable elements.
 ///
 /// <https://developer.garmin.com/connect-iq/reference-guides/monkey-c-reference/#constants>
 #[derive(Debug, PartialEq)]
@@ -200,9 +197,7 @@ pub struct ConstDecl {
 }
 
 impl Ast {
-    /// Return the source span of this node, if it has one.
-    ///
-    /// `Eof` has no meaningful span.
+    /// The source range of the node, or `None` for [`Ast::Eof`].
     pub fn span(&self) -> Option<&Span> {
         match self {
             Ast::Eof => None,
