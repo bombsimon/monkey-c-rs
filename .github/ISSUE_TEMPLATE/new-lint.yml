@@ -1,0 +1,72 @@
+---
+name: New lint rule
+description: Propose a rule for `rafiki lint`
+title: "Lint "
+labels:
+  - linter
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Rule name
+      description: Kebab case, named after what it flags, e.g. `bool-comparison`
+    validations:
+      required: true
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One line for the rules table and `--list-rules`
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What goes wrong or reads worse today. A likely bug, or only a simplification?
+    validations:
+      required: true
+  - type: textarea
+    id: flags
+    attributes:
+      label: What it flags
+      description: The exact shapes, and whether the parser alone can tell for certain
+    validations:
+      required: true
+  - type: textarea
+    id: leaves-alone
+    attributes:
+      label: What it leaves alone
+      description: Look-alikes that must not be flagged
+  - type: dropdown
+    id: fix
+    attributes:
+      label: Fix
+      options:
+        - Always
+        - Sometimes
+        - Never
+    validations:
+      required: true
+  - type: textarea
+    id: fix-details
+    attributes:
+      label: How the fix rewrites code
+      description: Including whether it changes runtime behaviour
+  - type: textarea
+    id: example
+    attributes:
+      label: Example
+      description: Before and after
+      render: monkey-c
+    validations:
+      required: true
+  - type: input
+    id: similar-rules
+    attributes:
+      label: Similar rules
+      description: Matching rules in other linters, if any, e.g. `clippy`, `ruff` or `eslint`
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
