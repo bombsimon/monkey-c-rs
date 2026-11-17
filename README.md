@@ -1,7 +1,7 @@
 # `monkey-c-rs`
 
 <p align="center">
-  <img src="./docs/src/assets/monkey-c-rs-logo.png" alt="monkey-c-rs logo" />
+  <img src="./docs/src/assets/monkey-c-rs-logo.svg" alt="monkey-c-rs" width="400"/>
 </p>
 
 <p align="center">

@@ -1,7 +1,7 @@
 # Introduction
 
 <p align="center">
-  <img src="./assets/monkey-c-rs-logo.png" alt="monkey-c-rs logo" />
+  <img src="./assets/monkey-c-rs-logo.svg" alt="monkey-c-rs" width="400"/>
 </p>
 
 `monkey-c-rs` is a set of developer tools for [Monkey C], the language used to
