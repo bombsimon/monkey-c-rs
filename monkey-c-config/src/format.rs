@@ -41,10 +41,10 @@ impl Default for FormatSettings {
 }
 
 impl FormatSettings {
-    /// A formatter for `source` with these settings, so the CLI and the language server can't
-    /// format the same file differently.
-    pub fn formatter(&self, source: &str) -> Formatter {
-        Formatter::new(source)
+    /// A formatter with these settings, so the CLI and the language server can't format the same
+    /// file differently.
+    pub fn formatter(&self) -> Formatter {
+        Formatter::new()
             .with_line_width(self.line_width)
             .with_alignment(self.alignment)
             .with_short_array_element_width(self.short_array_element_width)

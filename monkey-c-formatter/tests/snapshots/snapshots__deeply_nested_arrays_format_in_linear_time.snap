@@ -1,0 +1,22 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format(&format!(\"function f() {{ return {nested}; }}\"))"
+---
+function f() {
+    return [
+        a,
+        [
+            a,
+            [
+                a,
+                [
+                    a,
+                    [
+                        a,
+                        [a, [a, [a, [a, [a, [a, [a, [a, [a, [a, [a, [a, [a, [a, [a, x]]]]]]]]]]]]]]]
+                    ]
+                ]
+            ]
+        ]
+    ];
+}

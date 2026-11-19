@@ -99,7 +99,7 @@ fn format_source(
     renderer: &Renderer,
 ) -> io::Result<String> {
     let output = renderer.parse(label, source)?;
-    let formatted = settings.formatter(source).format(&output);
+    let formatted = settings.formatter().format(source, &output);
 
     // Warn (without failing) about any comment the formatter could not carry
     // into the output, pointing at the original comment via ariadne.

@@ -6,12 +6,12 @@ use monkey_c_parser::ast::{
     Separated, Span, VarDecl, Visibility,
 };
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::{Doc, display_width};
 use crate::options::{AnnotationSeparator, ModifierOrder};
 use crate::verbatim::FmtDirective;
 
-impl Formatter {
+impl Printer<'_> {
     pub(crate) fn ast_to_doc(&self, ast: &Ast) -> Doc {
         match ast {
             Ast::Document(nodes, span) => self.decls_to_doc(nodes, *span),

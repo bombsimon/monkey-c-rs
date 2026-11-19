@@ -5,10 +5,10 @@ use monkey_c_parser::ast::{
     SwitchStmt, TryStmt,
 };
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::Doc;
 
-impl Formatter {
+impl Printer<'_> {
     /// Render `<keyword> (cond)` up to the body starting at `brace_start`, whose comments are left
     /// for the body.
     fn paren_condition_header(
@@ -310,11 +310,10 @@ impl Formatter {
     /// own-line comments directly above that label, with no blank line in between.
     fn case_body_end(&self, stmts_end: usize, next_case_start: usize) -> usize {
         let stmts_end_line = self.line_index.line(stmts_end.saturating_sub(1) as u32);
-        let comments: Vec<CommentStmt> = self
+        let comments: Vec<&CommentStmt> = self
             .comment_cursor
             .borrow()
             .peek_in(stmts_end, next_case_start)
-            .cloned()
             .collect();
 
         let mut body_end = next_case_start;

@@ -9,7 +9,7 @@ use std::io;
 use std::path::Path;
 
 use crate::cli::{GlobalArgs, LintArgs};
-use crate::diagnostics::{self, Renderer};
+use crate::diagnostics::Renderer;
 use crate::runner::{self, Target};
 use crate::settings;
 
@@ -96,10 +96,7 @@ fn lint_target(
     // Fixing is meaningless for stdin: there is no file to rewrite, so the
     // findings are reported instead.
     let (source, findings) = if let (true, Target::File(path)) = (fix, target) {
-        let fixes: Vec<Fix> = initial_findings
-            .iter()
-            .filter_map(|f| f.fix.clone())
-            .collect();
+        let fixes = initial_findings.iter().filter_map(|f| f.fix.as_ref());
         let fixed = apply_fixes(&source, fixes);
         if fixed != source {
             fs::write(path, &fixed)?;
@@ -112,8 +109,11 @@ fn lint_target(
         (source, initial_findings)
     };
 
+    // Built once, as indexing the lines of the source for every finding made a large file with
+    // many findings quadratic.
+    let indexed_source = Source::from(source.as_str());
     for finding in &findings {
-        render_finding(&label, &source, finding, renderer);
+        render_finding(&label, &indexed_source, finding, renderer);
     }
 
     Ok(findings.is_empty())
@@ -132,11 +132,8 @@ fn findings(
 
 /// Render a single finding to stderr — coloured caret with file:line:col, source
 /// snippet, and the fix replacement (if any) shown as a note.
-fn render_finding(file: &str, source: &str, finding: &Diagnostic, renderer: &Renderer) {
-    // Ariadne indexes its `Source` by character, not byte. Convert our byte
-    // spans to char offsets so multibyte UTF-8 anywhere earlier in the file
-    // doesn't shift the rendered position.
-    let range = diagnostics::byte_range_to_char_range(source, finding.span.start, finding.span.end);
+fn render_finding(file: &str, source: &Source<&str>, finding: &Diagnostic, renderer: &Renderer) {
+    let range = finding.span.start..finding.span.end;
     let mut builder = Report::build(ReportKind::Warning, (file, range.clone()))
         .with_config(renderer.config())
         .with_code(finding.rule)
@@ -153,7 +150,7 @@ fn render_finding(file: &str, source: &str, finding: &Diagnostic, renderer: &Ren
 
     builder
         .finish()
-        .eprint((file, Source::from(source)))
+        .eprint((file, source))
         .expect("ariadne write to stderr");
 }
 
@@ -207,6 +204,7 @@ fn plural(n: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diagnostics;
 
     fn settings(enable: &[&str], disable: &[&str]) -> LintSettings {
         LintSettings {

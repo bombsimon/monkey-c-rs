@@ -45,7 +45,7 @@ fn every_setting_is_documented_at_its_default() {
         sort_imports,
         exclude: format_exclude,
         numbers,
-    } = format.clone();
+    } = &format;
     let NumbersConfig {
         hex_prefix_case,
         hex_digit_case,
@@ -62,11 +62,11 @@ fn every_setting_is_documented_at_its_default() {
         disable,
         exclude: lint_exclude,
         per_file_ignores,
-    } = lint.clone();
+    } = &lint;
     let FilesConfig {
         exclude: files_exclude,
         respect_gitignore,
-    } = files.clone();
+    } = &files;
 
     assert!(line_width.is_some() && alignment.is_some() && short_array_element_width.is_some());
     assert!(union_style.is_some() && nullable.is_some() && annotation_separator.is_some());
@@ -77,10 +77,10 @@ fn every_setting_is_documented_at_its_default() {
     assert!(double_suffix_case.is_some() && long_suffix_case.is_some());
     assert!(leading_zero.is_some() && trailing_zeros.is_some());
     assert!(enable.is_some() && disable.is_some() && respect_gitignore.is_some());
-    assert_eq!(format_exclude, Some(Vec::new()));
-    assert_eq!(lint_exclude, Some(Vec::new()));
-    assert_eq!(files_exclude, Some(Vec::new()));
-    assert_eq!(per_file_ignores, Some(Default::default()));
+    assert_eq!(*format_exclude, Some(Vec::new()));
+    assert_eq!(*lint_exclude, Some(Vec::new()));
+    assert_eq!(*files_exclude, Some(Vec::new()));
+    assert_eq!(*per_file_ignores, Some(Default::default()));
 
     assert_eq!(
         FormatSettings::default().with_overrides(&format),

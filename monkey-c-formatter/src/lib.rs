@@ -11,7 +11,7 @@ mod statements;
 mod types;
 mod verbatim;
 
-use monkey_c_parser::ast::CommentStmt;
+use monkey_c_parser::ast::{CommentStmt, CommentTable};
 use monkey_c_parser::comments::CommentCursor;
 use monkey_c_parser::lexer::Lexer;
 use monkey_c_parser::line_index::LineIndex;
@@ -26,12 +26,11 @@ use doc::render;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
 
 /// Formats a Monkey C AST back into source text, deciding line breaks with the Wadler-Lindig
-/// algorithm in [`doc`].
+/// algorithm in [`doc`]. Holds only options, so one formatter can format any number of files.
 pub struct Formatter {
-    source: String,
-    line_index: LineIndex,
     line_width: usize,
     align_pairs: bool,
     short_array_element_width: usize,
@@ -43,20 +42,44 @@ pub struct Formatter {
     parens: options::Parens,
     sort_imports: bool,
     numbers: Numbers,
+}
+
+/// The state of formatting one file. Kept apart from [`Formatter`] so it can borrow the source
+/// and its comments for exactly as long as the file is being formatted.
+struct Printer<'a> {
+    formatter: &'a Formatter,
+    source: &'a str,
+    line_index: LineIndex,
     /// Where operands written right after a cast start. A `(` there has to stay, or the cast's
     /// type would take what follows as one more union member.
     after_cast: RefCell<HashSet<usize>>,
-    comment_cursor: RefCell<CommentCursor>,
+    comment_cursor: RefCell<CommentCursor<'a>>,
 }
 
-impl Formatter {
-    /// Create a formatter for `source`.
-    pub fn new(source: impl AsRef<str>) -> Self {
-        let source = source.as_ref();
-
+impl<'a> Printer<'a> {
+    fn new(formatter: &'a Formatter, source: &'a str, comments: &'a CommentTable) -> Self {
         Self {
-            source: source.to_string(),
+            formatter,
+            source,
             line_index: LineIndex::new(source),
+            after_cast: RefCell::default(),
+            comment_cursor: RefCell::new(CommentCursor::new(comments)),
+        }
+    }
+}
+
+/// Lets the printer read the options as its own fields, as every formatting rule needs them.
+impl Deref for Printer<'_> {
+    type Target = Formatter;
+
+    fn deref(&self) -> &Formatter {
+        self.formatter
+    }
+}
+
+impl Default for Formatter {
+    fn default() -> Self {
+        Self {
             line_width: 100,
             align_pairs: false,
             short_array_element_width: 8,
@@ -68,9 +91,14 @@ impl Formatter {
             parens: options::Parens::default(),
             sort_imports: true,
             numbers: Numbers::default(),
-            after_cast: RefCell::default(),
-            comment_cursor: RefCell::new(CommentCursor::default()),
         }
+    }
+}
+
+impl Formatter {
+    /// Create a formatter with the default options.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Override the target line width (default: 100).
@@ -141,11 +169,9 @@ impl Formatter {
         self
     }
 
-    /// Format a parsed file and return the result as a `String`.
-    pub fn format(&self, output: &ParseOutput) -> String {
-        *self.comment_cursor.borrow_mut() = CommentCursor::new(&output.comments);
-
-        let doc = self.ast_to_doc(&output.ast);
+    /// Format `output`, parsed from `source`, and return the result as a `String`.
+    pub fn format(&self, source: &str, output: &ParseOutput) -> String {
+        let doc = Printer::new(self, source, &output.comments).ast_to_doc(&output.ast);
         let rendered = render(&doc, self.line_width);
         let mut formatted = if self.align_pairs {
             align_trailing_comments(&rendered)
@@ -162,7 +188,10 @@ impl Formatter {
 
     /// The source comments missing from `rendered`, matched by kind and text with whitespace
     /// normalized.
-    pub fn lost_comments(output: &ParseOutput, rendered: &str) -> Vec<CommentStmt> {
+    pub fn lost_comments<'output>(
+        output: &'output ParseOutput,
+        rendered: &str,
+    ) -> Vec<&'output CommentStmt> {
         fn normalize(text: &str) -> String {
             text.split_whitespace().collect::<Vec<_>>().join(" ")
         }
@@ -186,7 +215,7 @@ impl Formatter {
             let key = (c.is_block, normalize(&c.text));
             match present.get_mut(&key) {
                 Some(n) if *n > 0 => *n -= 1,
-                _ => lost.push(c.clone()),
+                _ => lost.push(c),
             }
         }
 

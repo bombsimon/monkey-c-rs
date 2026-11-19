@@ -119,9 +119,10 @@ mod tests {
             |_, _| false,
             |target| {
                 let label = target.label();
-                seen.borrow_mut().push(label.clone());
+                let failed = label.ends_with("A.mc");
+                seen.borrow_mut().push(label);
 
-                if label.ends_with("A.mc") {
+                if failed {
                     return Err(io::Error::other("boom"));
                 }
 

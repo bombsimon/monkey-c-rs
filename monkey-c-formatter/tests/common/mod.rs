@@ -16,7 +16,7 @@ use crate::common::meaning::meaning;
 /// off the tokens are the same with every comment in the same place between them.
 pub fn run(src: &str, formatter: Formatter) -> String {
     let output = Parser::new(src).parse().expect("should parse");
-    let formatted = formatter.format(&output);
+    let formatted = formatter.format(src, &output);
 
     let reparsed = Parser::new(&formatted)
         .parse()
@@ -60,7 +60,7 @@ pub fn run(src: &str, formatter: Formatter) -> String {
 
 /// Formatting with every rewrite turned off only changes whitespace.
 fn assert_same_tokens(src: &str, output: &ParseOutput) {
-    let formatted = preserving(Formatter::new(src)).format(output);
+    let formatted = preserving(Formatter::new()).format(src, output);
 
     let before = tokens(src);
     let after = tokens(&formatted);
@@ -108,11 +108,11 @@ pub fn preserving(formatter: Formatter) -> Formatter {
 }
 
 pub fn format(src: &str) -> String {
-    run(src, Formatter::new(src))
+    run(src, Formatter::new())
 }
 
 pub fn format_aligned(src: &str) -> String {
-    run(src, Formatter::new(src).with_alignment(true))
+    run(src, Formatter::new().with_alignment(true))
 }
 
 /// The tokens of `src`, comments included, with the one rewrite the formatter makes on purpose

@@ -90,13 +90,14 @@ pub fn lint_selected(
 
 /// Apply `fixes` to `source`, skipping a fix that overlaps one applied before it. Edits within a
 /// fix must be disjoint.
-pub fn apply_fixes(source: &str, mut fixes: Vec<Fix>) -> String {
+pub fn apply_fixes<'a>(source: &str, fixes: impl IntoIterator<Item = &'a Fix>) -> String {
+    let mut fixes: Vec<&Fix> = fixes.into_iter().collect();
     fixes.sort_by_key(|f| f.edits.iter().map(|e| e.span.start).min().unwrap_or(0));
 
     let mut out = String::with_capacity(source.len());
     let mut cursor = 0;
 
-    for fix in &fixes {
+    for fix in fixes {
         let mut edits: Vec<&Edit> = fix.edits.iter().collect();
         edits.sort_by_key(|e| e.span.start);
 
@@ -134,11 +135,11 @@ mod test_support {
 
     /// `src` with the fixes for the findings of `rules` applied.
     pub(crate) fn fix_rules(src: &str, rules: &[&str]) -> String {
-        let fixes = lint_rules(src, rules)
-            .into_iter()
-            .filter_map(|diagnostic| diagnostic.fix)
-            .collect();
+        let findings = lint_rules(src, rules);
 
-        apply_fixes(src, fixes)
+        apply_fixes(
+            src,
+            findings.iter().filter_map(|finding| finding.fix.as_ref()),
+        )
     }
 }

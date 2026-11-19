@@ -2,7 +2,7 @@
 
 use monkey_c_parser::ast::{BinaryOperator, Expr, LiteralValue, ParenExpr, UnaryOperator};
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::Doc;
 use crate::options::{self, Numbers, ResourceRef};
 
@@ -31,7 +31,7 @@ enum OperatorFamily {
     Logical,
 }
 
-impl Formatter {
+impl Printer<'_> {
     fn binary_chain_parts(
         &self,
         operands: &[ChainOperand],

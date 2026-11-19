@@ -210,13 +210,15 @@ impl Parser<'_> {
     }
 
     fn parse_primary(&mut self) -> Result<Expr, ParserError> {
-        if let Some(value) = literal_value(&self.current_token) {
-            let span = self.advance();
-
+        if let Some((value, span)) = self.advance_if(LiteralValue::try_from) {
             return Ok(Expr::Lit(LitExpr { value, span }));
         }
 
-        match self.current_token.clone() {
+        if let Some((name, span)) = self.advance_if(token::Type::into_identifier) {
+            return Ok(Expr::Ident(IdentExpr { name, span }));
+        }
+
+        match self.current_token {
             token::Type::LParen => {
                 let start = self.advance().start;
                 let inner = self.parse_expression()?;
@@ -227,10 +229,6 @@ impl Parser<'_> {
                     span: Span { start, end },
                 }))
             }
-            token::Type::Identifier(name) => Ok(Expr::Ident(IdentExpr {
-                name,
-                span: self.advance(),
-            })),
             token::Type::Me => Ok(Expr::Me(self.advance())),
             token::Type::Self_ => Ok(Expr::Self_(self.advance())),
             token::Type::Bling => Ok(Expr::Bling(self.advance())),
@@ -286,9 +284,10 @@ impl Parser<'_> {
                 }))
             }
             token::Type::New => self.parse_new(),
-            token_type => {
-                Err(self.parse_error(format!("Unexpected token in expression: {token_type:?}")))
-            }
+            _ => Err(self.parse_error(format!(
+                "Unexpected token in expression: {:?}",
+                self.current_token
+            ))),
         }
     }
 
@@ -440,23 +439,27 @@ impl Parser<'_> {
     }
 }
 
-fn literal_value(token: &token::Type) -> Option<LiteralValue> {
-    let value = match token {
-        token::Type::Number(value) => LiteralValue::Number(value.clone()),
-        token::Type::Long(value) => LiteralValue::Long(value.clone()),
-        token::Type::Hex(value) => LiteralValue::Hex(value.clone()),
-        token::Type::HexLong(value) => LiteralValue::HexLong(value.clone()),
-        token::Type::Float(value) => LiteralValue::Float(value.clone()),
-        token::Type::Double(value) => LiteralValue::Double(value.clone()),
-        token::Type::String(value) => LiteralValue::String(value.clone()),
-        token::Type::Char(value) => LiteralValue::Char(value.clone()),
-        token::Type::Boolean(value) => LiteralValue::Boolean(*value),
-        token::Type::Null => LiteralValue::Null,
-        token::Type::NaN => LiteralValue::NaN,
-        _ => return None,
-    };
+impl TryFrom<token::Type> for LiteralValue {
+    type Error = token::Type;
 
-    Some(value)
+    fn try_from(token: token::Type) -> Result<Self, Self::Error> {
+        let value = match token {
+            token::Type::Number(value) => LiteralValue::Number(value),
+            token::Type::Long(value) => LiteralValue::Long(value),
+            token::Type::Hex(value) => LiteralValue::Hex(value),
+            token::Type::HexLong(value) => LiteralValue::HexLong(value),
+            token::Type::Float(value) => LiteralValue::Float(value),
+            token::Type::Double(value) => LiteralValue::Double(value),
+            token::Type::String(value) => LiteralValue::String(value),
+            token::Type::Char(value) => LiteralValue::Char(value),
+            token::Type::Boolean(value) => LiteralValue::Boolean(value),
+            token::Type::Null => LiteralValue::Null,
+            token::Type::NaN => LiteralValue::NaN,
+            other => return Err(other),
+        };
+
+        Ok(value)
+    }
 }
 
 fn binary_operator(token: &token::Type) -> Option<BinaryOperator> {

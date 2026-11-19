@@ -216,7 +216,7 @@ mod tests {
         // The body stays put — no edit's replacement should contain it, so the
         // fix size is independent of how large the collapsed block is.
         let src = "function f() { if (x) { if (y) { big(); another(); more(); } } }";
-        let fix = rule_diags(src)[0].fix.clone().expect("fix");
+        let fix = rule_diags(src).remove(0).fix.expect("fix");
         for edit in &fix.edits {
             assert!(!edit.replacement.contains("big"));
         }
@@ -229,7 +229,7 @@ mod tests {
     #[test]
     fn else_if_fix_does_not_copy_the_body() {
         let src = "function f() { if (x) { g(); } else { if (y) { big(); more(); } } }";
-        let fix = rule_diags(src)[0].fix.clone().expect("fix");
+        let fix = rule_diags(src).remove(0).fix.expect("fix");
         for edit in &fix.edits {
             assert!(!edit.replacement.contains("big"));
         }

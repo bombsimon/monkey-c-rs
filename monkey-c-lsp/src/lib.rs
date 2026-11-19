@@ -103,7 +103,7 @@ fn handle_request(
     settings: &config::Settings,
     request: Request,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let id = request.id.clone();
+    let id = request.id;
     let method = LspRequestMethod::from(request.method.as_str());
 
     if method == DocumentFormattingRequest::METHOD {
@@ -135,16 +135,18 @@ fn handle_notification(
         let params: gen_lsp_types::DidOpenTextDocumentParams =
             serde_json::from_value(notification.params)?;
         let uri = params.text_document.uri;
-        documents.insert(uri.clone(), params.text_document.text);
-        publish(connection, documents, settings, &uri)?;
+        let text = params.text_document.text;
+        publish(connection, settings, uri.clone(), &text)?;
+        documents.insert(uri, text);
     } else if method == DidChangeTextDocumentNotification::METHOD {
         let params: gen_lsp_types::DidChangeTextDocumentParams =
             serde_json::from_value(notification.params)?;
         // Full sync: the last change carries the whole new text.
         if let Some(change) = params.content_changes.into_iter().next_back() {
             let uri = params.text_document.text_document_identifier.uri;
-            documents.insert(uri.clone(), content_change_text(change));
-            publish(connection, documents, settings, &uri)?;
+            let text = content_change_text(change);
+            publish(connection, settings, uri.clone(), &text)?;
+            documents.insert(uri, text);
         }
     } else if method == DidCloseTextDocumentNotification::METHOD {
         let params: DidCloseTextDocumentParams = serde_json::from_value(notification.params)?;
@@ -165,24 +167,21 @@ fn content_change_text(change: TextDocumentContentChangeEvent) -> String {
     }
 }
 
-/// Analyse the document at `uri` and publish its diagnostics, or none when it's excluded from
-/// linting.
+/// Analyse `text`, the document at `uri`, and publish its diagnostics, or none when it's excluded
+/// from linting.
 fn publish(
     connection: &Connection,
-    documents: &Documents,
     settings: &config::Settings,
-    uri: &Uri,
+    uri: Uri,
+    text: &str,
 ) -> Result<(), Box<dyn Error + Sync + Send>> {
-    let Some(text) = documents.get(uri) else {
-        return Ok(());
-    };
-
-    if !settings.lints(uri) {
-        return send_diagnostics(connection, uri.clone(), Vec::new());
+    if !settings.lints(&uri) {
+        return send_diagnostics(connection, uri, Vec::new());
     }
 
-    let diagnostics = analysis::diagnostics(text, settings.rule_filter(uri));
-    send_diagnostics(connection, uri.clone(), diagnostics)
+    let diagnostics = analysis::diagnostics(text, settings.rule_filter(&uri));
+
+    send_diagnostics(connection, uri, diagnostics)
 }
 
 /// Ask the client to show `message` to the user.
@@ -365,11 +364,11 @@ fn fix_all_action(
     mapper: &PositionMapper,
     findings: &[monkey_c_linter::Diagnostic],
 ) -> Option<CodeActionResponse> {
-    let fixes: Vec<_> = findings.iter().filter_map(|f| f.fix.clone()).collect();
-    if fixes.is_empty() {
+    if !findings.iter().any(|finding| finding.fix.is_some()) {
         return None;
     }
 
+    let fixes = findings.iter().filter_map(|finding| finding.fix.as_ref());
     let fixed = monkey_c_linter::apply_fixes(text, fixes);
     if fixed == text {
         return None;

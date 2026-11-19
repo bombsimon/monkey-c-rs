@@ -70,7 +70,7 @@ pub fn lint_diagnostic(
 pub fn format(text: &str, settings: &FormatSettings) -> Option<String> {
     let output = Parser::new(text).parse().ok()?;
 
-    let formatted = settings.formatter(text).format(&output);
+    let formatted = settings.formatter().format(text, &output);
 
     Some(formatted)
 }

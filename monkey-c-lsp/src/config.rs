@@ -87,7 +87,7 @@ pub fn resolve(source: &ConfigSource, params: &serde_json::Value) -> (Settings, 
 
     let options: InitializationOptions = params
         .get("initializationOptions")
-        .and_then(|options| serde_json::from_value(options.clone()).ok())
+        .and_then(|options| InitializationOptions::deserialize(options).ok())
         .unwrap_or_default();
 
     let format = FormatSettings::default()

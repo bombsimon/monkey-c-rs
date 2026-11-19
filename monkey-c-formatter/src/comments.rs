@@ -3,10 +3,10 @@
 
 use monkey_c_parser::ast::{CommentStmt, Expr, Span, Spanned, Type};
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::Doc;
 
-impl Formatter {
+impl Printer<'_> {
     /// A name such as a class or function name, with the comments written before it.
     pub(crate) fn name_to_doc(&self, name: &Spanned<String>) -> Doc {
         Doc::concat(vec![
@@ -121,7 +121,7 @@ impl Formatter {
 
         let mut parts = Vec::new();
         let mut last_line = end_line;
-        for c in &comments {
+        for c in comments {
             let comment_start_line = self.line_index.line(c.span.start as u32);
             if comment_start_line == last_line {
                 parts.push(self.same_line_comment_to_doc(c));
@@ -216,7 +216,7 @@ impl Formatter {
     pub(crate) fn drain_before_open_paren(&self, paren_pos: usize) -> Doc {
         let comments = self.comment_cursor.borrow_mut().drain_before(paren_pos);
         let mut parts = Vec::new();
-        for c in &comments {
+        for c in comments {
             parts.push(self.same_line_comment_to_doc(c));
 
             if !c.is_block {
@@ -267,7 +267,7 @@ impl Formatter {
         let mut parts = vec![self.drain_trailing_doc(node_end, token_pos)];
         for comment in self.comment_cursor.borrow_mut().drain_before(token_pos) {
             parts.push(Doc::HardLine);
-            parts.push(self.comment_to_doc(&comment));
+            parts.push(self.comment_to_doc(comment));
         }
 
         Doc::concat(parts)
