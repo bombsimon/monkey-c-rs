@@ -403,7 +403,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "monkey-c-config"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ignore",
  "monkey-c-formatter",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "monkey-c-coverage"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "monkey-c-jungle",
  "monkey-c-linter",
@@ -423,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "monkey-c-formatter"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "insta",
  "monkey-c-parser",
@@ -433,7 +433,7 @@ dependencies = [
 
 [[package]]
 name = "monkey-c-jungle"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "insta",
  "monkey-c-parser",
@@ -441,7 +441,7 @@ dependencies = [
 
 [[package]]
 name = "monkey-c-linter"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "convert_case",
  "monkey-c-parser",
@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "monkey-c-lsp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "gen-lsp-types",
  "lsp-server",
@@ -464,7 +464,7 @@ dependencies = [
 
 [[package]]
 name = "monkey-c-parser"
-version = "0.3.0"
+version = "0.3.1"
 
 [[package]]
 name = "once_cell"
@@ -533,7 +533,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "rafiki"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "ariadne",
  "clap",
