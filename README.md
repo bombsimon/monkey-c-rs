@@ -21,11 +21,29 @@ Read the [documentation] to get started.
 
 ## Install
 
+With Homebrew:
+
 ```sh
-cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki --rev <commit>
+brew install bombsimon/tap/rafiki
 ```
 
-Nothing is stable yet, so pin the version with `--rev`.
+With the install script on macOS and Linux:
+
+```sh
+curl -LsSf https://github.com/bombsimon/monkey-c-rs/releases/latest/download/rafiki-installer.sh | sh
+```
+
+With the install script on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/bombsimon/monkey-c-rs/releases/latest/download/rafiki-installer.ps1 | iex"
+```
+
+Archives for each platform are on the [releases] page. To build from source:
+
+```sh
+cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki --tag <version>
+```
 
 ## Usage
 
@@ -69,6 +87,7 @@ This repository is licensed under the [MIT License][license].
 [Monkey C]: https://developer.garmin.com/connect-iq/monkey-c/
 [awesome-garmin]: https://github.com/bombsimon/awesome-garmin
 [documentation]: https://bombsimon.github.io/monkey-c-rs
+[releases]: https://github.com/bombsimon/monkey-c-rs/releases
 [garmin-monkeyc.nvim]: https://github.com/bombsimon/garmin-monkeyc.nvim
 [issue]: https://github.com/bombsimon/monkey-c-rs/issues/new
 [license]: LICENSE

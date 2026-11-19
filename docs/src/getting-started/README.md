@@ -2,15 +2,33 @@
 
 ## Install
 
-There are no prebuilt binaries yet, so `rafiki` is installed from source with
-[Cargo]. Pin a commit, since output and settings can still change between
-versions:
+Install `rafiki` with [Homebrew] on macOS and Linux:
 
 ```sh
-cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki --rev <commit>
+brew install bombsimon/tap/rafiki
 ```
 
-Leave out `--rev` to get the latest version instead.
+Or with the install script, which puts the binary in `~/.cargo/bin`:
+
+```sh
+curl -LsSf https://github.com/bombsimon/monkey-c-rs/releases/latest/download/rafiki-installer.sh | sh
+```
+
+On Windows, use the PowerShell script instead:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/bombsimon/monkey-c-rs/releases/latest/download/rafiki-installer.ps1 | iex"
+```
+
+Archives for every platform are also on the [releases] page. To build from
+source instead, use [Cargo]:
+
+```sh
+cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki --tag <version>
+```
+
+Output and settings can still change between versions, so pin one wherever the
+result has to stay stable, such as in CI.
 
 ## Format your code
 
@@ -71,13 +89,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install --git https://github.com/bombsimon/monkey-c-rs rafiki --rev <commit>
+      - run: curl -LsSf https://github.com/bombsimon/monkey-c-rs/releases/download/<version>/rafiki-installer.sh | sh
       - run: rafiki fmt --check
       - run: rafiki lint
 ```
 
-Installing from source compiles `rafiki`, which takes a few minutes. Caching
-`~/.cargo/bin` between runs avoids doing it every time.
-
 [Cargo]: https://doc.rust-lang.org/cargo/getting-started/installation.html
+[Homebrew]: https://brew.sh
+[releases]: https://github.com/bombsimon/monkey-c-rs/releases
