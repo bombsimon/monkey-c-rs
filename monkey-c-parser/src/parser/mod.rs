@@ -95,6 +95,24 @@ impl<'a> Parser<'a> {
         })
     }
 
+    /// Consume the current token if `extract` accepts it, moving its text into the result rather
+    /// than copying it. A rejected token is handed back and stays current.
+    pub(crate) fn advance_if<T>(
+        &mut self,
+        extract: impl FnOnce(token::Type) -> Result<T, token::Type>,
+    ) -> Option<(T, Span)> {
+        let token = std::mem::replace(&mut self.current_token, token::Type::Eof);
+
+        match extract(token) {
+            Ok(value) => Some((value, self.advance())),
+            Err(token) => {
+                self.current_token = token;
+
+                None
+            }
+        }
+    }
+
     /// Consume `expected` and return its span, or fail if the current token is something else.
     pub(crate) fn expect(&mut self, expected: token::Type) -> Result<Span, ParserError> {
         if self.current_token != expected {
@@ -245,14 +263,11 @@ impl<'a> Parser<'a> {
 
     /// Consume an identifier and return its name.
     pub(crate) fn parse_identifier(&mut self) -> Result<String, ParserError> {
-        let token::Type::Identifier(name) = &self.current_token else {
+        let Some((name, _)) = self.advance_if(token::Type::into_identifier) else {
             return Err(
                 self.parse_error(format!("Expected identifier, got {:?}", self.current_token))
             );
         };
-
-        let name = name.clone();
-        self.advance();
 
         Ok(name)
     }
@@ -261,21 +276,18 @@ impl<'a> Parser<'a> {
     /// Keywords are valid symbol names (e.g. `:hidden`, `:private`) — the Display text is their
     /// canonical string.
     pub(crate) fn parse_symbol_name(&mut self) -> Result<String, ParserError> {
-        let name = match &self.current_token {
-            token::Type::Identifier(name) => name.clone(),
-            // Keywords can be valid symbol names, e.g (:private)
-            tok => {
-                let s = tok.to_string();
-                if s.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
-                    s
-                } else {
-                    return Err(self.parse_error(format!(
-                        "Expected name after `:` for symbol, got {:?}",
-                        self.current_token
-                    )));
-                }
-            }
-        };
+        if let Some((name, _)) = self.advance_if(token::Type::into_identifier) {
+            return Ok(name);
+        }
+
+        // Keywords can be valid symbol names, e.g (:private)
+        let name = self.current_token.to_string();
+        if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+            return Err(self.parse_error(format!(
+                "Expected name after `:` for symbol, got {:?}",
+                self.current_token
+            )));
+        }
 
         self.advance();
 

@@ -253,21 +253,16 @@ impl Parser<'_> {
         let start = self.expect(token::Type::LBrace)?.start;
         let entries = self.parse_separated(&token::Type::RBrace, |parser| {
             let entry_start = parser.current_token_start;
-            let key = match parser.current_token.clone() {
-                token::Type::Colon => {
-                    parser.advance();
-                    DictTypeKey::Symbol(parser.parse_symbol_name()?)
-                }
-                token::Type::String(name) => {
-                    parser.advance();
-                    DictTypeKey::String(name)
-                }
-                _ => {
-                    return Err(parser.parse_error(format!(
-                        "Expected `:symbol` or string key in inline dict type, got {:?}",
-                        parser.current_token
-                    )));
-                }
+            let key = if parser.current_token == token::Type::Colon {
+                parser.advance();
+                DictTypeKey::Symbol(parser.parse_symbol_name()?)
+            } else if let Some((name, _)) = parser.advance_if(token::Type::into_string) {
+                DictTypeKey::String(name)
+            } else {
+                return Err(parser.parse_error(format!(
+                    "Expected `:symbol` or string key in inline dict type, got {:?}",
+                    parser.current_token
+                )));
             };
             parser.expect(token::Type::As)?;
             let value_type = parser.parse_type()?;

@@ -1,0 +1,43 @@
+---
+source: monkey-c-formatter/tests/snapshots.rs
+expression: "format_aligned(&format!(\"function f() {{ return {nested}; }}\"))"
+---
+function f() {
+    return {
+        :k => {
+            :k => {
+                :k => {
+                    :k => {
+                        :k => {
+                            :k => {
+                                :k => {
+                                    :k => {
+                                        :k => {
+                                            :k => {
+                                                :k => {
+                                                    :k => {
+                                                        :k => {
+                                                            :k => {
+                                                                :k => {
+                                                                    :k => {
+                                                                        :k => {
+                                                                            :k => {:k => {:k => x}}
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+}

@@ -19,13 +19,13 @@ use monkey_c_parser::parser::Parser;
 // binary compiles, so anything there must be used by all of them.
 
 fn format_width(src: &str, width: usize) -> String {
-    run(src, Formatter::new(src).with_line_width(width))
+    run(src, Formatter::new().with_line_width(width))
 }
 
 fn format_short_array_element_width(src: &str, element_width: usize) -> String {
     run(
         src,
-        Formatter::new(src)
+        Formatter::new()
             .with_line_width(40)
             .with_short_array_element_width(element_width),
     )
@@ -34,8 +34,8 @@ fn format_short_array_element_width(src: &str, element_width: usize) -> String {
 /// Formats with the settings `configure` picks, and checks the result is already formatted, since a
 /// rewrite that's undone or redone by the next run would make the output flip between two forms.
 fn format_with(src: &str, configure: impl Fn(Formatter) -> Formatter) -> String {
-    let formatted = run(src, configure(Formatter::new(src)));
-    let again = run(&formatted, configure(Formatter::new(&formatted)));
+    let formatted = run(src, configure(Formatter::new()));
+    let again = run(&formatted, configure(Formatter::new()));
     assert_eq!(formatted, again, "formatting again changed the output");
 
     formatted
@@ -44,9 +44,7 @@ fn format_with(src: &str, configure: impl Fn(Formatter) -> Formatter) -> String 
 fn format_aligned_width(src: &str, width: usize) -> String {
     run(
         src,
-        Formatter::new(src)
-            .with_alignment(true)
-            .with_line_width(width),
+        Formatter::new().with_alignment(true).with_line_width(width),
     )
 }
 
@@ -154,6 +152,35 @@ function f() {
         .trim(),
         60
     ));
+}
+
+#[test]
+fn deeply_nested_member_chains_format_in_linear_time() {
+    // Each chain once held a full copy of its arguments for both its one-line and broken layouts,
+    // doubling the work with every level of nesting.
+    let nested = (0..20).fold("x".to_string(), |inner, _| format!("a.b().c({inner}).d()"));
+
+    insta::assert_snapshot!(format(&format!("function f() {{ return {nested}; }}")));
+}
+
+#[test]
+fn deeply_nested_arrays_format_in_linear_time() {
+    // Each array once built its elements again for every layout it tried, and once more to
+    // measure them for filling, doubling the work with every level of nesting.
+    let nested = (0..20).fold("x".to_string(), |inner, _| format!("[a, {inner}]"));
+
+    insta::assert_snapshot!(format(&format!("function f() {{ return {nested}; }}")));
+}
+
+#[test]
+fn deeply_nested_aligned_dicts_format_in_linear_time() {
+    // Each aligned dict once built its values for its one-line layout and again for its broken
+    // one, doubling the work with every level of nesting.
+    let nested = (0..20).fold("x".to_string(), |inner, _| format!("{{:k => {inner}}}"));
+
+    insta::assert_snapshot!(format_aligned(&format!(
+        "function f() {{ return {nested}; }}"
+    )));
 }
 
 #[test]
@@ -1679,7 +1706,7 @@ fn parens_keep_a_comment_an_earlier_statement_takes() {
     // the comment as theirs and stay.
     let src = "function f() { x = (a) /* c */; return (/* c */ a); }";
     let output = Parser::new(src).parse().expect("should parse");
-    let formatted = Formatter::new(src).format(&output);
+    let formatted = Formatter::new().format(src, &output);
 
     assert!(formatted.contains("return (a);"), "{formatted}");
 }

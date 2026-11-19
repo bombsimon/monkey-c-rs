@@ -69,7 +69,7 @@ pub fn instrument(
     let mut rewritten = String::with_capacity(source.len());
     let mut cursor = 0;
 
-    for (position, body) in bodies.iter().enumerate() {
+    for (position, body) in bodies.into_iter().enumerate() {
         let id = first_id + position;
         let after_brace = body.brace + 1;
 
@@ -80,7 +80,7 @@ pub fn instrument(
         sites.push(FunctionSite {
             id,
             file: file.to_string(),
-            name: body.name.clone(),
+            name: body.name,
             // LineIndex is 0-indexed; reports follow editor convention.
             line: index.line_col(body.brace as u32).line + 1,
         });
@@ -241,18 +241,23 @@ struct FunctionBody {
     name: String,
 }
 
-fn collect(ast: &Ast, exclude: &[&str], scope: &mut Vec<String>, out: &mut Vec<FunctionBody>) {
+fn collect<'a>(
+    ast: &'a Ast,
+    exclude: &[&str],
+    scope: &mut Vec<&'a str>,
+    out: &mut Vec<FunctionBody>,
+) {
     match ast {
         Ast::Document(items, _) => {
             collect_items(items, exclude, scope, out);
         }
         Ast::Module(module) => {
-            scope.push(module.name.node.clone());
+            scope.push(&module.name.node);
             collect_items(&module.body, exclude, scope, out);
             scope.pop();
         }
         Ast::Class(class) => {
-            scope.push(class.name.node.clone());
+            scope.push(&class.name.node);
             collect_items(&class.body, exclude, scope, out);
             scope.pop();
         }
@@ -273,10 +278,10 @@ fn collect(ast: &Ast, exclude: &[&str], scope: &mut Vec<String>, out: &mut Vec<F
 /// them: a declaration decorated with `(:test)` or another name in `exclude`
 /// exists only in test/excluded builds and would otherwise count itself, so it
 /// — and everything nested inside it — is left uninstrumented.
-fn collect_items(
-    items: &[Ast],
+fn collect_items<'a>(
+    items: &'a [Ast],
     exclude: &[&str],
-    scope: &mut Vec<String>,
+    scope: &mut Vec<&'a str>,
     out: &mut Vec<FunctionBody>,
 ) {
     let excluded_annotations: HashSet<&str> = DEFAULT_EXCLUDED_ANNOTATIONS
@@ -306,7 +311,7 @@ fn collect_items(
     }
 }
 
-fn qualified(scope: &[String], name: &str) -> String {
+fn qualified(scope: &[&str], name: &str) -> String {
     if scope.is_empty() {
         return name.to_string();
     }

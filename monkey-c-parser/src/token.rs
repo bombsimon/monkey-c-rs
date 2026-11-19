@@ -126,6 +126,22 @@ pub enum Type {
 }
 
 impl Type {
+    /// The name of an identifier token, or the token back when it is something else.
+    pub fn into_identifier(self) -> Result<String, Self> {
+        match self {
+            Type::Identifier(name) => Ok(name),
+            other => Err(other),
+        }
+    }
+
+    /// The text of a string token, or the token back when it is something else.
+    pub fn into_string(self) -> Result<String, Self> {
+        match self {
+            Type::String(text) => Ok(text),
+            other => Err(other),
+        }
+    }
+
     /// Whether an expression can start with this token.
     pub fn starts_expression(&self) -> bool {
         matches!(

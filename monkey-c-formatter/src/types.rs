@@ -6,7 +6,7 @@ use monkey_c_parser::ast::{
 };
 use monkey_c_parser::lexer::Lexer;
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::Doc;
 use crate::options::{self, Nullable, UnionStyle};
 
@@ -28,7 +28,7 @@ impl TypeSlot {
     };
 }
 
-impl Formatter {
+impl Printer<'_> {
     pub(crate) fn type_to_doc(&self, ty: &Type) -> Doc {
         self.type_in_slot(ty, TypeSlot::ANNOTATION)
     }

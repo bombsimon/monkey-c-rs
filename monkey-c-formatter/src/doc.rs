@@ -1,5 +1,7 @@
 use unicode_width::UnicodeWidthStr;
 
+use std::rc::Rc;
+
 /// Layout intent for the Wadler-Lindig pretty printer: [`render`] decides which groups stay on
 /// one line and which break, based on the line width.
 #[derive(Debug, Clone)]
@@ -27,6 +29,9 @@ pub enum Doc {
     BlankLine,
     /// The first child in flat mode, the second in break mode.
     FlatOrBreak(Box<Doc>, Box<Doc>),
+    /// A doc placed in several spots, such as both layouts of a [`Doc::FlatOrBreak`]. Copying
+    /// it instead would double nested chains at every level.
+    Shared(Rc<Doc>),
 }
 
 impl Doc {
@@ -91,6 +96,14 @@ impl Doc {
 
     pub(crate) fn flat_or_break(flat: Doc, break_: Doc) -> Self {
         Doc::FlatOrBreak(Box::new(flat), Box::new(break_))
+    }
+
+    /// `doc` made cheap to clone, keeping [`Doc::Empty`] as is so emptiness checks still see it.
+    pub(crate) fn shared(doc: Doc) -> Self {
+        match doc {
+            Doc::Empty => Doc::Empty,
+            doc => Doc::Shared(Rc::new(doc)),
+        }
     }
 }
 
@@ -193,6 +206,7 @@ fn render_in(doc: &Doc, width: usize, mode: Mode) -> String {
                     doc: child,
                 });
             }
+            Doc::Shared(doc) => stack.push(Command { indent, mode, doc }),
         }
     }
 
@@ -274,6 +288,7 @@ fn fits(group: &[Doc], rest: &[Command], mut remaining: usize) -> bool {
                 let child = if mode == Mode::Flat { flat } else { break_ };
                 pending.push((mode, child));
             }
+            Doc::Shared(doc) => pending.push((mode, doc)),
         }
     }
 }

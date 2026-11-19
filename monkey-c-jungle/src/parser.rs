@@ -104,9 +104,8 @@ impl<'a> Parser<'a> {
             )));
         };
 
-        let word = word.clone();
         let span = self.current_span();
-        let name = self.qualified_name(&word, span)?;
+        let name = self.qualified_name(word, span)?;
 
         self.next_token();
 
@@ -202,20 +201,14 @@ impl<'a> Parser<'a> {
                     span,
                 }),
                 token::Type::Deref(name) => {
-                    let name = name.clone();
-
-                    LiteralPart::Reference(self.qualified_name(&name, span)?)
+                    LiteralPart::Reference(self.qualified_name(name, span)?)
                 }
                 token::Type::UnclosedString(text) => {
-                    let text = text.clone();
-
                     return Err(
                         self.parse_error(format!("expected a closing `\"` for the value `{text}`"))
                     );
                 }
                 token::Type::UnclosedDeref(text) => {
-                    let text = text.clone();
-
                     return Err(self.parse_error(format!("expected a closing `)` for `{text}`")));
                 }
                 _ => break,

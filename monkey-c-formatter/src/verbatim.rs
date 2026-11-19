@@ -7,7 +7,7 @@
 
 use monkey_c_parser::ast::{CommentStmt, Span};
 
-use crate::Formatter;
+use crate::Printer;
 use crate::comments::push_dedented_lines;
 use crate::doc::Doc;
 
@@ -36,7 +36,7 @@ fn fmt_directive(comment: &CommentStmt) -> Option<FmtDirective> {
     }
 }
 
-impl Formatter {
+impl Printer<'_> {
     /// The source to keep as written when a `rafiki: fmt off` comment comes before the first of
     /// `items`, the items left in a body ending at `body_end`. Starts at the comment and ends at the
     /// matching `rafiki: fmt on`, or after everything left in the body when there's none.

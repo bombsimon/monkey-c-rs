@@ -4,38 +4,40 @@ use crate::line_index::LineIndex;
 /// Walks the comments of a file in source order as the formatter emits nodes, handing each one out
 /// exactly once to the first node that asks for its position.
 #[derive(Debug, Default, Clone)]
-pub struct CommentCursor {
-    comments: Vec<CommentStmt>,
+pub struct CommentCursor<'a> {
+    comments: &'a [CommentStmt],
     next: usize,
     last_end: usize,
 }
 
-impl CommentCursor {
+impl<'a> CommentCursor<'a> {
     /// A cursor before the first comment in `table`.
-    pub fn new(table: &CommentTable) -> Self {
-        let mut comments = table.comments.clone();
-        comments.sort_by_key(|c| c.span.start);
+    pub fn new(table: &'a CommentTable) -> Self {
+        debug_assert!(
+            table.comments.is_sorted_by_key(|c| c.span.start),
+            "the parser records comments in source order"
+        );
 
         Self {
-            comments,
+            comments: &table.comments,
             next: 0,
             last_end: 0,
         }
     }
 
     /// Drain the comments that start before `pos`.
-    pub fn drain_before(&mut self, pos: usize) -> Vec<CommentStmt> {
+    pub fn drain_before(&mut self, pos: usize) -> &'a [CommentStmt] {
         let start = self.next;
         while self.next < self.comments.len() && self.comments[self.next].span.start < pos {
             self.last_end = self.comments[self.next].span.end;
             self.next += 1;
         }
 
-        self.comments[start..self.next].to_vec()
+        &self.comments[start..self.next]
     }
 
     /// Drain the comments that start on `line`, such as the trailing one in `x; // tail`.
-    pub fn drain_on_line(&mut self, line: u32, line_index: &LineIndex) -> Vec<CommentStmt> {
+    pub fn drain_on_line(&mut self, line: u32, line_index: &LineIndex) -> &'a [CommentStmt] {
         let start = self.next;
         while self.next < self.comments.len()
             && line_index.line(self.comments[self.next].span.start as u32) == line
@@ -44,7 +46,7 @@ impl CommentCursor {
             self.next += 1;
         }
 
-        self.comments[start..self.next].to_vec()
+        &self.comments[start..self.next]
     }
 
     /// Drain the comments on `end_line` that start in `[min_pos, max_pos)`, so a comment that
@@ -55,7 +57,7 @@ impl CommentCursor {
         max_pos: usize,
         end_line: u32,
         line_index: &LineIndex,
-    ) -> Vec<CommentStmt> {
+    ) -> &'a [CommentStmt] {
         let start = self.next;
         while self.next < self.comments.len() {
             let c = &self.comments[self.next];
@@ -71,7 +73,7 @@ impl CommentCursor {
             self.next += 1;
         }
 
-        self.comments[start..self.next].to_vec()
+        &self.comments[start..self.next]
     }
 
     /// Where the last drained comment ends, or zero if none has been drained, so a node's end can
@@ -81,7 +83,7 @@ impl CommentCursor {
     }
 
     /// The next undrained comment, if it starts before `pos`.
-    pub fn peek_before(&self, pos: usize) -> Option<&CommentStmt> {
+    pub fn peek_before(&self, pos: usize) -> Option<&'a CommentStmt> {
         if self.next < self.comments.len() && self.comments[self.next].span.start < pos {
             Some(&self.comments[self.next])
         } else {
@@ -90,7 +92,7 @@ impl CommentCursor {
     }
 
     /// The undrained comments with `span.start` in `[start, end)`, without consuming them.
-    pub fn peek_in(&self, start: usize, end: usize) -> impl Iterator<Item = &CommentStmt> {
+    pub fn peek_in(&self, start: usize, end: usize) -> impl Iterator<Item = &'a CommentStmt> {
         self.comments[self.next..]
             .iter()
             .take_while(move |c| c.span.start < end)
@@ -105,7 +107,7 @@ impl CommentCursor {
     /// The comments written with `span.start` in `[start, end)`, drained or not. For questions
     /// about the source rather than about what's left to emit, so the answer doesn't depend on
     /// which comments an earlier node already took.
-    pub fn written_in(&self, start: usize, end: usize) -> impl Iterator<Item = &CommentStmt> {
+    pub fn written_in(&self, start: usize, end: usize) -> impl Iterator<Item = &'a CommentStmt> {
         let first = self.comments.partition_point(|c| c.span.start < start);
 
         self.comments[first..]

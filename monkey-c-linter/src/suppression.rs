@@ -708,12 +708,9 @@ mod tests {
     /// `src` after applying every fix once, as `rafiki lint --fix` does.
     fn fixed(src: &str) -> String {
         let output = Parser::new(src).parse().expect("parse");
-        let fixes = lint(&output, src)
-            .into_iter()
-            .filter_map(|d| d.fix)
-            .collect();
+        let findings = lint(&output, src);
 
-        apply_fixes(src, fixes)
+        apply_fixes(src, findings.iter().filter_map(|d| d.fix.as_ref()))
     }
 
     #[test]
@@ -1327,7 +1324,7 @@ function g() {
         let output = Parser::new(src).parse().expect("parse");
         let finding = lint(&output, src).into_iter().find(|d| d.rule == rule)?;
 
-        Some(apply_fixes(src, vec![ignore_fix(&output, src, &finding)?]))
+        Some(apply_fixes(src, [&ignore_fix(&output, src, &finding)?]))
     }
 
     #[test]

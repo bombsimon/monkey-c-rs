@@ -4,7 +4,7 @@
 //! choice so that a single `--color` decision applies to every report — reading
 //! a file, parsing it, and linting it — rather than each call site guessing.
 
-use ariadne::{Color, Config, Label, Report, ReportKind, Source};
+use ariadne::{Color, Config, IndexType, Label, Report, ReportKind, Source};
 use monkey_c_parser::parser::{ParseOutput, Parser, ParserError};
 
 use std::error;
@@ -34,9 +34,13 @@ impl Renderer {
     /// The `ariadne` configuration for this renderer. Public so callers that
     /// build their own reports (the linter's findings) match these ones;
     /// `ariadne` filters explicit label colours through it, so turning colour
-    /// off here is enough to make a whole report monochrome.
+    /// off here is enough to make a whole report monochrome. Spans are byte
+    /// offsets, as the parser produces them, so no report has to rescan the
+    /// source to translate them.
     pub fn config(&self) -> Config {
-        Config::default().with_color(self.color)
+        Config::default()
+            .with_color(self.color)
+            .with_index_type(IndexType::Byte)
     }
 
     /// Read `path`'s bytes and decode as UTF-8, reporting an already-printed
@@ -63,17 +67,16 @@ impl Renderer {
             let offset = e.utf8_error().valid_up_to();
             let bytes = e.into_bytes();
             let bad_byte = bytes[offset];
-            let char_pos = std::str::from_utf8(&bytes[..offset])
-                .expect("prefix up to `valid_up_to` is valid UTF-8")
-                .chars()
-                .count();
+            // Everything before `offset` survives the lossy decode unchanged, and the bad byte
+            // becomes one replacement character.
+            let replaced = offset..offset + char::REPLACEMENT_CHARACTER.len_utf8();
             let lossy = String::from_utf8_lossy(&bytes).into_owned();
 
-            Report::build(ReportKind::Error, (label, char_pos..char_pos + 1))
+            Report::build(ReportKind::Error, (label, replaced.clone()))
                 .with_config(self.config())
                 .with_message("stream did not contain valid UTF-8")
                 .with_label(
-                    Label::new((label, char_pos..char_pos + 1))
+                    Label::new((label, replaced))
                         .with_message(format!("byte `{bad_byte}` is not valid utf-8"))
                         .with_color(Color::Red),
                 )
@@ -103,8 +106,7 @@ impl Renderer {
     /// Print a [`ParserError`] as a labelled source snippet pointing at the offending token, and
     /// return the error that says it's been reported.
     pub fn parse_error(&self, label: &str, source: &str, err: &ParserError) -> io::Error {
-        let range = byte_range_to_char_range(source, err.span.start, err.span.end);
-        let range = clamp_range(range, source.chars().count());
+        let range = widen_to_char(source, err.span.start..err.span.end);
 
         Report::build(ReportKind::Error, (label, range.clone()))
             .with_config(self.config())
@@ -126,8 +128,7 @@ impl Renderer {
     /// formatted output. Points at the original comment so the user can see
     /// exactly what is at risk, mirroring the parse-error / UTF-8 diagnostics.
     pub fn lost_comment(&self, label: &str, source: &str, byte_start: usize, byte_end: usize) {
-        let range = byte_range_to_char_range(source, byte_start, byte_end);
-        let range = clamp_range(range, source.chars().count());
+        let range = widen_to_char(source, byte_start..byte_end);
 
         Report::build(ReportKind::Warning, (label, range.clone()))
             .with_config(self.config())
@@ -143,17 +144,19 @@ impl Renderer {
     }
 }
 
-/// Widen a (possibly empty, e.g. at end-of-file) char range to at least one
-/// char so `ariadne` always has something to underline.
-fn clamp_range(range: Range<usize>, len: usize) -> Range<usize> {
-    if len == 0 {
-        return 0..0;
+/// Clamp a byte range to `source` and widen it when empty, e.g. at end-of-file, to cover at least
+/// one whole char so `ariadne` always has something to underline.
+fn widen_to_char(source: &str, range: Range<usize>) -> Range<usize> {
+    let range = range.start.min(source.len())..range.end.min(source.len());
+    if !range.is_empty() || source.is_empty() {
+        return range;
     }
 
-    let end = range.end.clamp(1, len);
-    let start = range.start.min(end - 1);
+    if range.start < source.len() {
+        return range.start..source.ceil_char_boundary(range.start + 1);
+    }
 
-    start..end
+    source.floor_char_boundary(source.len() - 1)..source.len()
 }
 
 /// The payload that marks an error as already rendered.
@@ -187,35 +190,6 @@ pub fn is_already_reported(error: &io::Error) -> bool {
         .is_some_and(|inner| inner.is::<AlreadyReported>())
 }
 
-/// Convert a `[byte_start, byte_end)` range in `source` into the matching
-/// `[char_start, char_end)` range. `ariadne` indexes `Source` by char, so
-/// passing byte offsets unchanged misplaces labels whenever the source
-/// contains any multibyte UTF-8 character earlier in the file.
-pub fn byte_range_to_char_range(source: &str, byte_start: usize, byte_end: usize) -> Range<usize> {
-    let mut char_start = 0;
-    let mut char_end = 0;
-    let mut byte_pos = 0;
-
-    for c in source.chars() {
-        if byte_pos == byte_start {
-            char_start = char_end;
-        }
-
-        if byte_pos == byte_end {
-            return char_start..char_end;
-        }
-
-        byte_pos += c.len_utf8();
-        char_end += 1;
-    }
-
-    if byte_pos == byte_start {
-        char_start = char_end;
-    }
-
-    char_start..char_end
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,10 +212,25 @@ mod tests {
     }
 
     #[test]
-    fn multibyte_characters_shift_char_offsets() {
-        // "åä" is four bytes but two chars, so a byte span after it maps to a
-        // lower char span.
-        let source = "åäb";
-        assert_eq!(byte_range_to_char_range(source, 4, 5), 2..3);
+    fn an_empty_range_widens_to_the_char_after_it() {
+        // "å" is two bytes, so covering it takes both.
+        assert_eq!(widen_to_char("aåb", 1..1), 1..3);
+    }
+
+    #[test]
+    fn an_empty_range_at_the_end_widens_to_the_last_char() {
+        assert_eq!(widen_to_char("abå", 4..4), 2..4);
+    }
+
+    #[test]
+    fn a_range_past_the_end_is_clamped_to_the_source() {
+        assert_eq!(widen_to_char("abc", 1..9), 1..3);
+        assert_eq!(widen_to_char("abå", 7..9), 2..4);
+    }
+
+    #[test]
+    fn a_non_empty_range_is_kept() {
+        assert_eq!(widen_to_char("abc", 0..2), 0..2);
+        assert_eq!(widen_to_char("", 0..0), 0..0);
     }
 }

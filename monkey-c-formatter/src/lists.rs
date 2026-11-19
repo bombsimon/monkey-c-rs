@@ -2,14 +2,20 @@
 //! comma kept on the side they were written on.
 
 use monkey_c_parser::ast::{
-    ArrayExpr, CallArg, DictEntry, DictExpr, Expr, LiteralValue, Parameter, Parens, Separated,
-    Span, UnaryOperator,
+    ArrayEntry, ArrayExpr, CallArg, DictEntry, DictExpr, Expr, LiteralValue, Parameter, Parens,
+    Separated, Span, UnaryOperator,
 };
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::{Alignment, Doc, display_width, render_flat};
 use crate::expressions::literal_text;
 use crate::options::Numbers;
+
+/// The key and value of a dict entry, built once to be placed in both layouts of a dict.
+struct SharedDictEntry {
+    key: Doc,
+    value: Doc,
+}
 
 /// An entry of a bracketed list along with the comments around its comma.
 pub(crate) struct ListItem {
@@ -19,7 +25,7 @@ pub(crate) struct ListItem {
     pub(crate) ends_line: bool,
 }
 
-impl Formatter {
+impl Printer<'_> {
     /// A list entry and the comments around the `,` after it at `comma`, each kept on the side of
     /// the comma it was written on. A comment that ends the line before the comma leaves the comma
     /// to start the next line, as in the source. A block comment in front of the next entry on the
@@ -213,12 +219,37 @@ impl Formatter {
             return self.empty_collection_to_doc(e.span, "[", "]");
         }
 
-        if self.array_can_fill(e) {
-            return self.format_array_filled(e);
+        // Without comments every layout holds the same element docs, so they're built once and
+        // shared. Building them again per layout doubled the work at every level of nesting.
+        let shared_elements = (!self.has_comments_in(e.span)).then(|| self.array_element_docs(e));
+
+        if let Some(elements) = &shared_elements
+            && self.array_can_fill(e, elements)
+        {
+            return self.format_array_filled(e, elements);
         }
 
+        let element = |index: usize, entry: &ArrayEntry, next_entry_start: usize| {
+            let Some(elements) = &shared_elements else {
+                return self.expr_with_leading_bounded(
+                    self.without_parens(&entry.value),
+                    next_entry_start,
+                );
+            };
+
+            elements[index].clone()
+        };
+
         if self.collection_must_break(e.span, e.entries.has_trailing_comma()) {
-            return self.format_array_multiline(e);
+            return self.format_collection_multiline(
+                e.span,
+                &e.entries,
+                "[",
+                "]",
+                |entry| entry.value.span().start,
+                |entry| entry.value.span().end,
+                element,
+            );
         }
 
         self.format_collection_inline_or_break(
@@ -228,22 +259,39 @@ impl Formatter {
             "]",
             |entry| entry.value.span().start,
             |entry| entry.value.span().end,
-            |_, entry, next_entry_start| {
-                self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start)
-            },
+            element,
         )
     }
 
-    /// Whether every item is short enough to fill the lines of a broken array. Comments and blank
-    /// lines mean the rows were laid out by hand, so those arrays keep one item per line.
-    fn array_can_fill(&self, e: &ArrayExpr) -> bool {
-        if self.short_array_element_width == 0 || self.has_comments_in(e.span) {
+    /// The doc of every element of an array without comments, cheap to place in several layouts.
+    fn array_element_docs(&self, e: &ArrayExpr) -> Vec<Doc> {
+        e.entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let next_entry_start = e
+                    .entries
+                    .get(index + 1)
+                    .map_or(e.span.end, |next| next.value.span().start);
+                let element = self
+                    .expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start);
+
+                Doc::shared(element)
+            })
+            .collect()
+    }
+
+    /// Whether every item, given as its `elements` doc, is short enough to fill the lines of a
+    /// broken array. Only asked of arrays without comments, and blank lines too mean the rows were
+    /// laid out by hand, so those arrays keep one item per line.
+    fn array_can_fill(&self, e: &ArrayExpr, elements: &[Doc]) -> bool {
+        if self.short_array_element_width == 0 {
             return false;
         }
 
         let mut previous_end: Option<usize> = None;
 
-        e.entries.iter().all(|entry| {
+        e.entries.iter().zip(elements).all(|(entry, element)| {
             let span = entry.value.span();
             let after_blank_line = previous_end.is_some_and(|end| {
                 self.line_index
@@ -255,7 +303,7 @@ impl Formatter {
 
             // Measured as printed, so a string with wide characters or an item split over lines
             // in the source counts what it will take up.
-            let item = render_flat(&self.expr_inner_to_doc(self.without_parens(&entry.value)));
+            let item = render_flat(element);
 
             !after_blank_line
                 && !item.contains('\n')
@@ -263,16 +311,15 @@ impl Formatter {
         })
     }
 
-    fn format_array_filled(&self, e: &ArrayExpr) -> Doc {
+    fn format_array_filled(&self, e: &ArrayExpr, elements: &[Doc]) -> Doc {
         let last_index = e.entries.len() - 1;
         let trailing_comma = e.entries.has_trailing_comma();
 
-        let cells = e
-            .entries
+        let cells = elements
             .iter()
             .enumerate()
-            .map(|(index, entry)| {
-                let content = self.expr_inner_to_doc(self.without_parens(&entry.value));
+            .map(|(index, element)| {
+                let content = element.clone();
 
                 if index == last_index && !trailing_comma {
                     return content;
@@ -317,20 +364,6 @@ impl Formatter {
                 .comment_cursor
                 .borrow()
                 .has_line_comment_in(span.start, span.end)
-    }
-
-    fn format_array_multiline(&self, e: &ArrayExpr) -> Doc {
-        self.format_collection_multiline(
-            e.span,
-            &e.entries,
-            "[",
-            "]",
-            |entry| entry.value.span().start,
-            |entry| entry.value.span().end,
-            |_, entry, next_entry_start| {
-                self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start)
-            },
-        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -416,7 +449,7 @@ impl Formatter {
         }
 
         if self.collection_must_break(e.span, e.entries.has_trailing_comma()) {
-            return self.format_dict_multiline(e);
+            return self.format_dict_multiline(e, None);
         }
 
         if self.has_comments_in(e.span) {
@@ -430,21 +463,37 @@ impl Formatter {
         self.format_dict_inline_or_break(e)
     }
 
+    /// A dict without comments on one line when it fits, otherwise broken with aligned `=>`. The
+    /// keys and values are built once and shared by both layouts, as building them for each one
+    /// doubled the work at every level of nesting.
     fn format_dict_aligned_or_inline(&self, e: &DictExpr) -> Doc {
+        let entries: Vec<SharedDictEntry> = e
+            .entries
+            .iter()
+            .map(|entry| SharedDictEntry {
+                key: Doc::shared(self.expr_inner_to_doc(self.without_parens(&entry.key))),
+                value: Doc::shared(self.expr_inner_to_doc(self.without_parens(&entry.value))),
+            })
+            .collect();
+
         let mut flat_inner = Vec::new();
-        for (i, entry) in e.entries.iter().enumerate() {
+        for (i, entry) in entries.iter().enumerate() {
             if i > 0 {
                 flat_inner.push(Doc::text(", "));
             }
 
-            flat_inner.push(self.flat_dict_entry_to_doc(entry));
+            flat_inner.push(Doc::concat(vec![
+                entry.key.clone(),
+                Doc::text(" => "),
+                entry.value.clone(),
+            ]));
         }
         let flat_doc = Doc::concat(vec![
             Doc::text("{"),
             Doc::Concat(flat_inner),
             Doc::text("}"),
         ]);
-        let break_doc = self.format_dict_multiline(e);
+        let break_doc = self.format_dict_multiline(e, Some(&entries));
 
         Doc::Group(vec![Doc::flat_or_break(flat_doc, break_doc)])
     }
@@ -459,7 +508,9 @@ impl Formatter {
         ])
     }
 
-    fn format_dict_multiline(&self, e: &DictExpr) -> Doc {
+    /// A dict one entry per line, placing the `shared` docs of its entries when they were built
+    /// already.
+    fn format_dict_multiline(&self, e: &DictExpr, shared: Option<&[SharedDictEntry]>) -> Doc {
         let paddings = self.dict_key_paddings(e);
 
         self.format_collection_multiline(
@@ -472,7 +523,15 @@ impl Formatter {
             |i, entry, next_entry_start| {
                 let padding = Doc::text(&paddings[i]);
 
-                self.dict_entry_to_doc(entry, next_entry_start, padding)
+                match shared {
+                    Some(shared) => self.dict_entry_to_doc(
+                        entry,
+                        shared[i].key.clone(),
+                        || shared[i].value.clone(),
+                        padding,
+                    ),
+                    None => self.built_dict_entry_to_doc(entry, next_entry_start, padding),
+                }
             },
         )
     }
@@ -492,7 +551,7 @@ impl Formatter {
             |i, entry, next_entry_start| {
                 let padding = Doc::flat_or_break(Doc::Empty, Doc::text(&paddings[i]));
 
-                self.dict_entry_to_doc(entry, next_entry_start, padding)
+                self.built_dict_entry_to_doc(entry, next_entry_start, padding)
             },
         )
     }
@@ -550,17 +609,41 @@ impl Formatter {
         Some(width)
     }
 
-    /// A `key => value` pair with the comments around it, `padding` going between the key and
-    /// `=>`.
-    fn dict_entry_to_doc(&self, entry: &DictEntry, next_entry_start: usize, padding: Doc) -> Doc {
+    /// A `key => value` pair with the comments around it, building the key and value as it goes so
+    /// each takes the comments in front of it.
+    fn built_dict_entry_to_doc(
+        &self,
+        entry: &DictEntry,
+        next_entry_start: usize,
+        padding: Doc,
+    ) -> Doc {
         let key = self.expr_with_leading(self.without_parens(&entry.key));
+
+        self.dict_entry_to_doc(
+            entry,
+            key,
+            || self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start),
+            padding,
+        )
+    }
+
+    /// A `key => value` pair from its `key` doc and `value`, with the comments between them,
+    /// `padding` going between the key and `=>`. The value is built only once the comments before
+    /// it have been taken.
+    fn dict_entry_to_doc(
+        &self,
+        entry: &DictEntry,
+        key: Doc,
+        value: impl FnOnce() -> Doc,
+        padding: Doc,
+    ) -> Doc {
         let key_end = entry.key.span().end;
         let arrow_breaks = self.token_starts_new_line(key_end, entry.arrow_pos);
         let before_arrow = self.drain_before_token(key_end, entry.arrow_pos);
         let value = self.after_token(
             entry.arrow_pos + "=>".len(),
             entry.value.span().start,
-            || self.expr_with_leading_bounded(self.without_parens(&entry.value), next_entry_start),
+            value,
         );
 
         if arrow_breaks {
@@ -802,8 +885,10 @@ fn expr_key_width(expr: &Expr, numbers: &Numbers) -> Option<usize> {
 mod tests {
     use super::*;
 
-    use monkey_c_parser::ast::{Ast, Stmt};
+    use monkey_c_parser::ast::{Ast, CommentTable, Stmt};
     use monkey_c_parser::parser::Parser;
+
+    use crate::Formatter;
 
     /// `src` as the value of a return, so it parses as an expression and its spans point into the
     /// same source the formatter reads.
@@ -828,9 +913,12 @@ mod tests {
     fn can_fill(src: &str, width: usize) -> bool {
         let wrapped = wrap(src);
 
-        Formatter::new(&wrapped)
-            .with_short_array_element_width(width)
-            .array_can_fill(&parse_array(&wrapped))
+        let formatter = Formatter::new().with_short_array_element_width(width);
+        let comments = CommentTable::default();
+        let printer = Printer::new(&formatter, &wrapped, &comments);
+        let array = parse_array(&wrapped);
+
+        printer.array_can_fill(&array, &printer.array_element_docs(&array))
     }
 
     fn is_number(item: &str) -> bool {

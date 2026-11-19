@@ -3,10 +3,10 @@
 
 use monkey_c_parser::ast::{CallExpr, Expr, IndexExpr, MemberExpr, Span};
 
-use crate::Formatter;
+use crate::Printer;
 use crate::doc::Doc;
 
-impl Formatter {
+impl Printer<'_> {
     /// Lay out a method chain one `.name(…)` group per line, or `None` to leave it to the regular
     /// layout. [`MemberChain`] decides the layout; this handles the comments in the chain and
     /// renders its links.
@@ -41,16 +41,16 @@ impl Formatter {
             .map(|(links, gap)| GroupDoc {
                 same_line_comments: self.drain_trailing_doc(gap.start, gap.end),
                 own_line_comments: self.drain_leading_doc(gap.end),
-                doc: Doc::Concat(
+                doc: Doc::shared(Doc::Concat(
                     links
                         .iter()
                         .map(|link| self.chain_link_to_doc(link))
                         .collect(),
-                ),
+                )),
             })
             .collect();
 
-        Some(chain_doc(Doc::Concat(head), &groups, layout))
+        Some(chain_doc(Doc::shared(Doc::Concat(head)), &groups, layout))
     }
 
     fn chain_link_to_doc(&self, link: &ChainLink) -> Doc {
@@ -206,7 +206,7 @@ impl<'a> MemberChain<'a> {
 }
 
 /// Assemble a chain with every group on its own indented line, and unless it must break, try the
-/// whole chain on one line first.
+/// whole chain on one line first. The head and group docs are shared, so the clones are cheap.
 fn chain_doc(head: Doc, groups: &[GroupDoc], layout: ChainLayout) -> Doc {
     let broken = if layout.first_call_on_head_line {
         // Keep the first call on the head's line only when it fits there whole. Otherwise its

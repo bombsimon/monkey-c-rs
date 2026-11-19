@@ -11,7 +11,7 @@ impl Parser<'_> {
         let start = self.current_token_start;
         let modifiers = self.parse_modifiers()?;
 
-        match self.current_token.clone() {
+        match &self.current_token {
             token::Type::Class => self.parse_class_decl(start, modifiers),
             token::Type::Const => self.parse_const_decl(start, modifiers),
             token::Type::Enum => self.parse_enum_decl(start, modifiers),
