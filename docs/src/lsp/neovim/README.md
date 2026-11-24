@@ -1,48 +1,50 @@
 # Neovim
 
-Neovim has a built-in language server client, so no plugin is needed. It
-doesn't know the `.mc` extension, though, so the setup registers the file type
-and then starts the server for it:
+With Neovim 0.11 or later no plugin is needed:
 
 ```lua
 vim.filetype.add({ extension = { mc = "monkeyc" } })
 
-vim.api.nvim_create_autocmd("FileType", {
-  pattern = "monkeyc",
-  callback = function(args)
-    vim.lsp.start({
-      name = "rafiki",
-      cmd = { "rafiki", "server" },
-      root_dir = vim.fs.root(args.buf, { "rafiki.toml", "manifest.xml", ".git" }) or vim.fn.getcwd(),
-    })
-  end,
+vim.lsp.config("rafiki", {
+  cmd = { "rafiki", "server" },
+  filetypes = { "monkeyc" },
+  root_markers = { "rafiki.toml", "manifest.xml", ".git" },
 })
+
+vim.lsp.enable("rafiki")
 ```
 
 Open a `.mc` file and diagnostics show up as you edit. Settings are best kept in
 the project's `rafiki.toml`, but you can override the formatting ones by adding
-`init_options = { lineWidth = 100 }` to `vim.lsp.start`.
+`init_options = { lineWidth = 100 }` to `vim.lsp.config`.
 
 ## Format and fix on save
-
-This applies every lint fix and then formats the file each time it's saved:
 
 ```lua
 vim.api.nvim_create_autocmd("BufWritePre", {
   pattern = "*.mc",
   callback = function()
-    vim.lsp.buf.code_action({
-      apply = true,
-      async = false,
-      context = { only = { "source.fixAll" } },
-    })
-    vim.lsp.buf.format()
+    local client = vim.lsp.get_clients({ bufnr = 0, name = "rafiki" })[1]
+    if not client then
+      return
+    end
+
+    local params = vim.lsp.util.make_range_params(0, client.offset_encoding)
+    params.context = { diagnostics = {}, only = { "source.fixAll" } }
+
+    local response = client:request_sync("textDocument/codeAction", params)
+    for _, action in ipairs(response and response.result or {}) do
+      vim.lsp.util.apply_workspace_edit(action.edit, client.offset_encoding)
+    end
+
+    vim.lsp.buf.format({ id = client.id })
   end,
 })
 ```
 
-Leave out the `code_action` call to only format. Fixes for a single finding are
-still available on demand through `vim.lsp.buf.code_action()`.
+The fixes are requested directly since `vim.lsp.buf.code_action()` doesn't wait
+for them before the file is formatted. To only format, call just
+`vim.lsp.buf.format({ name = "rafiki" })`.
 
 If you use a plugin that manages formatting, like conform.nvim or none-ls, make
 sure it falls back to the language server for the `monkeyc` file type.
@@ -53,7 +55,7 @@ sure it falls back to the language server for the `monkeyc` file type.
   make sure `:set filetype?` prints `monkeyc`.
 - If formatting on save does nothing, the file probably has a syntax error.
   `:lua =vim.diagnostic.get(0)` lists the diagnostics.
-- Run `:LspRestart` after installing a new version of `rafiki` or changing
-  `rafiki.toml`.
+- Run `:lsp restart rafiki` (Neovim 0.12+) or restart Neovim after installing a
+  new version of `rafiki` or changing `rafiki.toml`.
 - For more detail, run `:lua vim.lsp.set_log_level("debug")` and read the log at
   `vim.lsp.get_log_path()`.
